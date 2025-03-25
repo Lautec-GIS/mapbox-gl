@@ -5,9 +5,10 @@ import {StylePropertyFunction, StyleExpression, ZoomDependentExpression, ZoomCon
 import CompoundExpression from '../style-spec/expression/compound_expression';
 import expressions from '../style-spec/expression/definitions/index';
 import ResolvedImage from '../style-spec/expression/types/resolved_image';
-import {ImageIdWithOptions} from '../style-spec/expression/types/image_id_with_options';
 import {AJAXError} from './ajax';
 import Formatted, {FormattedSection} from '../style-spec/expression/types/formatted';
+import {ImageId} from '../style-spec/expression/types/image_id';
+import {ImageVariant} from '../style-spec/expression/types/image_variant';
 
 import type {Class} from '../types/class';
 import type {GridIndex} from '../types/grid-index';
@@ -110,7 +111,8 @@ register(AJAXError, 'AJAXError');
 register(ResolvedImage, 'ResolvedImage');
 register(StylePropertyFunction, 'StylePropertyFunction');
 register(StyleExpression, 'StyleExpression', {omit: ['_evaluator']});
-register(ImageIdWithOptions, 'ImageIdWithOptions');
+register(ImageId, 'ImageId');
+register(ImageVariant, 'ImageVariant');
 
 register(ZoomDependentExpression, 'ZoomDependentExpression');
 register(ZoomConstantExpression, 'ZoomConstantExpression');
@@ -186,9 +188,9 @@ export function serialize(input: unknown, transferables?: Set<Transferable> | nu
     }
 
     if (input instanceof Map) {
-        const properties: SerializedObject = {'$name': 'Map'};
+        const properties = {'$name': 'Map', entries: []} satisfies SerializedObject;
         for (const [key, value] of input.entries()) {
-            properties[key] = serialize(value);
+            properties.entries.push(serialize(key), serialize(value));
         }
         return properties;
     }
@@ -209,6 +211,10 @@ export function serialize(input: unknown, transferables?: Set<Transferable> | nu
             properties[property] = input[property];
         }
         return properties;
+    }
+
+    if (typeof input === 'bigint') {
+        return {$name: 'BigInt', value: input.toString()};
     }
 
     if (typeof input === 'object') {
@@ -283,12 +289,10 @@ export function deserialize(input: Serialized): unknown {
         const name = input.$name || 'Object';
 
         if (name === 'Map') {
+            const entries = input.entries as Array<[Serialized, Serialized]> || [];
             const map = new Map();
-            for (const key of Object.keys(input)) {
-                if (key === '$name')
-                    continue;
-                const value = input[key];
-                map.set(key, deserialize(value));
+            for (let i = 0; i < entries.length; i += 2) {
+                map.set(deserialize(entries[i]), deserialize(entries[i + 1]));
             }
             return map;
         }
@@ -314,6 +318,10 @@ export function deserialize(input: Serialized): unknown {
             }
             const matrix = new DOMMatrix(values);
             return matrix;
+        }
+
+        if (name === 'BigInt') {
+            return BigInt(input.value as string);
         }
 
         const {klass} = registry[name];

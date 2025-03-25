@@ -17,7 +17,7 @@ import type {ImagePosition, ImagePositionMap} from '../render/image_atlas';
 import type {GlyphRect, GlyphPositions} from '../render/glyph_atlas';
 import type {FormattedSection} from '../style-spec/expression/types/formatted';
 import type Formatted from '../style-spec/expression/types/formatted';
-import type {ImageIdWithOptions} from '../style-spec/expression/types/image_id_with_options';
+import type {ImageVariant} from '../style-spec/expression/types/image_variant';
 
 const WritingMode = {
     horizontal: 1,
@@ -36,7 +36,7 @@ export {shapeText, shapeIcon, fitIconToText, getAnchorAlignment, WritingMode, SH
 // The position of a glyph relative to the text's anchor point.
 export type PositionedGlyph = {
     glyph: number;
-    image: ImageIdWithOptions | null;
+    image: ImageVariant | null;
     x: number;
     y: number;
     vertical: boolean;
@@ -94,7 +94,7 @@ class SectionOptions {
     scale: number;
     fontStack: string;
     // Image options
-    image: ImageIdWithOptions | null;
+    image: ImageVariant | null;
 
     constructor() {
         this.scale = 1.0;
@@ -109,7 +109,7 @@ class SectionOptions {
         return textOptions;
     }
 
-    static forImage(image: ImageIdWithOptions | null): SectionOptions {
+    static forImage(image: ImageVariant | null): SectionOptions {
         const imageOptions = new SectionOptions();
         imageOptions.image = image;
         return imageOptions;
@@ -210,12 +210,13 @@ class TaggedString {
     }
 
     addImageSection(section: FormattedSection, pixelRatio: number) {
-        const image = section.image && section.image.namePrimary ? section.image.getPrimary().scaleSelf(pixelRatio) : null;
+        const image = section.image ? section.image.getPrimary() : null;
         if (!image) {
             warnOnce(`Can't add FormattedSection with an empty image.`);
             return;
         }
 
+        image.scaleSelf(pixelRatio);
         const nextImageSectionCharCode = this.getNextImageSectionCharCode();
         if (!nextImageSectionCharCode) {
             warnOnce(`Reached maximum number of images ${PUAend - PUAbegin + 2}`);
@@ -378,7 +379,7 @@ function getGlyphAdvance(
         if (!glyph) return 0;
         return glyph.metrics.advance * section.scale + spacing;
     } else {
-        const imagePosition = imagePositions[section.image.serialize()];
+        const imagePosition = imagePositions.get(section.image.toString());
         if (!imagePosition) return 0;
         return imagePosition.displaySize[0] * section.scale * ONE_EM / layoutTextSize + spacing;
     }
@@ -700,7 +701,7 @@ function shapeLines(shaping: Shaping,
                     glyphOffset = SHAPING_DEFAULT_OFFSET + (lineMaxScale - sectionScale) * ONE_EM;
                 }
             } else {
-                const imagePosition = imagePositions[section.image.serialize()];
+                const imagePosition = imagePositions.get(section.image.toString());
                 if (!imagePosition) continue;
                 image = section.image;
                 shaping.iconsInText = shaping.iconsInText || true;

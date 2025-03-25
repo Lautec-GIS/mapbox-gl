@@ -12,8 +12,9 @@ import {hasPattern, addPatternDependencies} from './pattern_bucket_features';
 import loadGeometry from '../load_geometry';
 import toEvaluationFeature from '../evaluation_feature';
 import EvaluationParameters from '../../style/evaluation_parameters';
-import {ElevationFeatureSampler, type ElevationFeature, type Range} from '../elevation_feature';
-import {MARKUP_ELEVATION_BIAS, PROPERTY_ELEVATION_ID} from '../elevation_constants';
+import {ElevationFeatureSampler, type ElevationFeature, type Range} from '../../../3d-style/elevation/elevation_feature';
+import {MARKUP_ELEVATION_BIAS, PROPERTY_ELEVATION_ID, PROPERTY_ELEVATION_ROAD_BASE_Z_LEVEL} from '../../../3d-style/elevation/elevation_constants';
+import {ElevatedStructures} from '../../../3d-style/elevation/elevated_structures';
 
 import type {CanonicalTileID, UnwrappedTileID} from '../../source/tile_id';
 import type {
@@ -27,7 +28,6 @@ import type FillStyleLayer from '../../style/style_layer/fill_style_layer';
 import type Context from '../../gl/context';
 import type IndexBuffer from '../../gl/index_buffer';
 import type VertexBuffer from '../../gl/vertex_buffer';
-import type Point from '@mapbox/point-geometry';
 import type {FeatureStates} from '../../source/source_state';
 import type {SpritePositions} from '../../util/image';
 import type {ProjectionSpecification} from '../../style-spec/types';
@@ -35,6 +35,9 @@ import type {TileTransform} from '../../geo/projection/tile_transform';
 import type {VectorTileLayer} from '@mapbox/vector-tile';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
+import type Point from '@mapbox/point-geometry';
+import type {ElevationPolygons, ElevationPortalGraph} from '../../../3d-style/elevation/elevation_graph';
+import type {ImageId} from '../../style-spec/expression/types/image_id';
 
 class FillBufferData {
     layoutVertexArray: FillLayoutArray;
@@ -71,7 +74,7 @@ class FillBufferData {
         }
     }
 
-    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: Array<string>, imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
+    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
         this.programConfigurations.updatePaintArrays(states, vtLayer, layers, availableImages, imagePositions, isBrightnessChanged, brightness);
     }
 
@@ -111,7 +114,7 @@ class FillBufferData {
         this.lineSegments.destroy();
     }
 
-    populatePaintArrays(feature: BucketFeature, index: number, imagePositions: SpritePositions, availableImages: Array<string>, canonical: CanonicalTileID, brightness?: number | null) {
+    populatePaintArrays(feature: BucketFeature, index: number, imagePositions: SpritePositions, availableImages: ImageId[], canonical: CanonicalTileID, brightness?: number | null) {
         this.programConfigurations.populatePaintArrays(this.layoutVertexArray.length, feature, index, imagePositions, availableImages, canonical, brightness);
     }
 }
@@ -119,7 +122,8 @@ class FillBufferData {
 interface ElevationParams {
     elevation: ElevationFeature;
     elevationSampler: ElevationFeatureSampler;
-    bias: number
+    bias: number;
+    index: number;
 }
 
 class FillBucket implements Bucket {
@@ -142,6 +146,7 @@ class FillBucket implements Bucket {
     projection: ProjectionSpecification;
 
     elevationMode: 'none' | 'hd-road-base' | 'hd-road-markup';
+    elevatedStructures: ElevatedStructures | undefined;
 
     constructor(options: BucketParameters<FillStyleLayer>) {
         this.zoom = options.zoom;
@@ -220,12 +225,12 @@ class FillBucket implements Bucket {
         }
     }
 
-    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: Array<string>, imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
+    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
         this.bufferData.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness);
         this.elevationBufferData.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness);
     }
 
-    addFeatures(options: PopulateParameters, canonical: CanonicalTileID, imagePositions: SpritePositions, availableImages: Array<string>, _: TileTransform, brightness?: number | null) {
+    addFeatures(options: PopulateParameters, canonical: CanonicalTileID, imagePositions: SpritePositions, availableImages: ImageId[], _: TileTransform, brightness?: number | null) {
         for (const feature of this.patternFeatures) {
             this.addFeature(feature, feature.geometry, feature.index, canonical, imagePositions, availableImages, brightness, options.elevationFeatures);
         }
@@ -242,18 +247,24 @@ class FillBucket implements Bucket {
     upload(context: Context) {
         this.bufferData.upload(context);
         this.elevationBufferData.upload(context);
+        if (this.elevatedStructures) {
+            this.elevatedStructures.upload(context);
+        }
     }
 
     destroy() {
         this.bufferData.destroy();
         this.elevationBufferData.destroy();
+        if (this.elevatedStructures) {
+            this.elevatedStructures.destroy();
+        }
     }
 
-    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, canonical: CanonicalTileID, imagePositions: SpritePositions, availableImages: Array<string> = [], brightness?: number | null, elevationFeatures?: ElevationFeature[]) {
+    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, canonical: CanonicalTileID, imagePositions: SpritePositions, availableImages: ImageId[] = [], brightness?: number | null, elevationFeatures?: ElevationFeature[]) {
         const polygons = classifyRings(geometry, EARCUT_MAX_RINGS);
 
         if (this.elevationMode !== 'none') {
-            this.addElevatedRoadFeature(feature, polygons, canonical, elevationFeatures);
+            this.addElevatedRoadFeature(feature, polygons, canonical, index, elevationFeatures);
         } else {
             this.addGeometry(polygons, this.bufferData);
         }
@@ -261,7 +272,21 @@ class FillBucket implements Bucket {
         this.elevationBufferData.populatePaintArrays(feature, index, imagePositions, availableImages, canonical, brightness);
     }
 
-    private addElevatedRoadFeature(feature: BucketFeature, polygons: Point[][][], canonical: CanonicalTileID, elevationFeatures?: ElevationFeature[]) {
+    getUnevaluatedPortalGraph(): ElevationPortalGraph | undefined {
+        return this.elevatedStructures ? this.elevatedStructures.unevaluatedPortals : undefined;
+    }
+
+    getElevationPolygons(): ElevationPolygons | undefined {
+        return this.elevatedStructures ? this.elevatedStructures.portalPolygons : undefined;
+    }
+
+    setEvaluatedPortalGraph(graph: ElevationPortalGraph) {
+        if (this.elevatedStructures) {
+            this.elevatedStructures.construct(graph);
+        }
+    }
+
+    private addElevatedRoadFeature(feature: BucketFeature, polygons: Point[][][], canonical: CanonicalTileID, index: number, elevationFeatures?: ElevationFeature[]) {
         interface ElevatedGeometry {
             polygons: Point[][][];
             elevationFeature: ElevationFeature;
@@ -283,20 +308,44 @@ class FillBucket implements Bucket {
 
         for (const elevated of elevatedGeometry) {
             if (elevated.elevationFeature) {
+                if (this.elevationMode === 'hd-road-base') {
+                    if (!this.elevatedStructures) {
+                        this.elevatedStructures = new ElevatedStructures(elevated.elevationTileID);
+                    }
+
+                    const isTunnel = elevated.elevationFeature.isTunnel();
+                    // Parse zLevel properties
+                    let zLevel = 0;
+                    if (feature.properties.hasOwnProperty(PROPERTY_ELEVATION_ROAD_BASE_Z_LEVEL)) {
+                        zLevel = +feature.properties[PROPERTY_ELEVATION_ROAD_BASE_Z_LEVEL];
+                    }
+
+                    // Create "elevated structures" for polygons using "road" elevation mode that
+                    // contains additional bridge and tunnel geometries for rendering. Additive "markup" features are
+                    // stacked on top of another elevated layers and do not need these structures of their own
+                    for (const polygon of elevated.polygons) {
+                        // Overlapping edges between adjacent polygons form "portals", i.e. entry & exit points
+                        // useful for traversing elevated polygons
+                        this.elevatedStructures.addPortalCandidates(
+                            elevated.elevationFeature.id, polygon, isTunnel, elevated.elevationFeature, zLevel
+                        );
+                    }
+                }
+
                 const elevationSampler = new ElevationFeatureSampler(canonical, elevated.elevationTileID);
 
                 if (this.elevationMode === 'hd-road-base') {
-                    this.addElevatedGeometry(elevated.polygons, elevationSampler, elevated.elevationFeature, 0.0);
+                    this.addElevatedGeometry(elevated.polygons, elevationSampler, elevated.elevationFeature, 0.0, index);
                 } else {
                     // Apply slight height bias to "markup" polygons to remove z-fighting
-                    this.addElevatedGeometry(elevated.polygons, elevationSampler, elevated.elevationFeature, MARKUP_ELEVATION_BIAS);
+                    this.addElevatedGeometry(elevated.polygons, elevationSampler, elevated.elevationFeature, MARKUP_ELEVATION_BIAS, index);
                 }
             }
         }
     }
 
-    private addElevatedGeometry(polygons: Point[][][], elevationSampler: ElevationFeatureSampler, elevation: ElevationFeature, bias: number) {
-        const elevationParams = <ElevationParams>{elevation, elevationSampler, bias};
+    private addElevatedGeometry(polygons: Point[][][], elevationSampler: ElevationFeatureSampler, elevation: ElevationFeature, bias: number, index: number) {
+        const elevationParams = <ElevationParams>{elevation, elevationSampler, bias, index};
         const [min, max] = this.addGeometry(polygons, this.elevationBufferData, elevationParams);
 
         if (this.elevationBufferData.heightRange == null) {
@@ -320,15 +369,19 @@ class FillBucket implements Bucket {
             }
         }
 
-        const addElevatedVertex = (point: Point) => {
+        const addElevatedVertex = (point: Point, points: Point[], heights: number[]) => {
             if (elevationParams == null) return;
+
+            points.push(point);
 
             // Sample elevation feature to find interpolated heights for each added vertex.
             if (constantHeight != null) {
                 bufferData.elevatedLayoutVertexArray.emplaceBack(constantHeight);
+                heights.push(constantHeight);
             } else {
                 const height = elevationParams.elevationSampler.pointElevation(point, elevationParams.elevation, elevationParams.bias);
                 bufferData.elevatedLayoutVertexArray.emplaceBack(height);
+                heights.push(height);
                 min = Math.min(min, height);
                 max = Math.max(max, height);
             }
@@ -346,6 +399,12 @@ class FillBucket implements Bucket {
             const flattened = [];
             const holeIndices = [];
 
+            const points: Point[] = [];
+            const heights: number[] = [];
+            // Track ring indices
+            const ringVertexOffsets: number[] = [];
+            const vOffset = bufferData.layoutVertexArray.length;
+
             for (const ring of polygon) {
                 if (ring.length === 0) {
                     continue;
@@ -358,14 +417,18 @@ class FillBucket implements Bucket {
                 const lineSegment = bufferData.lineSegments.prepareSegment(ring.length, bufferData.layoutVertexArray, bufferData.lineIndexArray);
                 const lineIndex = lineSegment.vertexLength;
 
-                addElevatedVertex(ring[0]);
+                if (elevationParams) {
+                    ringVertexOffsets.push(bufferData.layoutVertexArray.length - vOffset);
+                }
+
+                addElevatedVertex(ring[0], points, heights);
                 bufferData.layoutVertexArray.emplaceBack(ring[0].x, ring[0].y);
                 bufferData.lineIndexArray.emplaceBack(lineIndex + ring.length - 1, lineIndex);
                 flattened.push(ring[0].x);
                 flattened.push(ring[0].y);
 
                 for (let i = 1; i < ring.length; i++) {
-                    addElevatedVertex(ring[i]);
+                    addElevatedVertex(ring[i], points, heights);
                     bufferData.layoutVertexArray.emplaceBack(ring[i].x, ring[i].y);
                     bufferData.lineIndexArray.emplaceBack(lineIndex + i - 1, lineIndex + i);
                     flattened.push(ring[i].x);
@@ -376,7 +439,7 @@ class FillBucket implements Bucket {
                 lineSegment.primitiveLength += ring.length;
             }
 
-            const indices = earcut(flattened, holeIndices);
+            const indices: number[] = earcut(flattened, holeIndices);
             assert(indices.length % 3 === 0);
 
             for (let i = 0; i < indices.length; i += 3) {
@@ -384,6 +447,25 @@ class FillBucket implements Bucket {
                     triangleIndex + indices[i],
                     triangleIndex + indices[i + 1],
                     triangleIndex + indices[i + 2]);
+            }
+
+            if (elevationParams && this.elevationMode === 'hd-road-base') {
+                const isTunnel = elevationParams.elevation.isTunnel();
+                const safeArea = elevationParams.elevation.safeArea;
+                const vOffset = this.elevatedStructures.addVertices(points, heights);
+                this.elevatedStructures.addTriangles(indices, vOffset, isTunnel);
+
+                const ringCount = ringVertexOffsets.length;
+                if (ringCount > 0) {
+                    for (let i = 0; i < ringCount - 1; i++) {
+                        this.elevatedStructures.addRenderableRing(
+                            elevationParams.index, ringVertexOffsets[i] + vOffset, ringVertexOffsets[i + 1] - ringVertexOffsets[i], isTunnel, safeArea
+                        );
+                    }
+                    this.elevatedStructures.addRenderableRing(
+                        elevationParams.index, ringVertexOffsets[ringCount - 1] + vOffset, points.length - ringVertexOffsets[ringCount - 1], isTunnel, safeArea
+                    );
+                }
             }
 
             triangleSegment.vertexLength += numVertices;
@@ -405,5 +487,6 @@ class FillBucket implements Bucket {
 
 register(FillBucket, 'FillBucket', {omit: ['layers', 'patternFeatures']});
 register(FillBufferData, 'FillBufferData');
+register(ElevatedStructures, 'ElevatedStructures');
 
 export default FillBucket;

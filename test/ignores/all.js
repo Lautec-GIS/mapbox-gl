@@ -103,7 +103,9 @@ const todo = [
     // https://mapbox.atlassian.net/browse/MAPSNAT-2636
     "render-tests/icon-text-fit/stretch-nine-part-content-interpolate-text-size",
     // https://mapbox.atlassian.net/browse/GLJS-1189
-    "render-tests/background-pattern/image-update/delayed/same-size-before-color-theme-change"
+    "render-tests/background-pattern/image-update/delayed/same-size-before-color-theme-change",
+    // https://mapbox.atlassian.net/browse/GLJS-1184
+    "render-tests/raster-array/semi-transparent-icon"
 ];
 
 const skip = [
@@ -160,8 +162,10 @@ const skip = [
     "render-tests/text-variable-anchor/pitched",
 
     // Flaky
+    // https://mapbox.atlassian.net/browse/GLJS-1226
     // https://github.com/mapbox/mapbox-gl-js/issues/11234
     "render-tests/video/projected",
+    "render-tests/video/default",
 
     // Non-deterministic
     "query-tests/terrain/draped/lines/slope-occlusion-box-query",
@@ -211,6 +215,9 @@ const skip = [
 
     // fill-extrusion-rounded-roof not implemented in -js
     "render-tests/lighting-3d-mode/fill-extrusion/rounded-flat-roof",
+
+    // https://mapbox.atlassian.net/browse/MAPS3D-1742
+    "render-tests/model-layer/landmark-conflation-multiple-model-layers",
 
     // alpha textures not supported in -js
     "render-tests/model-layer/model-opacity-cutout-texture",
