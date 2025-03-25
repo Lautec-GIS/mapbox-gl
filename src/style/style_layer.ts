@@ -101,7 +101,9 @@ class StyleLayer extends Evented {
             this.filter = layer.filter;
 
             const filterSpec = latest[`filter_${layer.type}`];
-            assert(filterSpec);
+
+            if (filterSpec) assert(filterSpec);
+
             const compiledStaticFilter = createExpression(this.filter, filterSpec);
             if (compiledStaticFilter.result !== 'error') {
                 this.configDependencies = new Set([...this.configDependencies, ...compiledStaticFilter.value.configDependencies]);

@@ -440,6 +440,12 @@ export function normalizePropertyExpression<T>(
     if (isFunction(value)) {
         return new StylePropertyFunction(value, specification) as any;
 
+    } else if ('value' in specification && specification.value === 'color' && specification.type === 'array') {
+        return {
+            kind: 'constant',
+            configDependencies: new Set(),
+            evaluate: () => specification.default.map((color) => Color.parse(color))
+        };
     } else if (isExpression(value) || (Array.isArray(value) && value.length > 0)) {
         const expression = createPropertyExpression(value, specification, scope, options);
         if (expression.result === 'error') {
