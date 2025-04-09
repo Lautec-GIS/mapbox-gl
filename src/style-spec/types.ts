@@ -1264,11 +1264,36 @@ export type LayerSpecification =
     | BackgroundLayerSpecification
     | SkyLayerSpecification
     | SlotLayerSpecification
-    | ClipLayerSpecification;
+    | ClipLayerSpecification
+    | PieChartLayerSpecification;
 
 export type LayoutSpecification = UnionToIntersection<NonNullable<LayerSpecification['layout']>>;
 
 export type PaintSpecification = UnionToIntersection<NonNullable<LayerSpecification['paint']>>;
+
+export type PieChartLayerSpecification = {
+    id: string;
+    type: 'pie-chart';
+    metadata?: unknown;
+    source: string;
+    'source-layer'?: string;
+    minzoom?: number;
+    maxzoom?: number;
+    layout?: {
+        visibility?: "visible" | "none" | ExpressionSpecification;
+    };
+    filter?: FilterSpecification;
+    slot?: string;
+    paint?: {
+        'pie-chart-size'?: DataDrivenPropertyValueSpecification<number>;
+        'pie-chart-center-size'?: DataDrivenPropertyValueSpecification<number>;
+        'pie-chart-colors'?: DataDrivenPropertyValueSpecification<Array<ColorSpecification>>;
+        'pie-chart-mask'?: DataDrivenPropertyValueSpecification<number>;
+        'pie-chart-stroke-width'?: DataDrivenPropertyValueSpecification<number>;
+        'pie-chart-stroke-color'?: DataDrivenPropertyValueSpecification<ColorSpecification>;
+        'pie-chart-divider-width'?: DataDrivenPropertyValueSpecification<number>;
+    };
+};
 
 // Aliases for easier migration from @types/mapbox-gl
 

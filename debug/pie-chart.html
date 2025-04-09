@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mapbox GL JS debug page</title>
+    <meta charset="utf-8" />
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <link rel="stylesheet" href="../dist/mapbox-gl.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+        html,
+        body,
+        #map {
+            height: 100%;
+        }
+        #controls {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    </style>
+</head>
+
+<body>
+<div id="map"></div>
+<div id="controls">
+    <label
+    ><input id="terrain-checkbox" type="checkbox" checked />
+        terrain</label
+    ><br />
+</div>
+
+<script src="../dist/mapbox-gl-dev.js"></script>
+<script src="../debug/access_token_generated.js"></script>
+<script>
+    let map = (window.map = new mapboxgl.Map({
+        container: "map",
+        zoom: 12.5,
+        center: [-77.01866, 38.888],
+        style: "mapbox://styles/mapbox/streets-v10",
+        // style: {
+        //     version: 8,
+        //     name: "Empty",
+        //     metadata: {
+        //         "mapbox:autocomposite": true,
+        //     },
+        //     glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+        //     sources: {},
+        //     layers: [
+        //         {
+        //             id: "background",
+        //             type: "background",
+        //             paint: {
+        //                 "background-color": "rgba(0,0,0,0)",
+        //             },
+        //         },
+        //     ],
+        // },
+        hash: true,
+        useWebGL2: true,
+    }));
+
+    function geojson() {
+        return {
+            type: "FeatureCollection",
+            features: [
+                {
+                    type: "Feature",
+                    geometry: {
+                        type: "Point",
+                        coordinates: [-77.01866, 38.888],
+                    },
+                    properties: {
+                        progress: 0.0000037550928446705847,
+                    },
+                },
+                {
+                    type: "Feature",
+                    geometry: {
+                        type: "Point",
+                        coordinates: [-79.901633, 37.64734],
+                    },
+                    properties: {
+                        progress: 1.7881394498431355e-7,
+                    },
+                },
+            ],
+        };
+    }
+
+    map.on("load", () => {
+        map.addSource("test", {
+            type: "geojson",
+            data: geojson(),
+        });
+
+        map.addLayer({
+            id: "test",
+            type: "pie-chart",
+            source: "test",
+            paint: {
+                "pie-chart-colors": [
+                    "#673AB7",
+                    "#3F51B5",
+                    "#2196F3",
+                    "#03A9F4",
+                    "#00BCD4",
+                    "#009688",
+                ],
+                "pie-chart-size": 250,
+                "pie-chart-mask": ["get", "progress"],
+                "pie-chart-center-size": 0,
+                "pie-chart-stroke-color": "white",
+                "pie-chart-stroke-width": 4,
+                "pie-chart-divider-width": 4,
+            },
+        });
+
+        console.log(map.getLayer("test"));
+        console.log(map.getSource("test"));
+
+        // map.addSource("mapbox-dem", {
+        //     type: "raster-dem",
+        //     url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+        //     tileSize: 512,
+        //     maxzoom: 14,
+        // });
+        // // add the DEM source as a terrain layer with exaggerated height
+        // map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
+
+        // map.addLayer({
+        //     id: "test2",
+        //     type: "circle",
+        //     source: "test",
+        //     paint: {
+        //         "circle-color": "rgba(255,0,0,1)",
+        //         "circle-radius": 75,
+        //     },
+        // });
+    });
+</script>
+</body>
+</html>

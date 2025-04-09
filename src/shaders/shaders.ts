@@ -92,6 +92,8 @@ import elevatedStructuresDepthFrag from '../../3d-style/shaders/elevated_structu
 import elevatedStructuresDepthVert from '../../3d-style/shaders/elevated_structures_depth.vertex.glsl';
 import elevatedStructuresModelFrag from '../../3d-style/shaders/elevated_structures_model.fragment.glsl';
 import elevatedStructuresModelVert from '../../3d-style/shaders/elevated_structures_model.vertex.glsl';
+import pieChartFrag from './pie_chart.fragment.glsl';
+import pieChartVert from './pie_chart.vertex.glsl';
 // 3d-style related shaders
 import fillExtrusionDepthFrag from '../../3d-style/shaders/fill_extrusion_depth.fragment.glsl';
 import fillExtrusionDepthVert from '../../3d-style/shaders/fill_extrusion_depth.vertex.glsl';
@@ -185,7 +187,8 @@ export default {
     snowParticle: compile(snowFrag, snowVert),
     rainParticle: compile(rainFrag, rainVert),
     vignette: compile(vignetteFrag, vignetteVert),
-    occlusion: compile(occlusionFrag, occlusionVert)
+    occlusion: compile(occlusionFrag, occlusionVert),
+    pieChart: compile(pieChartFrag, pieChartVert),
 };
 
 export function parseUsedPreprocessorDefines(source, defines) {
