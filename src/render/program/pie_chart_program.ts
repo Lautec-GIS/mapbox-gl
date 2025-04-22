@@ -18,7 +18,7 @@ import type Context from "../../gl/context";
 import type {UniformValues} from "../uniform_binding";
 import type Tile from "../../source/tile";
 import type Painter from "../painter";
-import type {TypedStyleLayer} from "../../style/style_layer/typed_style_layer";
+import type PieChartStyleLayer from "../../style/style_layer/pie_chart_style_layer";
 
 export type PieChartUniformsType = {
     ['u_camera_to_center_distance']: Uniform1f,
@@ -59,7 +59,7 @@ const pieChartUniformValues = (
     painter: Painter,
     coord: OverscaledTileID,
     tile: Tile,
-    layer: TypedStyleLayer,
+    layer: PieChartStyleLayer,
 ): UniformValues<PieChartUniformsType> => {
     const transform = painter.transform;
     const isGlobe = transform.projection.name === "globe";
@@ -108,7 +108,7 @@ const pieChartUniformValues = (
 };
 
 const pieChartDefinesValues = (
-    layer: TypedStyleLayer
+    layer: PieChartStyleLayer
 ): PieChartDefinesType[] => {
     const values: PieChartDefinesType[] = [];
     if (layer.paint.get("circle-pitch-alignment") === "map")
@@ -118,5 +118,6 @@ const pieChartDefinesValues = (
 
     return values;
 };
+
 
 export {pieChartUniforms, pieChartUniformValues, pieChartDefinesValues};

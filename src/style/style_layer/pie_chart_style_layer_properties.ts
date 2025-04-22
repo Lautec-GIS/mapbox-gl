@@ -10,9 +10,10 @@ export type LayoutProps = {
     "circle-sort-key": DataDrivenProperty<number>,
 };
 
-const layout: Properties<LayoutProps> = new Properties({
+let layout: Properties<LayoutProps>;
+export const getLayoutProperties = (): Properties<LayoutProps> => layout || (layout = new Properties({
     "circle-sort-key": new DataDrivenProperty(styleSpec["layout_circle"]["circle-sort-key"]),
-});
+}));
 
 export type PaintProps = {
     "pie-chart-size": DataDrivenProperty<number>,
@@ -24,7 +25,8 @@ export type PaintProps = {
     "pie-chart-divider-width": DataDrivenProperty<number>,
 };
 
-const paint: Properties<PaintProps> = new Properties({
+let paint: Properties<PaintProps>;
+export const getPaintProperties = (): Properties<PaintProps> => paint || (paint = new Properties({
     "pie-chart-size": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-size"]),
     "pie-chart-center-size": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-center-size"]),
     "pie-chart-colors": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-colors"]),
@@ -32,6 +34,5 @@ const paint: Properties<PaintProps> = new Properties({
     "pie-chart-stroke-width": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-stroke-width"]),
     "pie-chart-stroke-color": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-stroke-color"]),
     "pie-chart-divider-width": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-divider-width"]),
-});
+}));
 
-export default {paint, layout};

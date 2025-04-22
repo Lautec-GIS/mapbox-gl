@@ -68,7 +68,7 @@ function drawPieCharts(
         const coord = coords[i];
 
         const tile = sourceCache.getTile(coord);
-        const bucket: PieChartBucket<any> | null = tile.getBucket(layer) as any;
+        const bucket: PieChartBucket<any> | null | undefined = (tile.getBucket(layer) as any);
         if (!bucket || bucket.projection.name !== tr.projection.name) continue;
 
         const programConfiguration = bucket.programConfigurations.get(layer.id);

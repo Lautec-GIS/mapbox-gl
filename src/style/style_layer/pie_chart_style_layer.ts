@@ -1,12 +1,13 @@
 import StyleLayer from "../style_layer.js";
 import PieChartBucket from "../../data/bucket/pie_chart_bucket.js";
 import {getMaximumPaintValue} from "../query_utils.js";
-import properties from "./pie_chart_style_layer_properties.js";
+import {getLayoutProperties, getPaintProperties} from "./pie_chart_style_layer_properties.js";
 
-import type {Transitionable, Transitioning, Layout, PossiblyEvaluated} from "../properties.js";
+import type {Transitionable, Transitioning, Layout, PossiblyEvaluated,ConfigOptions} from "../properties.js";
 import type {Bucket, BucketParameters} from "../../data/bucket.js";
 import type {LayoutProps, PaintProps} from "./pie_chart_style_layer_properties.js";
 import type {LayerSpecification} from "../../style-spec/types.js";
+import type {LUT} from "../../util/lut";
 
 class PieChartStyleLayer extends StyleLayer {
     override _unevaluatedLayout: Layout<LayoutProps>;
@@ -16,8 +17,12 @@ class PieChartStyleLayer extends StyleLayer {
     override _transitioningPaint: Transitioning<PaintProps>;
     override paint: PossiblyEvaluated<PaintProps>;
 
-    constructor(layer: LayerSpecification) {
-        super(layer, properties, 'pie-chart', null);
+    constructor(layer: LayerSpecification, scope: string, lut: LUT | null, options?: ConfigOptions | null) {
+        const properties = {
+            layout: getLayoutProperties(),
+            paint: getPaintProperties()
+        };
+        super(layer, properties, scope, lut, options);
     }
 
     override getProgramIds(): string[] {

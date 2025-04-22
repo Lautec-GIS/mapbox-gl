@@ -25,8 +25,10 @@ import type Projection from '../../geo/projection/projection';
 import type {FeatureStates} from "../../source/source_state";
 import type {SpritePositions} from "../../util/image";
 import type  PieChartStyleLayer from "../../style/style_layer/pie_chart_style_layer";
-import type {TileFootprint} from "../../../3d-style/util/conflation";
 import type {VectorTileLayer} from "@mapbox/vector-tile";
+import type {TileFootprint} from '../../../3d-style/util/conflation';
+import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
+import type {ImageId} from '../../style-spec/expression/types/image_id';
 
 const EXTENT = 8192;
 
@@ -86,10 +88,13 @@ class PieChartBucket<Layer extends PieChartStyleLayer> implements Bucket {
         this.indexArray = new TriangleIndexArray();
         this.segments = new SegmentVector();
         this.programConfigurations = new ProgramConfigurationSet(options.layers, {
-            zoom: this.zoom,
+            zoom: options.zoom,
             lut: options.lut,
         });
         this.stateDependentLayerIds = this.layers.filter((l) => l.isStateDependent()).map((l) => l.id);
+    }
+
+    updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
     }
 
     populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
@@ -127,7 +132,7 @@ class PieChartBucket<Layer extends PieChartStyleLayer> implements Bucket {
             });
         }
 
-        let globeProjection: Projection | null = null;
+        let globeProjection: Projection | null | undefined = null;
 
         if (tileTransform.projection.name === 'globe') {
             this.globeExtVertexArray = new CircleGlobeExtArray();
@@ -138,14 +143,13 @@ class PieChartBucket<Layer extends PieChartStyleLayer> implements Bucket {
             const {geometry, index, sourceLayerIndex} = bucketFeature;
             const feature = features[index].feature;
 
-            this.addFeature(bucketFeature, geometry, index, options.availableImages, canonical, globeProjection);
+            this.addFeature(bucketFeature, geometry, index, options.availableImages, canonical, globeProjection,options.brightness);
             options.featureIndex.insert(feature, geometry, index, sourceLayerIndex, this.index);
         }
     }
 
-    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: Array<string>, imagePositions: SpritePositions) {
-        if (!this.stateDependentLayers.length) return;
-        this.programConfigurations.updatePaintArrays(states, vtLayer, this.stateDependentLayers, availableImages, imagePositions, false);
+    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
+        this.programConfigurations.updatePaintArrays(states, vtLayer, layers, availableImages, imagePositions, isBrightnessChanged, brightness);
     }
 
     isEmpty(): boolean {
@@ -180,14 +184,23 @@ class PieChartBucket<Layer extends PieChartStyleLayer> implements Bucket {
         }
     }
 
-    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, availableImages: Array<string>, canonical: CanonicalTileID, projection?: Projection | null) {
-
+    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, availableImages: ImageId[], canonical: CanonicalTileID, projection?: Projection | null, brightness?: number | null) {
         for (const ring of geometry) {
             for (const point of ring) {
                 const x = point.x;
                 const y = point.y;
 
+                // Do not include points that are outside the tile boundaries.
                 if (x < 0 || x >= EXTENT || y < 0 || y >= EXTENT) continue;
+
+                // this geometry will be of the Point type, and we'll derive
+                // two triangles from it.
+                //
+                // ┌─────────┐
+                // │ 3     2 │
+                // │         │
+                // │ 0     1 │
+                // └─────────┘
 
                 if (projection) {
                     const projectedPoint = projection.projectTilePoint(x, y, canonical);
@@ -215,10 +228,7 @@ class PieChartBucket<Layer extends PieChartStyleLayer> implements Bucket {
             }
         }
 
-        this.programConfigurations.populatePaintArrays(this.layoutVertexArray.length, feature, index, {}, availableImages, canonical);
-    }
-
-    updateFootprints(id: UnwrappedTileID, footprints: Array<TileFootprint>): void {
+        this.programConfigurations.populatePaintArrays(this.layoutVertexArray.length, feature, index, {}, availableImages, canonical, brightness);
     }
 }
 

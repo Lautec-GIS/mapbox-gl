@@ -2,7 +2,7 @@
  #define NUM_SAMPLES_PER_RING 16
  #define ELEVATION_BIAS 0.0001
 
- attribute vec2 a_pos;
+ in vec2 a_pos;
 
  uniform mat4 u_matrix;
 
@@ -11,7 +11,7 @@
  #pragma mapbox: define highp float mask
 
 
- varying float flags[24];
+ out float flags[24];
 
  float circle_elevation(vec2 pos) {
  #if defined(TERRAIN)

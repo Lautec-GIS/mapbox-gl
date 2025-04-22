@@ -1,4 +1,4 @@
- varying float flags[24];
+ in float flags[24];
  uniform vec4 colors[24];
  uniform float segment_count;
 
