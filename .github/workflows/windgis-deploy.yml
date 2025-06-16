@@ -110,7 +110,7 @@ jobs:
       - name: Create WindGIS package.json
         run: |
           # Create a separate package.json for WindGIS deployment
-          cat > windgis-package.json << EOF
+          cat > package.json << EOF
           {
             "name": "windgis/mapbox-gl",
             "version": "${{ needs.windgis-prepare.outputs.version }}",
@@ -123,7 +123,7 @@ jobs:
             },
             "repository": {
               "type": "git",
-              "url": "https://github.com/your-org-name/your-repo-name.git"
+              "url": "https://github.com/Lautec-GIS/mapbox-gl.git"
             },
             "keywords": ["windgis", "mapbox", "gl", "maps"],
             "license": "BSD-3-Clause",
@@ -136,7 +136,7 @@ jobs:
           EOF
 
       - name: Publish WindGIS to GitHub Packages
-        run: npm publish --registry=https://npm.pkg.github.com windgis-package.json
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
