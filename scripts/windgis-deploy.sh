@@ -16,7 +16,7 @@ npm run windgis-build
 echo "📝 Creating WindGIS package configuration..."
 cat > windgis-package.json << EOF
 {
-  "name": "windgis/mapbox-gl",
+  "name": "@$ORG_NAME/mapbox-gl",
   "version": "$WINDGIS_VERSION",
   "description": "WindGIS version of Mapbox GL JS",
   "main": "dist/mapbox-gl.js",
