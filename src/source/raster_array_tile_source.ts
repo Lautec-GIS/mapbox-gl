@@ -2,8 +2,8 @@ import Texture from '../render/texture';
 import RasterTileSource from './raster_tile_source';
 import {extend} from '../util/util';
 import {RGBAImage} from '../util/image';
-import {ResourceType} from '../util/ajax';
 import {ErrorEvent} from '../util/evented';
+import {ResourceType} from '../util/ajax';
 import RasterStyleLayer from '../style/style_layer/raster_style_layer';
 import RasterParticleStyleLayer from '../style/style_layer/raster_particle_style_layer';
 // Import MRTData as a module with side effects to ensure
@@ -12,14 +12,13 @@ import '../data/mrt_data';
 
 import type Dispatcher from '../util/dispatcher';
 import type RasterArrayTile from './raster_array_tile';
-import type {Map} from '../ui/map';
+import type {Map as MapboxMap} from '../ui/map';
 import type {Evented} from '../util/evented';
-import type {Iconset} from '../style/iconset';
 import type {Callback} from '../types/callback';
-import type {ISource} from './source';
 import type {AJAXError} from '../util/ajax';
 import type {MapboxRasterTile} from '../data/mrt/mrt.esm.js';
 import type {TextureDescriptor} from './raster_array_tile';
+import type {StyleImage, StyleImageMap} from '../style/style_image';
 import type {RasterArraySourceSpecification} from '../style-spec/types';
 import type {WorkerSourceRasterArrayTileRequest} from './worker_source';
 
@@ -37,11 +36,8 @@ import type {WorkerSourceRasterArrayTileRequest} from './worker_source';
  *
  * @see [Example: Create a wind particle animation](https://docs.mapbox.com/mapbox-gl-js/example/raster-particle-layer/)
  */
-class RasterArrayTileSource extends RasterTileSource<'raster-array'> implements ISource {
-    override type: 'raster-array';
-    override map: Map;
-
-    iconsets: Record<string, Iconset>;
+class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
+    override map: MapboxMap;
 
     /**
      * When `true`, the source will only load the tile header
@@ -54,8 +50,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> implements 
         super(id, options, dispatcher, eventedParent);
         this.type = 'raster-array';
         this.maxzoom = 22;
-        this.partial = false;
-        this.iconsets = {};
+        this.partial = true;
         this._options = extend({type: 'raster-array'}, options);
     }
 
@@ -90,15 +85,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> implements 
         tile.requestParams = request;
         if (!tile.actor) tile.actor = this.dispatcher.getActor();
 
-        if (this.partial) {
-            // Load only the tile header in the main thread
-            tile.request = tile.fetchHeader(undefined, done.bind(this));
-        } else {
-            // Load and parse the entire tile in Worker
-            tile.request = tile.actor.send('loadTile', params, done.bind(this), undefined, true);
-        }
-
-        function done(error?: AJAXError | null, data?: MapboxRasterTile, cacheControl?: string, expires?: string) {
+        const done = (error?: AJAXError | null, data?: MapboxRasterTile, cacheControl?: string, expires?: string) => {
             delete tile.request;
 
             if (tile.aborted) {
@@ -120,31 +107,22 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> implements 
             if (this.partial) {
                 tile.state = 'empty';
             } else {
+                if (!data) return callback(null);
+
+                tile.state = 'loaded';
                 tile._isHeaderLoaded = true;
                 tile._mrt = data;
-
-                // Populate iconsets with images
-                for (const iconsetId in this.iconsets) {
-                    const iconset = this.iconsets[iconsetId];
-                    const images = [];
-
-                    for (const layerId in tile._mrt.layers) {
-                        const layer = tile.getLayer(layerId);
-                        if (!layer) continue;
-
-                        for (const bandId of layer.getBandList()) {
-                            const {bytes, tileSize, buffer} = layer.getBandView(bandId);
-                            const size = tileSize + 2 * buffer;
-                            const img = {data: new RGBAImage({width: size, height: size}, bytes), pixelRatio: 1, sdf: false, usvg: false};
-                            images.push({layerId, bandId, img});
-                        }
-                    }
-
-                    iconset.addImages(images);
-                }
             }
 
             callback(null);
+        };
+
+        if (this.partial) {
+            // Load only the tile header in the main thread
+            tile.request = tile.fetchHeader(undefined, done.bind(this));
+        } else {
+            // Load and parse the entire tile in Worker
+            tile.request = tile.actor.send('loadTile', params, done.bind(this), undefined, true);
         }
     }
 
@@ -269,8 +247,40 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> implements 
         return Object.assign({}, tile.textureDescriptor, {texture: tile.texture});
     }
 
-    addIconset(iconsetId: string, iconset: Iconset) {
-        this.iconsets[iconsetId] = iconset;
+    /**
+     * Creates style images from raster array tiles based on the requested image names.
+     * Used by `ImageProvider` to resolve pending image requests.
+     * @private
+     * @param {RasterArrayTile[]} tiles - Array of loaded raster array tiles to extract data from
+     * @param {string[]} imageNames - Array of image names in format "layerId/bandId" to extract
+     * @returns {StyleImageMap<string>} Map of image names to StyleImage objects
+     */
+    getImages(tiles: RasterArrayTile[], imageNames: string[]): StyleImageMap<string> {
+        const styleImages = new Map<string, StyleImage>();
+
+        for (const tile of tiles) {
+            for (const name of imageNames) {
+                const [layerId, bandId] = name.split('/');
+                const layer = tile.getLayer(layerId);
+                if (!layer) continue;
+                if (!layer.hasBand(bandId) || !layer.hasDataForBand(bandId)) continue;
+
+                const {bytes, tileSize, buffer} = layer.getBandView(bandId);
+                const size = tileSize + 2 * buffer;
+
+                const styleImage: StyleImage = {
+                    data: new RGBAImage({width: size, height: size}, bytes),
+                    pixelRatio: 2,
+                    sdf: false,
+                    usvg: false,
+                    version: 0
+                };
+
+                styleImages.set(name, styleImage);
+            }
+        }
+
+        return styleImages;
     }
 }
 

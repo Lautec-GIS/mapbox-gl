@@ -29,13 +29,18 @@ function styleSpecFixtures() {
 
 export default mergeConfig(baseConfig, defineConfig({
     test: {
+        browser: {
+            instances: [
+                {browser: 'chromium'},
+            ],
+        },
         include: ['test/unit/**/*.test.ts'],
         setupFiles: ['test/unit/setup.ts'],
         reporters: process.env.CI ? [
             ['html', {outputFile: './test/unit/vitest/index.html'}],
             ['junit', {outputFile: './test/unit/test-results.xml'}],
-            ['basic']
-        ] : ['basic'],
+            ['default', {summary: false}]
+        ] : [['default', {summary: false}]],
     },
     plugins: [
         styleSpecFixtures()

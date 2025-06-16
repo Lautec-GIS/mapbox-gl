@@ -31,6 +31,7 @@ import type SourceCache from '../source/source_cache';
 import type Painter from '../render/painter';
 import type {LUT} from '../util/lut';
 import type {ImageId} from '../style-spec/expression/types/image_id';
+import type {ProgramName} from '../render/program';
 
 const TRANSITION_SUFFIX = '-transition';
 
@@ -48,7 +49,7 @@ class StyleLayer extends Evented {
     scope: string;
     lut: LUT | null;
     metadata: unknown;
-    type: string;
+    type: LayerSpecification['type'] | 'custom';
     source: string;
     sourceLayer: string | null | undefined;
     slot: string | null | undefined;
@@ -58,12 +59,17 @@ class StyleLayer extends Evented {
     visibility: 'visible' | 'none' | undefined;
     configDependencies: Set<string>;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _unevaluatedLayout: Layout<any>;
-    readonly layout: unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    readonly layout: PossiblyEvaluated<any>;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _transitionablePaint: Transitionable<any>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _transitioningPaint: Transitioning<any>;
-    readonly paint: unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    readonly paint: PossiblyEvaluated<any>;
 
     _featureFilter: FeatureFilter;
     _filterCompiled: boolean;
@@ -71,10 +77,14 @@ class StyleLayer extends Evented {
     options: ConfigOptions | null | undefined;
     _stats: LayerRenderingStats | null | undefined;
 
-    constructor(layer: LayerSpecification | CustomLayerInterface, properties: Readonly<{
-        layout?: Properties<any>;
-        paint?: Properties<any>;
-    }>, scope: string, lut: LUT | null, options?: ConfigOptions | null) {
+    constructor(
+        layer: LayerSpecification | CustomLayerInterface,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        properties: Readonly<{layout?: Properties<any>; paint?: Properties<any>;}>,
+        scope: string,
+        lut: LUT | null,
+        options?: ConfigOptions | null
+    ) {
         super();
 
         this.id = layer.id;
@@ -89,8 +99,6 @@ class StyleLayer extends Evented {
         this.configDependencies = new Set();
 
         if (layer.type === 'custom') return;
-
-        layer = (layer);
 
         this.metadata = layer.metadata;
         this.minzoom = layer.minzoom;
@@ -196,6 +204,7 @@ class StyleLayer extends Evented {
         if (name.endsWith(TRANSITION_SUFFIX)) {
             const propName = name.slice(0, -TRANSITION_SUFFIX.length);
             if (specProps[propName]) { // skip unrecognized properties
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 paint.setTransition(propName, (value as any) || undefined);
             }
             return false;
@@ -226,18 +235,16 @@ class StyleLayer extends Evented {
         // No-op; can be overridden by derived classes.
     }
 
-    getProgramIds(): string[] | null {
+    getProgramIds(): ProgramName[] | null {
         // No-op; can be overridden by derived classes.
         return null;
     }
 
-    // eslint-disable-next-line no-unused-vars
     getDefaultProgramParams(name: string, zoom: number, lut: LUT | null): CreateProgramParams | null {
         // No-op; can be overridden by derived classes.
         return null;
     }
 
-    // eslint-disable-next-line no-unused-vars
     _handleOverridablePaintPropertyUpdate<T, R>(name: string, oldValue: PropertyValue<T, R>, newValue: PropertyValue<T, R>): boolean {
         // No-op; can be overridden by derived classes.
         return false;
@@ -259,13 +266,17 @@ class StyleLayer extends Evented {
 
     recalculate(parameters: EvaluationParameters, availableImages: ImageId[]) {
         if (this._unevaluatedLayout) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (this as any).layout = this._unevaluatedLayout.possiblyEvaluate(parameters, undefined, availableImages);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this as any).paint = this._transitioningPaint.possiblyEvaluate(parameters, undefined, availableImages);
     }
 
     serialize(): LayerSpecification {
+        assert(this.type !== 'custom', 'Custom layers cannot be serialized');
+
         const output = {
             'id': this.id,
             'type': this.type,
@@ -278,7 +289,7 @@ class StyleLayer extends Evented {
             'filter': this.filter,
             'layout': this._unevaluatedLayout && this._unevaluatedLayout.serialize(),
             'paint': this._transitionablePaint && this._transitionablePaint.serialize()
-        };
+        } as LayerSpecification;
 
         return filterObject(output, (value, key) => {
             return value !== undefined &&
@@ -291,6 +302,10 @@ class StyleLayer extends Evented {
     // If 'terrainEnabled' parameter is not provided, then the function
     // should return true if the layer is potentially 3D.
     is3D(terrainEnabled?: boolean): boolean {
+        return false;
+    }
+
+    hasElevation(): boolean {
         return false;
     }
 
@@ -331,7 +346,9 @@ class StyleLayer extends Evented {
     }
 
     isStateDependent(): boolean {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         for (const property in (this as any).paint._values) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const value = (this as any).paint.get(property);
             if (!(value instanceof PossiblyEvaluatedPropertyValue) || !supportsPropertyExpression(value.property.specification)) {
                 continue;

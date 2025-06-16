@@ -6,6 +6,7 @@ import {
     StringType,
     ColorType,
     ResolvedImageType,
+    typeEquals,
 } from '../types';
 import Formatted, {FormattedSection} from '../types/formatted';
 import {toString, typeOf} from '../values';
@@ -46,7 +47,7 @@ export default class FormatExpression implements Expression {
         const sections: Array<FormattedSectionExpression> = [];
         let nextTokenMayBeObject = false;
         for (let i = 1; i <= args.length - 1; ++i) {
-            const arg = (args[i] as any);
+            const arg = args[i];
 
             if (nextTokenMayBeObject && typeof arg === "object" && !Array.isArray(arg)) {
                 nextTokenMayBeObject = false;
@@ -92,7 +93,7 @@ export default class FormatExpression implements Expression {
     evaluate(ctx: EvaluationContext): Formatted {
         const evaluateSection = (section: FormattedSectionExpression) => {
             const evaluatedContent = section.content.evaluate(ctx);
-            if (typeOf(evaluatedContent) === ResolvedImageType) {
+            if (typeEquals(typeOf(evaluatedContent), ResolvedImageType)) {
                 return new FormattedSection('', evaluatedContent, null, null, null);
             }
 

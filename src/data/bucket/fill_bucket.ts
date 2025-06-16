@@ -12,9 +12,14 @@ import {hasPattern, addPatternDependencies} from './pattern_bucket_features';
 import loadGeometry from '../load_geometry';
 import toEvaluationFeature from '../evaluation_feature';
 import EvaluationParameters from '../../style/evaluation_parameters';
-import {ElevationFeatureSampler, type ElevationFeature, type Range} from '../../../3d-style/elevation/elevation_feature';
-import {MARKUP_ELEVATION_BIAS, PROPERTY_ELEVATION_ID, PROPERTY_ELEVATION_ROAD_BASE_Z_LEVEL} from '../../../3d-style/elevation/elevation_constants';
-import {ElevatedStructures} from '../../../3d-style/elevation/elevated_structures';
+import {EdgeIterator, ElevationFeatures, ElevationFeatureSampler, type ElevationFeature, type Range} from '../../../3d-style/elevation/elevation_feature';
+import {ELEVATION_CLIP_MARGIN, MARKUP_ELEVATION_BIAS, PROPERTY_ELEVATION_ROAD_BASE_Z_LEVEL} from '../../../3d-style/elevation/elevation_constants';
+import {ElevatedStructures, type FeatureInfo} from '../../../3d-style/elevation/elevated_structures';
+import Point from '@mapbox/point-geometry';
+import {tileToMeter} from '../../geo/mercator_coordinate';
+import {clip, polygonSubdivision} from '../../util/polygon_clipping';
+import EXTENT from '../../style-spec/data/extent';
+import {computeBounds} from '../../style-spec/util/geometry_util';
 
 import type {CanonicalTileID, UnwrappedTileID} from '../../source/tile_id';
 import type {
@@ -35,9 +40,9 @@ import type {TileTransform} from '../../geo/projection/tile_transform';
 import type {VectorTileLayer} from '@mapbox/vector-tile';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
-import type Point from '@mapbox/point-geometry';
 import type {ElevationPolygons, ElevationPortalGraph} from '../../../3d-style/elevation/elevation_graph';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
+import type {LUT} from '../../util/lut';
 
 class FillBufferData {
     layoutVertexArray: FillLayoutArray;
@@ -74,8 +79,8 @@ class FillBufferData {
         }
     }
 
-    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
-        this.programConfigurations.updatePaintArrays(states, vtLayer, layers, availableImages, imagePositions, isBrightnessChanged, brightness);
+    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: ReadonlyArray<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null, worldview?: string) {
+        this.programConfigurations.updatePaintArrays(states, vtLayer, layers, availableImages, imagePositions, isBrightnessChanged, brightness, worldview);
     }
 
     isEmpty(): boolean {
@@ -114,8 +119,8 @@ class FillBufferData {
         this.lineSegments.destroy();
     }
 
-    populatePaintArrays(feature: BucketFeature, index: number, imagePositions: SpritePositions, availableImages: ImageId[], canonical: CanonicalTileID, brightness?: number | null) {
-        this.programConfigurations.populatePaintArrays(this.layoutVertexArray.length, feature, index, imagePositions, availableImages, canonical, brightness);
+    populatePaintArrays(feature: BucketFeature, index: number, imagePositions: SpritePositions, availableImages: ImageId[], canonical: CanonicalTileID, brightness?: number | null, worldview?: string) {
+        this.programConfigurations.populatePaintArrays(this.layoutVertexArray.length, feature, index, imagePositions, availableImages, canonical, brightness, undefined, worldview);
     }
 }
 
@@ -124,6 +129,7 @@ interface ElevationParams {
     elevationSampler: ElevationFeatureSampler;
     bias: number;
     index: number;
+    featureInfo: FeatureInfo;
 }
 
 class FillBucket implements Bucket {
@@ -136,6 +142,7 @@ class FillBucket implements Bucket {
     stateDependentLayers: Array<FillStyleLayer>;
     stateDependentLayerIds: Array<string>;
     patternFeatures: Array<BucketFeature>;
+    lut: LUT | null;
 
     bufferData: FillBufferData;
     elevationBufferData: FillBufferData;
@@ -148,6 +155,10 @@ class FillBucket implements Bucket {
     elevationMode: 'none' | 'hd-road-base' | 'hd-road-markup';
     elevatedStructures: ElevatedStructures | undefined;
 
+    sourceLayerIndex: number;
+
+    worldview: string;
+
     constructor(options: BucketParameters<FillStyleLayer>) {
         this.zoom = options.zoom;
         this.pixelRatio = options.pixelRatio;
@@ -157,6 +168,7 @@ class FillBucket implements Bucket {
         this.index = options.index;
         this.hasPattern = false;
         this.patternFeatures = [];
+        this.lut = options.lut;
 
         this.bufferData = new FillBufferData(options, false);
         this.elevationBufferData = new FillBufferData(options, true);
@@ -165,6 +177,10 @@ class FillBucket implements Bucket {
         this.projection = options.projection;
 
         this.elevationMode = this.layers[0].layout.get('fill-elevation-reference');
+
+        this.sourceLayerIndex = options.sourceLayerIndex;
+
+        this.worldview = options.worldview;
     }
 
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
@@ -179,7 +195,7 @@ class FillBucket implements Bucket {
             const needGeometry = this.layers[0]._featureFilter.needGeometry;
             const evaluationFeature = toEvaluationFeature(feature, needGeometry);
 
-            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom), evaluationFeature, canonical))
+            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview}), evaluationFeature, canonical))
                 continue;
 
             const sortKey = fillSortKey ?
@@ -225,9 +241,12 @@ class FillBucket implements Bucket {
         }
     }
 
-    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
-        this.bufferData.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness);
-        this.elevationBufferData.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness);
+    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: ReadonlyArray<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
+        this.bufferData.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness, this.worldview);
+        this.elevationBufferData.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness, this.worldview);
+        if (this.elevatedStructures) {
+            this.elevatedStructures.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness, this.worldview);
+        }
     }
 
     addFeatures(options: PopulateParameters, canonical: CanonicalTileID, imagePositions: SpritePositions, availableImages: ImageId[], _: TileTransform, brightness?: number | null) {
@@ -268,8 +287,8 @@ class FillBucket implements Bucket {
         } else {
             this.addGeometry(polygons, this.bufferData);
         }
-        this.bufferData.populatePaintArrays(feature, index, imagePositions, availableImages, canonical, brightness);
-        this.elevationBufferData.populatePaintArrays(feature, index, imagePositions, availableImages, canonical, brightness);
+        this.bufferData.populatePaintArrays(feature, index, imagePositions, availableImages, canonical, brightness, this.worldview);
+        this.elevationBufferData.populatePaintArrays(feature, index, imagePositions, availableImages, canonical, brightness, this.worldview);
     }
 
     getUnevaluatedPortalGraph(): ElevationPortalGraph | undefined {
@@ -280,9 +299,10 @@ class FillBucket implements Bucket {
         return this.elevatedStructures ? this.elevatedStructures.portalPolygons : undefined;
     }
 
-    setEvaluatedPortalGraph(graph: ElevationPortalGraph) {
+    setEvaluatedPortalGraph(graph: ElevationPortalGraph, vtLayer: VectorTileLayer, canonical: CanonicalTileID, availableImages: ImageId[], brightness: number) {
         if (this.elevatedStructures) {
             this.elevatedStructures.construct(graph);
+            this.elevatedStructures.populatePaintArrays(vtLayer, canonical, availableImages, brightness, this.worldview);
         }
     }
 
@@ -297,20 +317,26 @@ class FillBucket implements Bucket {
 
         // Layers using vector sources should always use the precomputed elevation.
         // In case of geojson sources the elevation snapshot will be used instead
-        const tiledElevation = this.getElevationFeature(feature, elevationFeatures);
+        const tiledElevation = ElevationFeatures.getElevationFeature(feature, elevationFeatures);
         if (tiledElevation) {
-            elevatedGeometry.push({polygons, elevationFeature: tiledElevation, elevationTileID: canonical});
+            const clipped = this.clipPolygonsToTile(polygons, ELEVATION_CLIP_MARGIN);
+            if (clipped.length > 0) {
+                elevatedGeometry.push({polygons: clipped, elevationFeature: tiledElevation, elevationTileID: canonical});
+            }
         } else {
             // No elevation data available at all
             this.addGeometry(polygons, this.bufferData);
             return;
         }
 
+        const constructBridgeGuardRail = this.layers[0].layout.get('fill-construct-bridge-guard-rail').evaluate(feature, {}, canonical);
+        const featureInfo: FeatureInfo = {guardRailEnabled: constructBridgeGuardRail, featureIndex: index};
+
         for (const elevated of elevatedGeometry) {
             if (elevated.elevationFeature) {
                 if (this.elevationMode === 'hd-road-base') {
                     if (!this.elevatedStructures) {
-                        this.elevatedStructures = new ElevatedStructures(elevated.elevationTileID);
+                        this.elevatedStructures = new ElevatedStructures(elevated.elevationTileID, this.layers, this.zoom, this.lut);
                     }
 
                     const isTunnel = elevated.elevationFeature.isTunnel();
@@ -332,24 +358,28 @@ class FillBucket implements Bucket {
                     }
                 }
 
+                if (elevated.elevationFeature.constantHeight == null) {
+                    elevated.polygons = this.prepareElevatedPolygons(elevated.polygons, elevated.elevationFeature, elevated.elevationTileID);
+                }
+
                 const elevationSampler = new ElevationFeatureSampler(canonical, elevated.elevationTileID);
 
                 if (this.elevationMode === 'hd-road-base') {
-                    this.addElevatedGeometry(elevated.polygons, elevationSampler, elevated.elevationFeature, 0.0, index);
+                    this.addElevatedGeometry(elevated.polygons, elevationSampler, elevated.elevationFeature, 0.0, index, featureInfo);
                 } else {
                     // Apply slight height bias to "markup" polygons to remove z-fighting
-                    this.addElevatedGeometry(elevated.polygons, elevationSampler, elevated.elevationFeature, MARKUP_ELEVATION_BIAS, index);
+                    this.addElevatedGeometry(elevated.polygons, elevationSampler, elevated.elevationFeature, MARKUP_ELEVATION_BIAS, index, featureInfo);
                 }
             }
         }
     }
 
-    private addElevatedGeometry(polygons: Point[][][], elevationSampler: ElevationFeatureSampler, elevation: ElevationFeature, bias: number, index: number) {
-        const elevationParams = <ElevationParams>{elevation, elevationSampler, bias, index};
+    private addElevatedGeometry(polygons: Point[][][], elevationSampler: ElevationFeatureSampler, elevation: ElevationFeature, bias: number, index: number, featureInfo: FeatureInfo) {
+        const elevationParams: ElevationParams = {elevation, elevationSampler, bias, index, featureInfo};
         const [min, max] = this.addGeometry(polygons, this.elevationBufferData, elevationParams);
 
         if (this.elevationBufferData.heightRange == null) {
-            this.elevationBufferData.heightRange = <Range>{min, max};
+            this.elevationBufferData.heightRange = {min, max} as Range;
         } else {
             this.elevationBufferData.heightRange.min = Math.min(this.elevationBufferData.heightRange.min, min);
             this.elevationBufferData.heightRange.max = Math.max(this.elevationBufferData.heightRange.max, max);
@@ -449,7 +479,7 @@ class FillBucket implements Bucket {
                     triangleIndex + indices[i + 2]);
             }
 
-            if (elevationParams && this.elevationMode === 'hd-road-base') {
+            if (indices.length > 0 && elevationParams && this.elevationMode === 'hd-road-base') {
                 const isTunnel = elevationParams.elevation.isTunnel();
                 const safeArea = elevationParams.elevation.safeArea;
                 const vOffset = this.elevatedStructures.addVertices(points, heights);
@@ -459,11 +489,11 @@ class FillBucket implements Bucket {
                 if (ringCount > 0) {
                     for (let i = 0; i < ringCount - 1; i++) {
                         this.elevatedStructures.addRenderableRing(
-                            elevationParams.index, ringVertexOffsets[i] + vOffset, ringVertexOffsets[i + 1] - ringVertexOffsets[i], isTunnel, safeArea
+                            elevationParams.index, ringVertexOffsets[i] + vOffset, ringVertexOffsets[i + 1] - ringVertexOffsets[i], isTunnel, safeArea, elevationParams.featureInfo
                         );
                     }
                     this.elevatedStructures.addRenderableRing(
-                        elevationParams.index, ringVertexOffsets[ringCount - 1] + vOffset, points.length - ringVertexOffsets[ringCount - 1], isTunnel, safeArea
+                        elevationParams.index, ringVertexOffsets[ringCount - 1] + vOffset, points.length - ringVertexOffsets[ringCount - 1], isTunnel, safeArea, elevationParams.featureInfo
                     );
                 }
             }
@@ -475,13 +505,56 @@ class FillBucket implements Bucket {
         return [min, max];
     }
 
-    private getElevationFeature(feature: BucketFeature, elevationFeatures?: ElevationFeature[]): ElevationFeature | undefined {
-        if (!elevationFeatures) return undefined;
+    private prepareElevatedPolygons(polygons: Point[][][], elevation: ElevationFeature, tileID: CanonicalTileID): Point[][][] {
+        // Subdivide the polygon along the assigned elevation curve
+        const metersToTile = 1.0 / tileToMeter(tileID);
+        const clippedPolygons: Point[][][] = [];
 
-        const value = +feature.properties[PROPERTY_ELEVATION_ID];
-        if (value == null) return undefined;
+        for (const poly of polygons) {
+            const clippedPoly = polygonSubdivision(poly, new EdgeIterator(elevation, metersToTile));
+            clippedPolygons.push(...clippedPoly);
+        }
 
-        return elevationFeatures.find(f => f.id === value);
+        return clippedPolygons;
+    }
+
+    private clipPolygonsToTile(polygons: Point[][][], margin: number): Point[][][] {
+        const minX = -margin;
+        const minY = -margin;
+        const maxX = EXTENT + margin;
+        const maxY = EXTENT + margin;
+
+        // Find polygons potentially intersecting with boundaries and hence requiring clipping
+        let clipIdx = 0;
+        const noClippingGroup: Point[][][] = [];
+        const clippingGroup: Point[][][] = [];
+
+        for (; clipIdx < polygons.length; clipIdx++) {
+            const polygon = polygons[clipIdx];
+            assert(polygon.length > 0);
+
+            const bounds = computeBounds(polygon);
+            const noClipping = bounds.min.x >= minX && bounds.max.x <= maxX && bounds.min.y >= minY && bounds.max.y <= maxY;
+            const dst = noClipping ? noClippingGroup : clippingGroup;
+            dst.push(polygon);
+        }
+
+        if (noClippingGroup.length === polygons.length) return polygons;
+
+        const clipPoly = [
+            new Point(minX, minY),
+            new Point(maxX, minY),
+            new Point(maxX, maxY),
+            new Point(minX, maxY),
+            new Point(minX, minY)
+        ];
+
+        const clippedPolygons = noClippingGroup;
+        for (const poly of clippingGroup) {
+            clippedPolygons.push(...clip(poly, clipPoly));
+        }
+
+        return clippedPolygons;
     }
 }
 

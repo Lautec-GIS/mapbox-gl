@@ -17,18 +17,10 @@ function glsl(include: string[]) {
 
 export default defineConfig({
     test: {
-        pool: 'threads',
-        poolOptions: {
-            threads: {
-                isolate: false,
-                useAtomics: true,
-                singleThread: true
-            }
-        },
+        pool: 'forks',
         retry: process.env.CI ? 2 : 0,
         testTimeout: 5_000,
         browser: {
-            name: 'chromium',
             provider: 'playwright',
             enabled: true,
             headless: true,

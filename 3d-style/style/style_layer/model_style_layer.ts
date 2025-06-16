@@ -25,8 +25,11 @@ import type {VectorTileFeature} from '@mapbox/vector-tile';
 import type {CanonicalTileID} from '../../../src/source/tile_id';
 import type {LUT} from "../../../src/util/lut";
 import type {EvaluationFeature} from '../../../src/data/evaluation_feature';
+import type {ProgramName} from '../../../src/render/program';
 
 class ModelStyleLayer extends StyleLayer {
+    override type: 'model';
+
     override _transitionablePaint: Transitionable<PaintProps>;
     override _transitioningPaint: Transitioning<PaintProps>;
     override paint: PossiblyEvaluated<PaintProps>;
@@ -39,14 +42,14 @@ class ModelStyleLayer extends StyleLayer {
             paint: getPaintProperties()
         };
         super(layer, properties, scope, lut, options);
-        this._stats = {numRenderedVerticesInShadowPass : 0, numRenderedVerticesInTransparentPass: 0};
+        this._stats = {numRenderedVerticesInShadowPass: 0, numRenderedVerticesInTransparentPass: 0};
     }
 
     createBucket(parameters: BucketParameters<ModelStyleLayer>): ModelBucket {
         return new ModelBucket(parameters);
     }
 
-    override getProgramIds(): Array<string> {
+    override getProgramIds(): ProgramName[] {
         return ['model'];
     }
 
@@ -124,7 +127,7 @@ class ModelStyleLayer extends StyleLayer {
                     if (transform.projection.name === 'globe') {
                         matrix = convertModelMatrixForGlobe(matrix, transform);
                     }
-                    const worldViewProjection = mat4.multiply([] as any, transform.projMatrix, matrix);
+                    const worldViewProjection = mat4.multiply([] as unknown as mat4, transform.projMatrix, matrix);
                     // Collision checks are performed in screen space. Corners are in ndc space.
                     const screenQuery = queryGeometry.queryGeometry;
                     const projectedQueryGeometry = screenQuery.isPointQuery() ? screenQuery.screenBounds : screenQuery.screenGeometry;
@@ -174,7 +177,7 @@ function tileToLngLat(id: CanonicalTileID, position: LngLat, pointX: number, poi
 export function loadMatchingModelFeature(bucket: Tiled3dModelBucket, featureIndex: number, tilespaceGeometry: TilespaceQueryGeometry, transform: Transform): {feature: EvaluationFeature, intersectionZ: number, position: LngLat} | undefined {
     const nodeInfo = bucket.getNodesInfo()[featureIndex];
 
-    if (nodeInfo.hiddenByReplacement || !nodeInfo.node.meshes) return;
+    if (!nodeInfo || nodeInfo.hiddenByReplacement || !nodeInfo.node.meshes) return;
 
     let intersectionZ = Number.MAX_VALUE;
 

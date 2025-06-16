@@ -30,6 +30,7 @@ import type {GridIndex} from '../../../src/types/grid-index';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {FeatureStates} from '../../../src/source/source_state';
 import type {FeatureState} from '../../../src/style-spec/expression/index';
+import type {PossiblyEvaluatedValue} from '../../../src/style/properties';
 
 const lookup = new Float32Array(512 * 512);
 const passLookup = new Uint8Array(512 * 512);
@@ -79,6 +80,7 @@ export class Tiled3dModelFeature {
     feature: EvaluationFeature;
     evaluatedColor: Array<vec4>;
     evaluatedRMEA: Array<vec4>;
+    evaluatedTranslation: [number, number, number];
     evaluatedScale: [number, number, number];
     hiddenByReplacement: boolean;
     hasTranslucentParts: boolean;
@@ -97,12 +99,13 @@ export class Tiled3dModelFeature {
             [1, 0, 0, 1],   // lamp
             [1, 0, 0, 1]];  // logo
         this.hiddenByReplacement = false;
+        this.evaluatedTranslation = [0, 0, 0];
         this.evaluatedScale = [1, 1, 1];
         this.evaluatedColor = [];
         this.emissionHeightBasedParams = [];
         this.cameraCollisionOpacity = 1;
         // Needs to calculate geometry
-        this.feature = {type: 'Point', id: node.id, geometry: [], properties: {'height' : getNodeHeight(node)}};
+        this.feature = {type: 'Point', id: node.id, geometry: [], properties: {'height': getNodeHeight(node)}};
         this.aabb = this._getLocalBounds();
         this.state = null;
     }
@@ -147,6 +150,7 @@ class Tiled3dModelBucket implements Bucket {
     needsUpload: boolean;
     states: FeatureStates;
     filter: FeatureFilter | null;
+    worldview: string | undefined;
     constructor(
         layers: Array<ModelStyleLayer>,
         nodes: Array<ModelNode>,
@@ -155,6 +159,7 @@ class Tiled3dModelBucket implements Bucket {
         hasMeshoptCompression: boolean,
         brightness: number | null | undefined,
         featureIndex: FeatureIndex,
+        worldview: string | undefined,
     ) {
         this.id = id;
         this.layers = layers;
@@ -175,6 +180,7 @@ class Tiled3dModelBucket implements Bucket {
         this.replacementUpdateTime = 0;
         this.elevationReadFromZ = 0xff; // Re-read if underlying DEM zoom changes.
         this.brightness = brightness;
+        this.worldview = worldview;
         this.dirty = true;
         this.needsUpload = false;
         this.filter = null;
@@ -279,7 +285,7 @@ class Tiled3dModelBucket implements Bucket {
         return false;
     }
 
-    evaluateScale(painter: Painter, layer: ModelStyleLayer) {
+    evaluateTransform(painter: Painter, layer: ModelStyleLayer) {
         if (painter.transform.zoom === this.zoom) return;
         this.zoom = painter.transform.zoom;
         const nodesInfo = this.getNodesInfo();
@@ -287,6 +293,7 @@ class Tiled3dModelBucket implements Bucket {
         for (const nodeInfo of nodesInfo) {
             const evaluationFeature = nodeInfo.feature;
 
+            nodeInfo.evaluatedTranslation = layer.paint.get('model-translation').evaluate(evaluationFeature, {}, canonical);
             nodeInfo.evaluatedScale = layer.paint.get('model-scale').evaluate(evaluationFeature, {}, canonical);
         }
     }
@@ -312,7 +319,7 @@ class Tiled3dModelBucket implements Bucket {
                         evaluationFeature.properties['part'] = part;
                     }
 
-                    const color = layer.paint.get('model-color').evaluate(evaluationFeature, state, canonical).toRenderColor(null);
+                    const color = layer.paint.get('model-color').evaluate(evaluationFeature, state, canonical).toPremultipliedRenderColor(null);
 
                     const colorMixIntensity = layer.paint.get('model-color-mix-intensity').evaluate(evaluationFeature, state, canonical);
                     nodeInfo.evaluatedColor[i] = [color.r, color.g, color.b, colorMixIntensity];
@@ -338,6 +345,7 @@ class Tiled3dModelBucket implements Bucket {
                 nodeInfo.evaluatedRMEA[0][2] = layer.paint.get('model-emissive-strength').evaluate(evaluationFeature, state, canonical);
             }
 
+            nodeInfo.evaluatedTranslation = layer.paint.get('model-translation').evaluate(evaluationFeature, state, canonical);
             nodeInfo.evaluatedScale = layer.paint.get('model-scale').evaluate(evaluationFeature, state, canonical);
             if (!this.updatePbrBuffer(nodeInfo.node)) {
                 this.needsUpload = true;
@@ -544,7 +552,7 @@ class Tiled3dModelBucket implements Bucket {
     getNodesInfo(): Array<Tiled3dModelFeature> {
         if (this.filter) {
             return this.nodesInfo.filter((node) => {
-                return this.filter.filter(new EvaluationParameters(this.id.overscaledZ), node.feature, this.id.canonical);
+                return this.filter.filter(new EvaluationParameters(this.id.overscaledZ, {worldview: this.worldview}), node.feature, this.id.canonical);
             });
         }
         return this.nodesInfo;
@@ -570,13 +578,11 @@ class Tiled3dModelBucket implements Bucket {
 
         this.replacementUpdateTime = source.updateTime;
         const activeReplacements = source.getReplacementRegionsForTile(coord.toUnwrapped());
-        const nodesInfo = this.getNodesInfo();
 
-        for (let i = 0; i < this.nodesInfo.length; i++) {
-            const node = nodesInfo[i].node;
-
+        for (const nodeInfo of this.getNodesInfo()) {
+            const footprint = nodeInfo.node.footprint;
             // Node is visible if its footprint passes the replacement check
-            nodesInfo[i].hiddenByReplacement = !!node.footprint && !activeReplacements.find(region => region.footprint === node.footprint);
+            nodeInfo.hiddenByReplacement = !!footprint && !activeReplacements.find(region => region.footprint === footprint);
         }
     }
 
@@ -586,15 +592,13 @@ class Tiled3dModelBucket implements Bucket {
         hidden: boolean;
         verticalScale: number;
     } | null | undefined {
-        const nodesInfo = this.getNodesInfo();
         const candidates = [];
 
         const tmpVertex = [0, 0, 0];
 
-        const nodeInverse = mat4.identity([] as any);
+        const nodeInverse = mat4.identity([] as unknown as mat4);
 
-        for (let i = 0; i < this.nodesInfo.length; i++) {
-            const nodeInfo = nodesInfo[i];
+        for (const nodeInfo of this.getNodesInfo()) {
             assert(nodeInfo.node.meshes.length > 0);
             const mesh = nodeInfo.node.meshes[0];
             const meshAabb = mesh.transformedAabb;
@@ -626,9 +630,14 @@ class Tiled3dModelBucket implements Bucket {
     }
 }
 
-function expressionRequiresReevaluation(e: any, brightnessChanged: boolean): boolean {
+function expressionRequiresReevaluation<T>(e: PossiblyEvaluatedValue<T>, brightnessChanged: boolean): boolean {
     assert(e.kind === 'constant' || e instanceof ZoomConstantExpression);
-    return !e.isLightConstant && brightnessChanged;
+
+    if (e instanceof ZoomConstantExpression) {
+        return !e.isLightConstant && brightnessChanged;
+    }
+
+    return false;
 }
 
 function encodeEmissionToByte(emission: number) {

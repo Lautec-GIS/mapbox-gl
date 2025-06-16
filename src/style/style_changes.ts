@@ -1,6 +1,6 @@
 import {ImageId} from '../style-spec/expression/types/image_id';
 
-import type StyleLayer from './style_layer';
+import type {TypedStyleLayer} from './style_layer/typed_style_layer';
 import type {StringifiedImageId} from '../style-spec/expression/types/image_id';
 
 /**
@@ -13,11 +13,13 @@ class StyleChanges {
     };
     _removedLayers: {
         [_: string]: {
-            [_: string]: StyleLayer;
+            [_: string]: TypedStyleLayer;
         };
     };
     _updatedPaintProps: Set<string>;
-    _updatedImages: Set<StringifiedImageId>;
+    _updatedImages: {
+        [_: string]: Set<StringifiedImageId>;
+    };
     _updatedSourceCaches: {
         [_: string]: 'clear' | 'reload';
     };
@@ -31,7 +33,7 @@ class StyleChanges {
         this._updatedSourceCaches = {};
         this._updatedPaintProps = new Set();
 
-        this._updatedImages = new Set();
+        this._updatedImages = {};
     }
 
     isDirty(): boolean {
@@ -71,9 +73,9 @@ class StyleChanges {
 
     /**
      * Mark a layer as having changes and needs to be rerendered.
-     * @param {StyleLayer} layer
+     * @param {TypedStyleLayer} layer
      */
-    updateLayer(layer: StyleLayer) {
+    updateLayer(layer: TypedStyleLayer) {
         const scope = layer.scope;
         this._updatedLayers[scope] = this._updatedLayers[scope] || new Set();
         this._updatedLayers[scope].add(layer.id);
@@ -82,9 +84,9 @@ class StyleChanges {
 
     /**
      * Mark a layer as having been removed and needing to be cleaned up.
-     * @param {StyleLayer} layer
+     * @param {TypedStyleLayer} layer
      */
-    removeLayer(layer: StyleLayer) {
+    removeLayer(layer: TypedStyleLayer) {
         const scope = layer.scope;
         this._removedLayers[scope] = this._removedLayers[scope] || {};
         this._updatedLayers[scope] = this._updatedLayers[scope] || new Set();
@@ -98,18 +100,18 @@ class StyleChanges {
 
     /**
      * Returns StyleLayer if layer needs to be removed.
-     * @param {StyleLayer} layer
+     * @param {TypedStyleLayer} layer
      */
-    getRemovedLayer(layer: StyleLayer): StyleLayer | null | undefined {
+    getRemovedLayer(layer: TypedStyleLayer): TypedStyleLayer | null | undefined {
         if (!this._removedLayers[layer.scope]) return null;
         return this._removedLayers[layer.scope][layer.id];
     }
 
     /**
      * Eliminate layer from the list of layers that need to be removed.
-     * @param {StyleLayer} layer
+     * @param {TypedStyleLayer} layer
      */
-    discardLayerRemoval(layer: StyleLayer) {
+    discardLayerRemoval(layer: TypedStyleLayer) {
         if (!this._removedLayers[layer.scope]) return;
         delete this._removedLayers[layer.scope][layer.id];
     }
@@ -124,6 +126,7 @@ class StyleChanges {
             removedIds?: Array<string>;
         };
         } {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const updatesByScope: Record<string, any> = {};
 
         for (const scope in this._updatedLayers) {
@@ -145,28 +148,31 @@ class StyleChanges {
 
     /**
      * Mark a layer as having a changed paint properties.
-     * @param {StyleLayer} layer
+     * @param {TypedStyleLayer} layer
      */
-    updatePaintProperties(layer: StyleLayer) {
+    updatePaintProperties(layer: TypedStyleLayer) {
         this._updatedPaintProps.add(layer.fqid);
         this.setDirty();
     }
 
-    getUpdatedImages(): StringifiedImageId[] {
-        return Array.from(this._updatedImages.values());
+    getUpdatedImages(scope: string): StringifiedImageId[] {
+        return this._updatedImages[scope] ? Array.from(this._updatedImages[scope].values()) : [];
     }
 
     /**
      * Mark an image as having changes.
      * @param {ImageId} id
      */
-    updateImage(id: ImageId) {
-        this._updatedImages.add(ImageId.toString(id));
+    updateImage(id: ImageId, scope: string) {
+        this._updatedImages[scope] = this._updatedImages[scope] || new Set();
+        this._updatedImages[scope].add(ImageId.toString(id));
         this.setDirty();
     }
 
-    resetUpdatedImages() {
-        this._updatedImages.clear();
+    resetUpdatedImages(scope: string) {
+        if (this._updatedImages[scope]) {
+            this._updatedImages[scope].clear();
+        }
     }
 
     /**
@@ -181,7 +187,7 @@ class StyleChanges {
         this._updatedSourceCaches = {};
         this._updatedPaintProps.clear();
 
-        this._updatedImages.clear();
+        this._updatedImages = {};
     }
 }
 

@@ -146,6 +146,7 @@
       "doc": "A collection of icon sets",
       "sdk-support": {
         "basic functionality": {
+          "js": "3.11.0",
           "android": "11.11.0",
           "ios": "11.11.0"
         }
@@ -501,6 +502,7 @@
           "zoom"
         ]
       },
+      "use-theme": true,
       "transition": true,
       "doc": "Color of the directional light.",
       "sdk-support": {
@@ -603,6 +605,7 @@
           "zoom"
         ]
       },
+      "use-theme": true,
       "transition": true,
       "doc": "Color of the ambient light.",
       "sdk-support": {
@@ -707,6 +710,7 @@
           "zoom"
         ]
       },
+      "use-theme": true,
       "transition": true,
       "doc": "Color tint for lighting extruded geometries.",
       "sdk-support": {
@@ -833,6 +837,17 @@
       ],
       "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`. When this property is included in a source, no tiles outside of the given bounds are requested by Mapbox GL."
     },
+    "extra_bounds": {
+      "type": "array",
+      "value": {
+        "type": "array",
+        "value": "number",
+        "length": 4,
+        "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`."
+      },
+      "experimental": true,
+      "doc": "An array of additional discrete geographic regions where tiles are available. When used alongside the `bounds` property, these regions act as an additional filter - Mapbox GL will only request tiles that are both within the `bounds` and any of the regions defined in `extra_bounds`. When used independently (without `bounds`), Mapbox GL will request tiles that fall within any of the regions in `extra_bounds`. This allows for more fine-grained control over tile requests, particularly when dealing with sparse data coverage."
+    },
     "scheme": {
       "type": "enum",
       "values": {
@@ -911,6 +926,17 @@
         85.051129
       ],
       "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`. When this property is included in a source, no tiles outside of the given bounds are requested by Mapbox GL."
+    },
+    "extra_bounds": {
+      "type": "array",
+      "value": {
+        "type": "array",
+        "value": "number",
+        "length": 4,
+        "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`."
+      },
+      "experimental": true,
+      "doc": "An array of additional discrete geographic regions where tiles are available. When used alongside the `bounds` property, these regions act as an additional filter - Mapbox GL will only request tiles that are both within the `bounds` and any of the regions defined in `extra_bounds`. When used independently (without `bounds`), Mapbox GL will request tiles that fall within any of the regions in `extra_bounds`. This allows for more fine-grained control over tile requests, particularly when dealing with sparse data coverage."
     },
     "minzoom": {
       "type": "number",
@@ -993,6 +1019,17 @@
       ],
       "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`. When this property is included in a source, no tiles outside of the given bounds are requested by Mapbox GL."
     },
+    "extra_bounds": {
+      "type": "array",
+      "value": {
+        "type": "array",
+        "value": "number",
+        "length": 4,
+        "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`."
+      },
+      "experimental": true,
+      "doc": "An array of additional discrete geographic regions where tiles are available. When used alongside the `bounds` property, these regions act as an additional filter - Mapbox GL will only request tiles that are both within the `bounds` and any of the regions defined in `extra_bounds`. When used independently (without `bounds`), Mapbox GL will request tiles that fall within any of the regions in `extra_bounds`. This allows for more fine-grained control over tile requests, particularly when dealing with sparse data coverage."
+    },
     "minzoom": {
       "type": "number",
       "default": 0,
@@ -1074,6 +1111,17 @@
         85.051129
       ],
       "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`. When this property is included in a source, no tiles outside of the given bounds are requested by Mapbox GL."
+    },
+    "extra_bounds": {
+      "type": "array",
+      "value": {
+        "type": "array",
+        "value": "number",
+        "length": 4,
+        "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`."
+      },
+      "experimental": true,
+      "doc": "An array of additional discrete geographic regions where tiles are available. When used alongside the `bounds` property, these regions act as an additional filter - Mapbox GL will only request tiles that are both within the `bounds` and any of the regions defined in `extra_bounds`. When used independently (without `bounds`), Mapbox GL will request tiles that fall within any of the regions in `extra_bounds`. This allows for more fine-grained control over tile requests, particularly when dealing with sparse data coverage."
     },
     "minzoom": {
       "type": "number",
@@ -1377,6 +1425,13 @@
             }
           }
         },
+        "building": {
+          "doc": "A procedural 3D building.",
+          "sdk-support": {
+          },
+          "experimental": true,
+          "private": true
+        },
         "raster": {
           "doc": "Raster map textures such as satellite imagery.",
           "sdk-support": {
@@ -1519,6 +1574,7 @@
     "layout_circle",
     "layout_heatmap",
     "layout_fill-extrusion",
+    "layout_building",
     "layout_symbol",
     "layout_raster",
     "layout_raster-particle",
@@ -1809,11 +1865,13 @@
       "sdk-support": {
         "basic functionality": {
             "android": "11.11.0",
-            "ios": "11.11.0"
+            "ios": "11.11.0",
+            "js": "3.14.0"
         },
         "data-driven styling": {
           "android": "11.11.0",
-          "ios": "11.11.0"
+          "ios": "11.11.0",
+          "js": "3.14.0"
         }
       },
       "expression": {
@@ -1868,7 +1926,8 @@
       "sdk-support": {
         "basic functionality": {
           "android": "11.11.0",
-          "ios": "11.11.0"
+          "ios": "11.11.0",
+          "js": "3.14.0"
         }
       },
       "expression": {
@@ -1990,6 +2049,115 @@
         "interpolated": false
       },
       "property-type": "constant"
+    }
+  },
+  "layout_building": {
+    "visibility": {
+      "type": "enum",
+      "values": {
+        "visible": {
+          "doc": "The layer is shown."
+        },
+        "none": {
+          "doc": "The layer is not shown."
+        }
+      },
+      "default": "visible",
+      "doc": "Whether this layer is displayed.",
+      "sdk-support": {
+        "basic functionality": {
+        }
+      },
+      "expression": {
+        "interpolated": false
+      },
+      "property-type": "constant"
+    },
+    "building-roof-shape": {
+      "type": "enum",
+      "values": {
+        "flat": {
+          "doc": "Use regular extruded buildings with flat roofs."
+        },
+        "hipped": {
+          "doc": "Use hipped roof for the procedurally generated buildings."
+        },
+        "gabled": {
+          "doc": "Use gabled roof for the procedurally generated buildings."
+        },
+        "parapet": {
+          "doc": "Use parapet roof for the procedurally generated buildings."
+        },
+        "mansard": {
+          "doc": "Use mansard roof for the procedurally generated buildings."
+        },
+        "skillion": {
+          "doc": "Use skillion roof for the procedurally generated buildings."
+        },
+        "pyramidal": {
+          "doc": "Use pyramidal roof for the procedurally generated buildings."
+        }
+      },
+      "default": "flat",
+      "doc": "Roof type to use for the procedural buildings.",
+      "experimental": true,
+      "private": true,
+      "sdk-support": {
+        "basic functionality": {
+        },
+        "data-driven styling": {
+        }
+      },
+      "expression": {
+        "interpolated": false,
+        "parameters": [
+          "feature"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "building-height": {
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "units": "meters",
+      "doc": "The height of the procedural buildings.",
+      "transition": true,
+      "experimental": true,
+      "private": true,
+      "sdk-support": {
+        "basic functionality": {
+        },
+        "data-driven styling": {
+        }
+      },
+      "expression": {
+        "interpolated": false
+      },
+      "property-type": "data-driven"
+    },
+    "building-base": {
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "units": "meters",
+      "doc": "The height with which to extrude the base of this layer. Must be less than or equal to `building-height`.",
+      "transition": true,
+      "requires": [
+        "building-height"
+      ],
+      "experimental": true,
+      "private": true,
+      "sdk-support": {
+        "basic functionality": {
+        },
+        "data-driven styling": {
+        }
+      },
+      "expression": {
+        "interpolated": false
+      },
+      "property-type": "data-driven"
     }
   },
   "layout_line": {
@@ -3960,6 +4128,17 @@
       "parameters": ["zoom", "feature"]
     }
   },
+  "filter_building": {
+    "type": "boolean",
+    "doc": "Expression which determines whether or not to display a Polygon. Building layer does NOT support dynamic filtering, meaning this expression can NOT use the `[\"pitch\"]` and `[\"distance-from-center\"]` expressions to reference the current state of the view.",
+    "default": false,
+    "transition": false,
+    "property-type": "data-driven",
+    "expression": {
+      "interpolated": false,
+      "parameters": ["zoom", "feature"]
+    }
+  },
   "filter_heatmap": {
     "type": "boolean",
     "doc": "Expression used to determine whether a point is being displayed or not. Heatmap layer does NOT support dynamic filtering, meaning this expression can NOT use the `[\"pitch\"]` and `[\"distance-from-center\"]` expressions to reference the current state of the view.",
@@ -4625,6 +4804,18 @@
           }
         }
       },
+      "worldview": {
+        "doc": "Returns the current worldview being used.",
+        "group": "Lookup",
+        "experimental": true,
+        "sdk-support": {
+          "basic functionality": {
+            "js": "3.13.0",
+	          "android": "11.13.0",
+	          "ios": "11.13.0"
+          }
+        }
+      },
       "id": {
         "doc": "Returns the feature's id, if it has one.",
         "group": "Feature data",
@@ -5253,6 +5444,7 @@
         ],
         "relaxZoomRestriction": true
       },
+      "use-theme": true,
       "transition": true,
       "doc": "The color of the atmosphere region immediately below the horizon and within the `range` and above the horizon and within `horizon-blend`. Using opacity is recommended only for smoothly transitioning fog on/off as anything less than 100% opacity results in more tiles loaded and drawn.",
       "sdk-support": {
@@ -5275,6 +5467,7 @@
         ],
         "relaxZoomRestriction": true
       },
+      "use-theme": true,
       "transition": true,
       "doc": "The color of the atmosphere region above the horizon, `high-color` extends further above the horizon than the `color` property and its spread can be controlled with `horizon-blend`. The opacity can be set to `0` to remove the high atmosphere color contribution.",
       "sdk-support": {
@@ -5288,7 +5481,6 @@
     "space-color": {
       "type": "color",
       "property-type": "data-constant",
-
       "default":
       [
         "interpolate",
@@ -5311,6 +5503,7 @@
         ],
         "relaxZoomRestriction": true
       },
+      "use-theme": true,
       "transition": true,
       "doc": "The color of the region above the horizon and after the end of the `horizon-blend` contribution. The opacity can be set to `0` to have a transparent background.",
       "sdk-support": {
@@ -5493,6 +5686,7 @@
         ],
         "relaxZoomRestriction": true
       },
+      "use-theme": true,
       "transition": true,
       "doc": "Snow particles color.",
       "sdk-support": {
@@ -5574,6 +5768,7 @@
         ],
         "relaxZoomRestriction": true
       },
+      "use-theme": true,
       "transition": true,
       "doc": "Snow vignette screen-space corners tint color.",
       "sdk-support": {
@@ -5749,6 +5944,7 @@
         ],
         "relaxZoomRestriction": true
       },
+      "use-theme": true,
       "transition": true,
       "doc": "Individual rain particle dorplets color.",
       "sdk-support": {
@@ -5846,6 +6042,7 @@
         ],
         "relaxZoomRestriction": true
       },
+      "use-theme": true,
       "transition": true,
       "doc": "Rain vignette screen-space corners tint color.",
       "sdk-support": {
@@ -6109,6 +6306,7 @@
           "zoom"
         ]
       },
+      "use-theme": true,
       "transition": true,
       "doc": "Color tint for lighting extruded geometries.",
       "sdk-support": {
@@ -6283,6 +6481,7 @@
     "paint_circle",
     "paint_heatmap",
     "paint_fill-extrusion",
+    "paint_building",
     "paint_symbol",
     "paint_raster",
     "paint_raster-particle",
@@ -6593,6 +6792,7 @@
       "type": "color",
       "default": "#000000",
       "doc": "The color of the filled part of this layer. This color can be specified as `rgba` with an alpha component and the color's opacity will not affect the opacity of the 1px stroke, if it is used.",
+      "use-theme": true,
       "transition": true,
       "requires": [
         {
@@ -6625,6 +6825,7 @@
     "fill-outline-color": {
       "type": "color",
       "doc": "The outline color of the fill. Matches the value of `fill-color` if unspecified.",
+      "use-theme": true,
       "transition": true,
       "requires": [
         {
@@ -6738,6 +6939,31 @@
       },
       "property-type": "data-driven"
     },
+    "fill-pattern-cross-fade": {
+      "type": "number",
+      "property-type": "data-constant",
+      "default": 0.0,
+      "minimum": 0,
+      "maximum": 1,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "measure-light"
+        ]
+      },
+      "requires": [
+        "line-pattern"
+      ],
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.12.0",
+          "android": "11.14.0",
+          "ios": "11.14.0"
+        }
+      },
+      "doc": "Controls the transition progress between the image variants of fill-pattern. Zero means the first variant is used, one is the second, and in between they are blended together. Both images should be the same size and have the same type (either raster or vector)."
+    },
     "fill-emissive-strength": {
       "type": "number",
       "default": 0,
@@ -6794,15 +7020,18 @@
       "doc": "The color of bridge guard rail.",
       "experimental": true,
       "private": true,
+      "use-theme": true,
       "transition": true,
       "sdk-support": {
         "basic functionality": {
           "android": "11.11.0",
-          "ios": "11.11.0"
+          "ios": "11.11.0",
+          "js": "3.14.0"
         },
         "data-driven styling": {
           "android": "11.11.0",
-          "ios": "11.11.0"
+          "ios": "11.11.0",
+          "js": "3.14.0"
         }
       },
       "expression": {
@@ -6819,17 +7048,20 @@
       "type": "color",
       "default": "rgba(241, 236, 225, 255)",
       "doc": "The color of tunnel structures (tunnel entrance and tunnel walls).",
+      "use-theme": true,
       "transition": true,
       "experimental": true,
       "private": true,
       "sdk-support": {
         "basic functionality": {
           "android": "11.11.0",
-          "ios": "11.11.0"
+          "ios": "11.11.0",
+          "js": "3.14.0"
         },
         "data-driven styling": {
           "android": "11.11.0",
-          "ios": "11.11.0"
+          "ios": "11.11.0",
+          "js": "3.14.0"
         }
       },
       "expression": {
@@ -6870,6 +7102,7 @@
       "type": "color",
       "default": "#000000",
       "doc": "The base color of the extruded fill. The extrusion's surfaces will be shaded differently based on this color in combination with the root `light` settings. If this color is specified as `rgba` with an alpha component, the alpha component will be ignored; use `fill-extrusion-opacity` to set layer opacity.",
+      "use-theme": true,
       "transition": true,
       "requires": [
         {
@@ -6979,6 +7212,31 @@
         ]
       },
       "property-type": "data-driven"
+    },
+    "fill-extrusion-pattern-cross-fade": {
+      "type": "number",
+      "property-type": "data-constant",
+      "default": 0.0,
+      "minimum": 0,
+      "maximum": 1,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "measure-light"
+        ]
+      },
+      "requires": [
+        "line-pattern"
+      ],
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.12.0",
+          "android": "11.14.0",
+          "ios": "11.14.0"
+        }
+      },
+      "doc": "Controls the transition progress between the image variants of fill-extrusion-pattern. Zero means the first variant is used, one is the second, and in between they are blended together. Both images should be the same size and have the same type (either raster or vector)."
     },
     "fill-extrusion-height": {
       "type": "number",
@@ -7243,6 +7501,7 @@
       "requires": [
         "lights"
       ],
+      "use-theme": true,
       "transition": true,
       "expression": {
         "interpolated": true,
@@ -7519,6 +7778,191 @@
       "property-type": "data-constant"
     }
   },
+  "paint_building": {
+    "building-opacity": {
+      "type": "number",
+      "default": 1,
+      "minimum": 0,
+      "maximum": 1,
+      "doc": "The opacity of the entire procedural buildings layer. This is rendered on a per-layer, not per-feature, basis, and data-driven styling is not available.",
+      "transition": true,
+      "experimental": true,
+      "private": true,
+      "sdk-support": {
+        "basic functionality": {
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom"
+        ]
+      },
+      "property-type": "data-constant"
+    },
+    "building-ambient-occlusion-wall-intensity": {
+      "property-type": "data-constant",
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 1,
+      "experimental": true,
+      "private": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom"
+        ]
+      },
+      "transition": true,
+      "doc": "Controls the intensity of shading concave angles between walls and building elements, such as facades and rooftop.",
+      "sdk-support": {
+        "basic functionality": {
+        }
+      }
+    },
+    "building-ambient-occlusion-ground-intensity": {
+      "property-type": "data-constant",
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 1,
+      "experimental": true,
+      "private": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom"
+        ]
+      },
+      "transition": true,
+      "doc": "Controls the intensity of shading near ground",
+      "sdk-support": {
+        "basic functionality": {
+        }
+      }
+    },
+    "building-ambient-occlusion-ground-radius": {
+      "property-type": "data-constant",
+      "type": "number",
+      "experimental": true,
+      "private": true,
+      "default": 3.0,
+      "minimum": 0,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom"
+        ]
+      },
+      "transition": true,
+      "doc": "The extent of the ambient occlusion effect on the ground beneath the procedural buildings in meters.",
+      "sdk-support": {
+        "basic functionality": {
+        }
+      }
+    },
+    "building-ambient-occlusion-ground-attenuation": {
+      "property-type": "data-constant",
+      "type": "number",
+      "experimental": true,
+      "private": true,
+      "default": 0.69,
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "doc": "Provides a control to further fine-tune the look of the ambient occlusion on the ground beneath the procedural buildings. Lower values give the effect a more solid look while higher values make it smoother.",
+      "transition": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom"
+        ]
+      },
+      "sdk-support": {
+        "basic functionality": {
+        }
+      }
+    },
+    "building-vertical-scale": {
+      "property-type": "data-constant",
+      "type": "number",
+      "experimental": true,
+      "private": true,
+      "default": 1.0,
+      "minimum": 0.0,
+      "doc": "A global multiplier that can be used to scale base and height of the procedural buildings.",
+      "transition": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom"
+        ]
+      },
+      "sdk-support": {
+        "basic functionality": {
+        }
+      }
+    },
+    "building-cast-shadows": {
+      "type": "boolean",
+      "default": true,
+      "doc": "Enable/Disable shadow casting for this layer",
+      "transition": false,
+      "experimental": true,
+      "private": true,
+      "sdk-support": {
+          "basic functionality": {
+        }
+      },
+      "property-type": "data-constant"
+    },
+    "building-color": {
+      "type": "color",
+      "default": "rgba(193, 154, 127, 1)",
+      "doc": "Color buildings. This can be styled using different building parts (e.g. windows, wall, roof, etc.). This won't be used if `building-roof-shape` has a value `flat`.",
+      "experimental": true,
+      "private": true,
+      "use-theme": true,
+      "transition": false,
+      "sdk-support": {
+        "basic functionality": {
+        },
+        "data-driven styling": {
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "building-emissive-strength": {
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "doc": "Controls the intensity of light emitted on the source features.",
+      "experimental": true,
+      "private": true,
+      "sdk-support": {
+        "basic functionality": {
+        },
+        "data-driven styling": {
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "feature",
+          "feature-state",
+          "measure-light"
+        ]
+      },
+      "property-type": "data-driven"
+    }
+  },
   "paint_line": {
     "line-opacity": {
       "type": "number",
@@ -7554,6 +7998,7 @@
       "type": "color",
       "doc": "The color with which the line will be drawn.",
       "default": "#000000",
+      "use-theme": true,
       "transition": true,
       "requires": [
         {
@@ -7815,6 +8260,31 @@
       },
       "property-type": "data-driven"
     },
+    "line-pattern-cross-fade": {
+      "type": "number",
+      "property-type": "data-constant",
+      "default": 0.0,
+      "minimum": 0,
+      "maximum": 1,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "measure-light"
+        ]
+      },
+      "requires": [
+        "line-pattern"
+      ],
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.12.0",
+          "android": "11.14.0",
+          "ios": "11.14.0"
+        }
+      },
+      "doc": "Controls the transition progress between the image variants of line-pattern. Zero means the first variant is used, one is the second, and in between they are blended together. Both images should be the same size and have the same type (either raster or vector)."
+    },
     "line-gradient": {
       "type": "color",
       "doc": "A gradient used to color a line feature at various distances along its length. Defined using a `step` or `interpolate` expression which outputs a color for each corresponding `line-progress` input value. `line-progress` is a percentage of the line feature's total length as measured on the webmercator projected coordinate plane (a `number` between `0` and `1`). Can only be used with GeoJSON sources that specify `\"lineMetrics\": true`.",
@@ -7835,6 +8305,7 @@
         1,
         "red"
       ],
+      "use-theme": true,
       "transition": false,
       "requires": [
         {
@@ -7929,6 +8400,7 @@
       "doc": "The color to be used for rendering the trimmed line section that is defined by the `line-trim-offset` property.",
       "experimental": true,
       "default": "transparent",
+      "use-theme": true,
       "transition": true,
       "requires": [
         "line-trim-offset",
@@ -8015,6 +8487,7 @@
       "private": true,
       "doc": "The color of the line border. If line-border-width is greater than zero and the alpha value of this color is 0 (default), the color for the border will be selected automatically based on the line color.",
       "default": "rgba(0, 0, 0, 0)",
+      "use-theme": true,
       "transition": true,
       "sdk-support": {
         "basic functionality": {
@@ -8096,6 +8569,7 @@
       "type": "color",
       "default": "#000000",
       "doc": "The fill color of the circle.",
+      "use-theme": true,
       "transition": true,
       "sdk-support": {
         "basic functionality": {
@@ -8322,6 +8796,7 @@
       "type": "color",
       "default": "#000000",
       "doc": "The stroke color of the circle.",
+      "use-theme": true,
       "transition": true,
       "sdk-support": {
         "basic functionality": {
@@ -8508,6 +8983,7 @@
         "red"
       ],
       "doc": "Defines the color of each pixel based on its density value in a heatmap. Should be an expression that uses `[\"heatmap-density\"]` as input.",
+      "use-theme": true,
       "transition": false,
       "sdk-support": {
         "basic functionality": {
@@ -8682,6 +9158,7 @@
     "icon-color": {
       "type": "color",
       "default": "#000000",
+      "use-theme": true,
       "transition": true,
       "doc": "The color of the icon. This can only be used with [SDF icons](/help/troubleshooting/using-recolorable-images-in-mapbox-maps/).",
       "requires": [
@@ -8713,6 +9190,7 @@
     "icon-halo-color": {
       "type": "color",
       "default": "rgba(0, 0, 0, 0)",
+      "use-theme": true,
       "transition": true,
       "doc": "The color of the icon's halo. Icon halos can only be used with [SDF icons](/help/troubleshooting/using-recolorable-images-in-mapbox-maps/).",
       "requires": [
@@ -8869,7 +9347,7 @@
     },
     "icon-image-cross-fade": {
       "type": "number",
-      "property-type": "data-driven",
+      "property-type": "data-constant",
       "default": 0.0,
       "minimum": 0,
       "maximum": 1,
@@ -8877,8 +9355,6 @@
         "interpolated": true,
         "parameters": [
           "zoom",
-          "feature",
-          "feature-state",
           "measure-light"
         ]
       },
@@ -8890,15 +9366,9 @@
           "js": "3.0.0",
           "android": "11.0.0",
           "ios": "11.0.0"
-        },
-        "data-driven styling": {
-          "js": "3.0.0",
-          "android": "11.0.0",
-          "ios": "11.0.0"
         }
       },
-      "doc": "Controls the transition progress between the image variants of icon-image. Zero means the first variant is used, one is the second, and in between they are blended together.",
-      "transition": true
+      "doc": "Controls the transition progress between the image variants of icon-image. Zero means the first variant is used, one is the second, and in between they are blended together. . Both images should be the same size and have the same type (either raster or vector)."
     },
     "text-opacity": {
       "type": "number",
@@ -8970,6 +9440,7 @@
       "type": "color",
       "doc": "The color with which the text will be drawn.",
       "default": "#000000",
+      "use-theme": true,
       "transition": true,
       "overridable": true,
       "requires": [
@@ -9001,6 +9472,7 @@
     "text-halo-color": {
       "type": "color",
       "default": "rgba(0, 0, 0, 0)",
+      "use-theme": true,
       "transition": true,
       "doc": "The color of the text's halo, which helps it stand out from backgrounds.",
       "requires": [
@@ -9286,6 +9758,7 @@
     "raster-color": {
       "type": "color",
       "doc": "Defines a color map by which to colorize a raster layer, parameterized by the `[\"raster-value\"]` expression and evaluated at 256 uniformly spaced steps over the range specified by `raster-color-range`.",
+      "use-theme": true,
       "transition": false,
       "sdk-support": {
         "basic functionality": {
@@ -9630,6 +10103,7 @@
     "raster-particle-color": {
       "type": "color",
       "doc": "Defines a color map by which to colorize a raster particle layer, parameterized by the `[\"raster-particle-speed\"]` expression and evaluated at 256 uniformly spaced steps over the range specified by `raster-particle-max-speed`.",
+      "use-theme": true,
       "transition": false,
       "sdk-support": {
         "basic functionality": {
@@ -9820,6 +10294,7 @@
       "type": "color",
       "default": "#000000",
       "doc": "The shading color of areas that face away from the light source.",
+      "use-theme": true,
       "transition": true,
       "sdk-support": {
         "basic functionality": {
@@ -9841,6 +10316,7 @@
       "type": "color",
       "default": "#FFFFFF",
       "doc": "The shading color of areas that faces towards the light source.",
+      "use-theme": true,
       "transition": true,
       "sdk-support": {
         "basic functionality": {
@@ -9862,6 +10338,7 @@
       "type": "color",
       "default": "#000000",
       "doc": "The shading color used to accentuate rugged terrain like sharp cliffs and gorges.",
+      "use-theme": true,
       "transition": true,
       "sdk-support": {
         "basic functionality": {
@@ -9937,6 +10414,7 @@
       "type": "color",
       "default": "#000000",
       "doc": "The color with which the background will be drawn.",
+      "use-theme": true,
       "transition": true,
       "requires": [
         {
@@ -10180,6 +10658,7 @@
         "white"
       ],
       "doc": "Defines a radial color gradient with which to color the sky. The color values can be interpolated with an expression using `sky-radial-progress`. The range [0, 1] for the interpolant covers a radial distance (in degrees) of [0, `sky-gradient-radius`] centered at the position specified by `sky-gradient-center`.",
+      "use-theme": true,
       "transition": false,
       "requires": [
         {
@@ -10206,6 +10685,7 @@
       "type": "color",
       "default": "white",
       "doc": "A color applied to the atmosphere sun halo. The alpha channel describes how strongly the sun halo is represented in an atmosphere sky layer.",
+      "use-theme": true,
       "transition": false,
       "requires": [
         {
@@ -10225,6 +10705,7 @@
       "type": "color",
       "default": "white",
       "doc": "A color used to tweak the main atmospheric scattering coefficients. Using white applies the default coefficients giving the natural blue color to the atmosphere. This color affects how heavily the corresponding wavelength is represented during scattering. The alpha channel describes the density of the atmosphere, with 1 maximum density and 0 no density.",
+      "use-theme": true,
       "transition": false,
       "requires": [
         {
@@ -10387,6 +10868,7 @@
           "ios": "11.0.0"
         }
       },
+      "use-theme": true,
       "transition": true
     },
     "model-color-mix-intensity": {
@@ -10644,6 +11126,25 @@
     "*": {
       "type": "*",
       "doc": "A feature property name to use as the ID, or an expression to evaluate as the ID for feature state."
+    }
+  },
+  "$doc": {
+    "transition": {
+      "type": "transition",
+      "doc": "Controls how a property transitions to a new value. Overrides the style's root `transition` for this property."
+    },
+    "use-theme": {
+      "type": "enum",
+      "doc": "Controls whether the associated color property is affected by the global color theme. When set to \"none\", the color theme is ignored for this property. When set to \"default\", the color theme is applied.",
+      "values": {
+        "default": {
+          "doc": "The color theme is applied to this property (default behavior)."
+        },
+        "none": {
+          "doc": "The color theme is ignored for this property."
+        }
+      },
+      "default": "default"
     }
   }
 }

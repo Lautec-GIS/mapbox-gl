@@ -961,6 +961,42 @@ register(StructArrayLayout2f9i15ui1ul4f1ub1ui80, 'StructArrayLayout2f9i15ui1ul4f
 
 /**
  * Implementation of the StructArray layout:
+ * [0]: Float32[6]
+ *
+ * @private
+ */
+class StructArrayLayout6f24 extends StructArray implements IStructArrayLayout {
+    override uint8: Uint8Array;
+    override float32: Float32Array;
+
+    override _refreshViews() {
+        this.uint8 = new Uint8Array(this.arrayBuffer);
+        this.float32 = new Float32Array(this.arrayBuffer);
+    }
+
+    override emplaceBack(v0: number, v1: number, v2: number, v3: number, v4: number, v5: number): number {
+        const i = this.length;
+        this.resize(i + 1);
+        return this.emplace(i, v0, v1, v2, v3, v4, v5);
+    }
+
+    override emplace(i: number, v0: number, v1: number, v2: number, v3: number, v4: number, v5: number): number {
+        const o4 = i * 6;
+        this.float32[o4 + 0] = v0;
+        this.float32[o4 + 1] = v1;
+        this.float32[o4 + 2] = v2;
+        this.float32[o4 + 3] = v3;
+        this.float32[o4 + 4] = v4;
+        this.float32[o4 + 5] = v5;
+        return i;
+    }
+}
+
+StructArrayLayout6f24.prototype.bytesPerElement = 24;
+register(StructArrayLayout6f24, 'StructArrayLayout6f24');
+
+/**
+ * Implementation of the StructArray layout:
  * [0]: Float32[5]
  *
  * @private
@@ -1390,7 +1426,6 @@ export class CollisionBoxArray extends StructArrayLayout5i4f1i1ul2ui40 {
      * @private
      */
     get(index: number): CollisionBoxStruct {
-        assert(!this.isTransferred);
         assert(index >= 0);
         assert(index < this.length);
         return new CollisionBoxStruct(this, index);
@@ -1442,7 +1477,6 @@ export class PlacedSymbolArray extends StructArrayLayout3i2f2ui3ul3ui2f3ub1ul1i1
      * @private
      */
     get(index: number): PlacedSymbolStruct {
-        assert(!this.isTransferred);
         assert(index >= 0);
         assert(index < this.length);
         return new PlacedSymbolStruct(this, index);
@@ -1504,7 +1538,6 @@ export class SymbolInstanceArray extends StructArrayLayout2f9i15ui1ul4f1ub1ui80 
      * @private
      */
     get(index: number): SymbolInstanceStruct {
-        assert(!this.isTransferred);
         assert(index >= 0);
         assert(index < this.length);
         return new SymbolInstanceStruct(this, index);
@@ -1554,7 +1587,6 @@ export class FeatureIndexArray extends StructArrayLayout1ul3ui12 {
      * @private
      */
     get(index: number): FeatureIndexStruct {
-        assert(!this.isTransferred);
         assert(index >= 0);
         assert(index < this.length);
         return new FeatureIndexStruct(this, index);
@@ -1594,7 +1626,6 @@ export class FillExtrusionWallArray extends StructArrayLayout3i6 {
      * @private
      */
     get(index: number): FillExtrusionWallStruct {
-        assert(!this.isTransferred);
         assert(index >= 0);
         assert(index < this.length);
         return new FillExtrusionWallStruct(this, index);
@@ -1628,6 +1659,7 @@ export {
     StructArrayLayout3ui6,
     StructArrayLayout3i2f2ui3ul3ui2f3ub1ul1i1ub60,
     StructArrayLayout2f9i15ui1ul4f1ub1ui80,
+    StructArrayLayout6f24,
     StructArrayLayout5f20,
     StructArrayLayout7f28,
     StructArrayLayout11f44,
@@ -1643,6 +1675,7 @@ export {
     StructArrayLayout3i6 as PosGlobeExtArray,
     StructArrayLayout4i8 as RasterBoundsArray,
     StructArrayLayout2i4 as CircleLayoutArray,
+    StructArrayLayout1f4 as CircleExtLayoutArray,
     StructArrayLayout2i4 as FillLayoutArray,
     StructArrayLayout1f4 as FillExtLayoutArray,
     StructArrayLayout2i1f8 as FillIntersectionsLayoutArray,
@@ -1667,6 +1700,7 @@ export {
     StructArrayLayout4f16 as CollisionVertexExtArray,
     StructArrayLayout3ui6 as QuadTriangleArray,
     StructArrayLayout1f4 as ZOffsetVertexArray,
+    StructArrayLayout6f24 as SymbolOrientationArray,
     StructArrayLayout5f20 as GlobeVertexArray,
     StructArrayLayout5f20 as AtmosphereVertexArray,
     StructArrayLayout7f28 as StarsVertexArray,
@@ -1688,5 +1722,8 @@ export {
     StructArrayLayout4ui3f20 as FeatureVertexArray,
     StructArrayLayout1i2 as ParticleIndexLayoutArray,
     StructArrayLayout1ub1 as FillExtrusionHiddenByLandmarkArray,
+    StructArrayLayout3f12 as BuildingPositionArray,
+    StructArrayLayout3f12 as BuildingNormalArray,
+    StructArrayLayout2ui4 as BuildingColorArray,
     StructArrayLayout6i12 as CircleGlobeExtArray
 };

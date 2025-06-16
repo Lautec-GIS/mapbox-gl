@@ -14,6 +14,7 @@ import type SkyLayer from '../style/style_layer/sky_style_layer';
 import type Program from './program';
 import type SourceCache from '../source/source_cache';
 import type Painter from './painter';
+import type {SkyboxCaptureUniformsType} from '../render/program/skybox_capture_program';
 
 export default drawSky;
 
@@ -103,7 +104,7 @@ function drawSkyboxFromCapture(painter: Painter, layer: SkyLayer, depthMode: Dep
         layer.skyboxGeometry.indexBuffer, layer.skyboxGeometry.segment);
 }
 
-function drawSkyboxFace(painter: Painter, layer: SkyLayer, program: Program<any>, faceRotate: mat4, sunDirection: [number, number, number], i: number) {
+function drawSkyboxFace(painter: Painter, layer: SkyLayer, program: Program<SkyboxCaptureUniformsType>, faceRotate: mat4, sunDirection: [number, number, number], i: number) {
     const context = painter.context;
     const gl = context.gl;
 
@@ -115,8 +116,9 @@ function drawSkyboxFace(painter: Painter, layer: SkyLayer, program: Program<any>
         mat3.fromMat4(mat3.create(), faceRotate) as Float32Array,
         sunDirection,
         sunIntensity,
-        atmosphereColor,
-        atmosphereHaloColor);
+        atmosphereColor.toPremultipliedRenderColor(null),
+        atmosphereHaloColor.toPremultipliedRenderColor(null)
+    );
 
     const glFace = gl.TEXTURE_CUBE_MAP_POSITIVE_X + i;
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, glFace, layer.skyboxTexture, 0);

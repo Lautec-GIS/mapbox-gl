@@ -3,7 +3,7 @@ import MercatorCoordinate, {mercatorXfromLng, mercatorYfromLat, mercatorZfromAlt
 import {getProjection} from './projection/index';
 import {tileAABB} from '../geo/projection/tile_transform';
 import Point from '@mapbox/point-geometry';
-import {wrap, clamp, pick, radToDeg, degToRad, getAABBPointSquareDist, furthestTileCorner, warnOnce, deepEqual} from '../util/util';
+import {wrap, clamp, pick, radToDeg, degToRad, getAABBPointSquareDist, furthestTileCorner, warnOnce, deepEqual, easeIn} from '../util/util';
 import {number as interpolate} from '../style-spec/util/interpolate';
 import EXTENT from '../style-spec/data/extent';
 import {vec4, mat4, mat2, vec3, quat} from 'gl-matrix';
@@ -58,27 +58,26 @@ type RootTile = {
     zoom: number;
 };
 
-const OrthographicPitchTranstionValue = 15;
-const lerp = (x: number, y: number, t: number) => { return (1 - t) * x + t * y; };
-const easeIn = (x: number) => {
-    return x * x * x * x * x;
-};
+export const OrthographicPitchTranstionValue = 15;
+
 const lerpMatrix = (out: mat4, a: mat4, b: mat4, value: number) => {
     for (let i = 0; i < 16; i++) {
-        out[i] = lerp(a[i], b[i], value);
+        out[i] = interpolate(a[i], b[i], value);
     }
 
     return out;
 };
 
-const enum QuadrantVisibility {
-    None = 0,
-    TopLeft = 1,
-    TopRight = 2,
-    BottomLeft = 4,
-    BottomRight = 8,
-    All = 15
-}
+const QuadrantVisibility = {
+    None: 0,
+    TopLeft: 1,
+    TopRight: 2,
+    BottomLeft: 4,
+    BottomRight: 8,
+    All: 15
+} as const;
+
+type QuadrantMask = typeof QuadrantVisibility[keyof typeof QuadrantVisibility];
 
 /**
  * A single transform, generally used for a single tile to be
@@ -490,6 +489,14 @@ class Transform {
         return this._fov / Math.PI * 180;
     }
 
+    set fov(fov: number) {
+        fov = Math.max(0.01, Math.min(60, fov));
+        if (this._fov === fov) return;
+        this._unmodified = false;
+        this._fov = degToRad(fov);
+        this._calcMatrices();
+    }
+
     get fovX(): number {
         return this._fov;
     }
@@ -497,14 +504,6 @@ class Transform {
     get fovY(): number {
         const focalLength = 1.0 / Math.tan(this.fovX * 0.5);
         return 2 * Math.atan((1.0 / this.aspect) / focalLength);
-    }
-
-    set fov(fov: number) {
-        fov = Math.max(0.01, Math.min(60, fov));
-        if (this._fov === fov) return;
-        this._unmodified = false;
-        this._fov = degToRad(fov);
-        this._calcMatrices();
     }
 
     get averageElevation(): number {
@@ -571,7 +570,7 @@ class Transform {
         }
         const height = this.cameraToCenterDistance;
         const terrainElevation = this.pixelsPerMeter * this._centerAltitude;
-        const mercatorZ = (terrainElevation + height) / this.worldSize;
+        const mercatorZ = Math.max(0, (terrainElevation + height) / this.worldSize);
 
         // MSL (Mean Sea Level) zoom describes the distance of the camera to the sea level (altitude).
         // It is used only for manipulating the camera location. The standard zoom (this._zoom)
@@ -855,18 +854,18 @@ class Transform {
     }
 
     /**
-     * Extends tile coverage to include potential neighboring tiles using either light direction or quadrant visibility information.
+     * Extends tile coverage to include potential neighboring tiles using either a direction vector or quadrant visibility information.
      * @param {Array<OverscaledTileID>} coveringTiles tile cover that is extended
      * @param {number} maxZoom maximum zoom level
-     * @param {Vec3} lightDir direction of the light (unit vector), if undefined quadrant visibility information is used
+     * @param {vec3} direction direction unit vector, if undefined quadrant visibility information is used
      * @returns {Array<OverscaledTileID>} a set of extension tiles
      */
-    extendTileCover(coveringTiles: Array<OverscaledTileID>, maxZoom: number, lightDir?: vec3): Array<OverscaledTileID> {
+    extendTileCover(coveringTiles: Array<OverscaledTileID>, maxZoom: number, direction?: vec3): Array<OverscaledTileID> {
         let out: OverscaledTileID[] = [];
-        const extendShadows = lightDir !== undefined;
-        const extendQuadrants = !extendShadows;
+        const extendDirection = direction != null;
+        const extendQuadrants = !extendDirection;
         if (extendQuadrants && this.zoom < maxZoom) return out;
-        if (extendShadows && lightDir[0] === 0.0 && lightDir[1] === 0.0) return out;
+        if (extendDirection && direction[0] === 0.0 && direction[1] === 0.0) return out;
 
         const addedTiles = new Set<number>();
         const addTileId = (overscaledZ: number, wrap: number, z: number, x: number, y: number) => {
@@ -900,29 +899,29 @@ class Transform {
             const leftTileX = xMinInsideRange ? tileId.x - 1 : tiles - 1;
             const rightTileX = xMaxInsideRange ? tileId.x + 1 : 0;
 
-            if (extendShadows) {
-                if (lightDir[0] < 0.0) {
+            if (extendDirection) {
+                if (direction[0] < 0.0) {
                     addTileId(overscaledZ, rightWrap, tileId.z, rightTileX, tileId.y);
-                    if (lightDir[1] < 0.0 && yMaxInsideRange) {
+                    if (direction[1] < 0.0 && yMaxInsideRange) {
                         addTileId(overscaledZ, tileWrap, tileId.z, tileId.x, tileId.y + 1);
                         addTileId(overscaledZ, rightWrap, tileId.z, rightTileX, tileId.y + 1);
                     }
-                    if (lightDir[1] > 0.0 && yMinInsideRange) {
+                    if (direction[1] > 0.0 && yMinInsideRange) {
                         addTileId(overscaledZ, tileWrap, tileId.z, tileId.x, tileId.y - 1);
                         addTileId(overscaledZ, rightWrap, tileId.z, rightTileX, tileId.y - 1);
                     }
-                } else if (lightDir[0] > 0.0) {
+                } else if (direction[0] > 0.0) {
                     addTileId(overscaledZ, leftWrap, tileId.z, leftTileX, tileId.y);
-                    if (lightDir[1] < 0.0 && yMaxInsideRange) {
+                    if (direction[1] < 0.0 && yMaxInsideRange) {
                         addTileId(overscaledZ, tileWrap, tileId.z, tileId.x, tileId.y + 1);
                         addTileId(overscaledZ, leftWrap, tileId.z, leftTileX, tileId.y + 1);
                     }
-                    if (lightDir[1] > 0.0 && yMinInsideRange) {
+                    if (direction[1] > 0.0 && yMinInsideRange) {
                         addTileId(overscaledZ, tileWrap, tileId.z, tileId.x, tileId.y - 1);
                         addTileId(overscaledZ, leftWrap, tileId.z, leftTileX, tileId.y - 1);
                     }
                 } else {
-                    if (lightDir[1] < 0.0 && yMaxInsideRange) {
+                    if (direction[1] < 0.0 && yMaxInsideRange) {
                         addTileId(overscaledZ, tileWrap, tileId.z, tileId.x, tileId.y + 1);
                     } else if (yMinInsideRange) {
                         addTileId(overscaledZ, tileWrap, tileId.z, tileId.x, tileId.y - 1);
@@ -1120,7 +1119,7 @@ class Transform {
 
         // Do a depth-first traversal to find visible tiles and proper levels of detail
         const stack: RootTile[] = [];
-        let result = [];
+        let result: Array<{tileID: OverscaledTileID, distanceSq: number}> = [];
         const maxZoom = z;
         const overscaledZ = options.reparseOverscaled ? actualZ : z;
         const cameraHeight = (cameraAltitude - this._centerAltitude) * meterToTile; // in tile coordinates.
@@ -1321,8 +1320,7 @@ class Transform {
                     continue;
                 }
 
-                let visibility = QuadrantVisibility.None;
-                // Perform more precise intersection tests to cull the remaining < 1% false positives from the earlier test.
+                let visibility: QuadrantMask = QuadrantVisibility.None;
                 if (!fullyVisible) {
                     let intersectResult = verticalFrustumIntersect ? it.aabb.intersectsPrecise(cameraFrustum) : it.aabb.intersectsPreciseFlat(cameraFrustum);
 
@@ -2013,7 +2011,7 @@ class Transform {
         expanded: boolean = false,
     ): mat4 {
         const projMatrixKey = unwrappedTileID.key;
-        let cache;
+        let cache: Record<number, mat4>;
         if (expanded) {
             cache = this._expandedProjMatrixCache;
         } else if (aligned) {
@@ -2213,7 +2211,7 @@ class Transform {
      * @returns {number} The zoom value.
      */
     _minZoomForBounds(): number {
-        let minZoom = Math.max(0, this.scaleZoom(this.height / (this.worldMaxY - this.worldMinY)));
+        let minZoom = Math.max(0, this.scaleZoom(Math.max(0, this.height) / (this.worldMaxY - this.worldMinY)));
         if (this.maxBounds) {
             minZoom = Math.max(minZoom, this.scaleZoom(this.width / (this.worldMaxX - this.worldMinX)));
         }
@@ -2372,7 +2370,7 @@ class Transform {
             dx = x - Math.round(x) + angleCos * xShift + angleSin * yShift,
             dy = y - Math.round(y) + angleCos * yShift + angleSin * xShift;
         const alignedM = new Float64Array(m) as unknown as mat4;
-        mat4.translate(alignedM, alignedM, [ dx > 0.5 ? dx - 1 : dx, dy > 0.5 ? dy - 1 : dy, 0 ]);
+        mat4.translate(alignedM, alignedM, [dx > 0.5 ? dx - 1 : dx, dy > 0.5 ? dy - 1 : dy, 0]);
         this.alignedProjMatrix = alignedM;
 
         m = mat4.create();
@@ -2540,7 +2538,7 @@ class Transform {
     }
 
     _zoomFromMercatorZ(z: number): number {
-        return this.scaleZoom(this.cameraToCenterDistance / (z * this.tileSize));
+        return this.scaleZoom(this.cameraToCenterDistance / (Math.max(0, z) * this.tileSize));
     }
 
     // This function is helpful to approximate true zoom given a mercator height with varying ppm.
@@ -2564,7 +2562,7 @@ class Transform {
 
             const worldSize = this.tileSize * Math.pow(2, zoomMid);
             const d = this.getCameraToCenterDistance(this.projection, zoomMid, worldSize);
-            const newZoom = this.scaleZoom(d / (mercatorZ * this.tileSize));
+            const newZoom = this.scaleZoom(d / (Math.max(0, mercatorZ) * this.tileSize));
 
             const diff = Math.abs(zoomMid - newZoom);
 
@@ -2702,7 +2700,7 @@ class Transform {
         // to calculate correct perspective ratio values for symbols
         if (this.isOrthographic) {
             const mixValue = this.pitch >= OrthographicPitchTranstionValue ? 1.0 : this.pitch / OrthographicPitchTranstionValue;
-            distance = lerp(1.0, distance, easeIn(mixValue));
+            distance = interpolate(1.0, distance, easeIn(mixValue));
         }
         return distance;
     }

@@ -157,7 +157,7 @@ class ParsingContext {
                     const ec = new EvaluationContext(this._scope, this.options);
                     try {
                         parsed = new Literal(parsed.type, parsed.evaluate(ec));
-                    } catch (e: any) {
+                    } catch (e) {
                         this.error(e.message);
                         return null;
                     }
@@ -271,5 +271,5 @@ function isConstant(expression: Expression) {
     }
 
     return isFeatureConstant(expression) &&
-        isGlobalPropertyConstant(expression, ['zoom', 'heatmap-density', 'line-progress', 'raster-value', 'sky-radial-progress', 'accumulated', 'is-supported-script', 'pitch', 'distance-from-center', 'measure-light', 'raster-particle-speed']);
+        isGlobalPropertyConstant(expression, ['zoom', 'heatmap-density', 'worldview', 'line-progress', 'raster-value', 'sky-radial-progress', 'accumulated', 'is-supported-script', 'pitch', 'distance-from-center', 'measure-light', 'raster-particle-speed']);
 }

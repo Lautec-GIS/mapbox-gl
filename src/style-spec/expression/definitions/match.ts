@@ -1,6 +1,6 @@
 import assert from 'assert';
 import {typeOf} from '../values';
-import {ValueType} from '../types';
+import {typeEquals, ValueType} from '../types';
 
 import type {Type} from '../types';
 import type {Expression, SerializedExpression} from '../expression';
@@ -39,6 +39,7 @@ class Match implements Expression {
         if (context.expectedType && context.expectedType.kind !== 'value') {
             outputType = context.expectedType;
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const cases: Record<string, any> = {};
         const outputs = [];
         for (let i = 2; i < args.length - 1; i += 2) {
@@ -94,12 +95,13 @@ class Match implements Expression {
             return null;
         }
 
-        return new Match((inputType), (outputType as any), input, cases, outputs, otherwise);
+        return new Match(inputType, outputType, input, cases, outputs, otherwise);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     evaluate(ctx: EvaluationContext): any {
         const input = (this.input.evaluate(ctx));
-        const output = (typeOf(input) === this.inputType && this.outputs[this.cases[input]]) || this.otherwise;
+        const output = (typeEquals(typeOf(input), this.inputType) && this.outputs[this.cases[input]]) || this.otherwise;
         return output.evaluate(ctx);
     }
 
@@ -138,7 +140,7 @@ class Match implements Expression {
             }
         }
 
-        const coerceLabel = (label: number | string) => this.inputType.kind === 'number' ? Number(label) : label;
+        const coerceLabel = (label: number | string) => (this.inputType.kind === 'number' ? Number(label) : label);
 
         for (const [outputIndex, labels] of groupedByOutput) {
             if (labels.length === 1) {

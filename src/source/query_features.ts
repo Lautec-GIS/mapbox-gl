@@ -2,7 +2,6 @@ import assert from 'assert';
 
 import type Point from '@mapbox/point-geometry';
 import type SourceCache from './source_cache';
-import type StyleLayer from '../style/style_layer';
 import type CollisionIndex from '../symbol/collision_index';
 import type Transform from '../geo/transform';
 import type {ImageId} from '../style-spec/expression/types/image_id';
@@ -11,6 +10,7 @@ import type {FeatureFilter} from '../style-spec/feature_filter/index';
 import type {RetainedQueryData} from '../symbol/placement';
 import type {QueryGeometry, TilespaceQueryGeometry} from '../style/query_geometry';
 import type {StyleExpression} from '../style-spec/expression/index';
+import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
 import type {FilterSpecification} from '../style-spec/types';
 
 /**
@@ -28,7 +28,7 @@ export type QrfLayers = Record<string, QrfLayer>;
 
 export type QrfLayer = {
     targets?: QrfTarget[];
-    styleLayer: StyleLayer;
+    styleLayer: TypedStyleLayer;
 };
 
 export type QrfTarget = {
@@ -64,10 +64,16 @@ function generateTargetKey(target: TargetDescriptor): string {
     }
 }
 
+/**
+ * @private
+ */
 export function getFeatureTargetKey(variant: FeatureVariant, feature: Feature, targetId: string = ''): string {
     return `${targetId}:${feature.id || ''}:${feature.layer.id}:${generateTargetKey(variant.target)}`;
 }
 
+/**
+ * @private
+ */
 export function shouldSkipFeatureVariant(variant: FeatureVariant, feature: Feature, uniqueFeatureSet: Set<string>, targetId: string = ''): boolean {
     if (variant.uniqueFeatureID) {
         const key = getFeatureTargetKey(variant, feature, targetId);
@@ -81,6 +87,9 @@ export function shouldSkipFeatureVariant(variant: FeatureVariant, feature: Featu
     return false;
 }
 
+/**
+ * @private
+ */
 export function queryRenderedFeatures(
     queryGeometry: QueryGeometry,
     query: QrfQuery & {has3DLayers?: boolean},
@@ -115,12 +124,16 @@ export function queryRenderedFeatures(
     return mergeRenderedFeatureLayers(renderedFeatureLayers);
 }
 
+/**
+ * @private
+ */
 export function queryRenderedSymbols(
     queryGeometry: Array<Point>,
     query: QrfQuery,
     availableImages: ImageId[],
     collisionIndex: CollisionIndex,
     retainedQueryData: Record<number, RetainedQueryData>,
+    worldview
 ): QueryResult {
     const result: QueryResult = {};
     const renderedSymbols = collisionIndex.queryRenderedSymbols(queryGeometry);
@@ -136,7 +149,8 @@ export function queryRenderedSymbols(
             queryData.bucketIndex,
             queryData.sourceLayerIndex,
             query,
-            availableImages
+            availableImages,
+            worldview
         );
 
         for (const layerID in bucketSymbols) {
@@ -171,6 +185,9 @@ export function queryRenderedSymbols(
     return result;
 }
 
+/**
+ * @private
+ */
 export function querySourceFeatures(sourceCache: SourceCache, params?: {
     sourceLayer?: string;
     filter?: FilterSpecification;
@@ -182,6 +199,7 @@ export function querySourceFeatures(sourceCache: SourceCache, params?: {
 
     const result = [];
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dataTiles: Record<string, any> = {};
     for (let i = 0; i < tiles.length; i++) {
         const tile = tiles[i];
@@ -192,6 +210,7 @@ export function querySourceFeatures(sourceCache: SourceCache, params?: {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return result;
 }
 

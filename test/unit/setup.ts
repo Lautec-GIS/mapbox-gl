@@ -1,8 +1,6 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 /* global globalThis */
-
-import {toHaveBeenCalledBefore, toHaveBeenCalledAfter} from 'jest-extended';
-import {expect} from '../util/vitest';
 
 window.devicePixelRatio = 1;
 
@@ -13,19 +11,14 @@ window.addEventListener('vite:preloadError', (event) => {
     window.location.reload();
 });
 
-import mapboxgl from '../../src/index';
+import WorkerClass from '../../src/util/worker_class';
 
 if (!globalThis.defined) {
-    mapboxgl.workerParams = {
+    WorkerClass.workerParams = {
         type: 'module'
     };
 
-    mapboxgl.workerUrl = '/src/source/worker.ts';
+    WorkerClass.workerUrl = '/src/source/worker.ts';
 
     globalThis.defined = true;
 }
-
-expect.extend({
-    toHaveBeenCalledBefore,
-    toHaveBeenCalledAfter
-});

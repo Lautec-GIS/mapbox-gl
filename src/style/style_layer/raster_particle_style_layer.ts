@@ -12,10 +12,13 @@ import type Texture from '../../render/texture';
 import type Framebuffer from '../../gl/framebuffer';
 import type SourceCache from '../../source/source_cache';
 import type {LUT} from "../../util/lut";
+import type {ProgramName} from '../../render/program';
 
 const COLOR_RAMP_RES = 256;
 
 class RasterParticleStyleLayer extends StyleLayer {
+    override type: 'raster-particle';
+
     override paint: PossiblyEvaluated<PaintProps>;
 
     // Shared rendering resources
@@ -58,7 +61,7 @@ class RasterParticleStyleLayer extends StyleLayer {
         return !!expr.value;
     }
 
-    override getProgramIds(): Array<string> {
+    override getProgramIds(): ProgramName[] {
         return ['rasterParticle'];
     }
 
@@ -91,7 +94,7 @@ class RasterParticleStyleLayer extends StyleLayer {
             expression,
             evaluationKey: 'rasterParticleSpeed',
             image: this.colorRamp,
-            clips: [{start:0, end}],
+            clips: [{start: 0, end}],
             resolution: COLOR_RAMP_RES,
         });
         this.colorRampTexture = null;

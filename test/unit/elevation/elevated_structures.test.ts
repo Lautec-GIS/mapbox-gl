@@ -6,7 +6,7 @@ import {CanonicalTileID} from '../../../src/source/tile_id';
 import {vec2} from 'gl-matrix';
 import {ElevationFeature, type Vertex, type Edge} from '../../../3d-style/elevation/elevation_feature';
 
-import type {Bounds} from '../../../3d-style/elevation/elevation_feature_parser';
+import type {Bounds} from '../../../src/style-spec/util/geometry_util';
 
 describe('ElevatedStructures', () => {
     test('#getUnevaluatedPortals', () => {
@@ -41,7 +41,7 @@ describe('ElevatedStructures', () => {
         const feature = new ElevationFeature(0, bounds, undefined, vertices, edges, 1.0);
 
         // Compute portals
-        const structures = new ElevatedStructures(new CanonicalTileID(0, 0, 0));
+        const structures = new ElevatedStructures(new CanonicalTileID(0, 0, 0), [], 0, null);
 
         structures.addPortalCandidates(0, leftRamp, false, feature, 0);
         structures.addPortalCandidates(1, middleRamp, true, feature, 0);

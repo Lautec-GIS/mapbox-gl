@@ -27,7 +27,7 @@ import type {CanonicalTileID} from './tile_id';
 import type Projection from '../geo/projection/projection';
 import type {Bucket, PopulateParameters, ImageDependenciesMap} from '../data/bucket';
 import type Actor from '../util/actor';
-import type StyleLayer from '../style/style_layer';
+import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
 import type StyleLayerIndex from '../style/style_layer_index';
 import type {StyleImage, StyleImageMap} from '../style/style_image';
 import type {
@@ -39,10 +39,10 @@ import type {TileTransform} from '../geo/projection/tile_transform';
 import type {LUT} from "../util/lut";
 import type {GlyphMap} from '../render/glyph_manager';
 import type {ImagePositionMap} from '../render/image_atlas';
-import type {GetImagesParameters, GetGlyphsParameters} from '../style/style';
-import type {RasterizedImageMap, ImageRasterizationTasks, RasterizeImagesParameters} from '../render/image_manager';
+import type {RasterizedImageMap, ImageRasterizationTasks} from '../render/image_manager';
 import type {StringifiedImageId} from '../style-spec/expression/types/image_id';
 import type {StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
+import type {StyleModelMap} from '../style/style_mode';
 
 type RasterizationStatus = { iconsPending: boolean, patternsPending: boolean};
 class WorkerTile {
@@ -103,9 +103,10 @@ class WorkerTile {
         this.extraShadowCaster = !!params.extraShadowCaster;
         this.tessellationStep = params.tessellationStep;
         this.scaleFactor = params.scaleFactor;
+        this.worldview = params.worldview;
     }
 
-    parse(data: VectorTile, layerIndex: StyleLayerIndex, availableImages: ImageId[], actor: Actor, callback: WorkerSourceVectorTileCallback) {
+    parse(data: VectorTile, layerIndex: StyleLayerIndex, availableImages: ImageId[], availableModels: StyleModelMap, actor: Actor, callback: WorkerSourceVectorTileCallback) {
         const m = PerformanceUtils.beginMeasure('parseTile1');
         this.status = 'parsing';
         this.data = data;
@@ -220,11 +221,11 @@ class WorkerTile {
                 if (layer.maxzoom && this.zoom >= layer.maxzoom) continue;
                 if (layer.visibility === 'none') continue;
 
-                recalculateLayers(family, this.zoom, options.brightness, availableImages);
+                recalculateLayers(family, this.zoom, options.brightness, availableImages, this.worldview);
 
+                // @ts-expect-error: Type 'TypedStyleLayer' doesn't have a 'createBucket' method in all of its subtypes
                 const bucket: Bucket = buckets[layer.id] = layer.createBucket({
                     index: featureIndex.bucketLayerIDs.length,
-                    // @ts-expect-error - TS2322 - Type 'Family<TypedStyleLayer>' is not assignable to type 'ClipStyleLayer[] & ModelStyleLayer[] & SymbolStyleLayer[] & LineStyleLayer[] & HeatmapStyleLayer[] & FillExtrusionStyleLayer[] & FillStyleLayer[] & CircleStyleLayer[]'.
                     layers: family,
                     zoom: this.zoom,
                     lut: this.lut,
@@ -235,7 +236,9 @@ class WorkerTile {
                     sourceLayerIndex,
                     sourceID: this.source,
                     projection: this.projection.spec,
-                    tessellationStep: this.tessellationStep
+                    tessellationStep: this.tessellationStep,
+                    styleDefinedModelURLs: availableModels,
+                    worldview: this.worldview
                 });
 
                 assert(this.tileTransform.projection.name === this.projection.name);
@@ -289,7 +292,7 @@ class WorkerTile {
                 for (const key in buckets) {
                     const bucket = buckets[key];
                     if (bucket instanceof SymbolBucket) {
-                        recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages);
+                        recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages, this.worldview);
                         symbolLayoutData[key] =
                         performSymbolLayout(bucket,
                                 glyphMap,
@@ -299,7 +302,9 @@ class WorkerTile {
                                 this.tileID.canonical,
                                 this.tileZoom,
                                 this.scaleFactor,
-                                this.pixelRatio);
+                                this.pixelRatio,
+                                iconRasterizationTasks,
+                                this.worldview);
                     }
                 }
 
@@ -327,7 +332,7 @@ class WorkerTile {
                     (bucket instanceof LineBucket ||
                         bucket instanceof FillBucket ||
                         bucket instanceof FillExtrusionBucket)) {
-                    recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages);
+                    recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages, this.worldview);
                     const imagePositions: SpritePositions = Object.fromEntries(imageAtlas.patternPositions);
                     bucket.addFeatures(options, this.tileID.canonical, imagePositions, availableImages, this.tileTransform, this.brightness);
                 }
@@ -349,8 +354,7 @@ class WorkerTile {
         if (!this.extraShadowCaster) {
             const stacks = mapObject(options.glyphDependencies, (glyphs) => Object.keys(glyphs).map(Number));
             if (Object.keys(stacks).length) {
-                const params: GetGlyphsParameters = {uid: this.uid, stacks, scope: this.scope};
-                actor.send('getGlyphs', params, (err, result: GlyphMap) => {
+                actor.send('getGlyphs', {uid: this.uid, stacks, scope: this.scope}, (err, result: GlyphMap) => {
                     if (!error) {
                         error = err;
                         glyphMap = result;
@@ -363,7 +367,7 @@ class WorkerTile {
 
             const images = Array.from(options.iconDependencies.keys()).map((id) => ImageId.parse(id));
             if (images.length) {
-                const params: GetImagesParameters = {images, source: this.source, scope: this.scope, tileID: this.tileID, type: 'icons'};
+                const params = {images, source: this.source, scope: this.scope, tileID: this.tileID, type: 'icons'} as const;
                 actor.send('getImages', params, (err: Error, result: StyleImageMap<StringifiedImageId>) => {
                     if (error) {
                         return;
@@ -381,7 +385,7 @@ class WorkerTile {
 
             const patterns = Array.from(options.patternDependencies.keys()).map((id) => ImageId.parse(id));
             if (patterns.length) {
-                const params: GetImagesParameters = {images: patterns, source: this.source, scope: this.scope, tileID: this.tileID, type: 'patterns'};
+                const params = {images: patterns, source: this.source, scope: this.scope, tileID: this.tileID, type: 'patterns'} as const;
                 actor.send('getImages', params, (err: Error, result: StyleImageMap<StringifiedImageId>) => {
                     if (error) {
                         return;
@@ -419,7 +423,9 @@ class WorkerTile {
             // for elevation queries.
             for (const bucket of Object.values(buckets)) {
                 if (bucket instanceof FillBucket) {
-                    bucket.setEvaluatedPortalGraph(evaluatedPortals);
+                    const vtLayer = data.layers[sourceLayerCoder.decode(bucket.sourceLayerIndex)];
+                    assert(vtLayer);
+                    bucket.setEvaluatedPortalGraph(evaluatedPortals, vtLayer, this.tileID.canonical, options.availableImages, options.brightness);
                 }
             }
         }
@@ -459,8 +465,7 @@ class WorkerTile {
     }
 
     rasterize(actor: Actor, imageMap: StyleImageMap<StringifiedImageVariant>, tasks: ImageRasterizationTasks, callback: () => void) {
-        const params: RasterizeImagesParameters = {scope: this.scope, tasks};
-        this.rasterizeTask = actor.send('rasterizeImages', params, (err: Error, rasterizedImages: RasterizedImageMap) => {
+        this.rasterizeTask = actor.send('rasterizeImages', {scope: this.scope, tasks}, (err: Error, rasterizedImages: RasterizedImageMap) => {
             if (!err) {
                 for (const [id, data] of rasterizedImages.entries()) {
                     const image = Object.assign(imageMap.get(id), {data});
@@ -479,9 +484,9 @@ class WorkerTile {
     }
 }
 
-function recalculateLayers(layers: ReadonlyArray<StyleLayer>, zoom: number, brightness: number, availableImages: ImageId[]) {
+function recalculateLayers(layers: ReadonlyArray<TypedStyleLayer>, zoom: number, brightness: number, availableImages: ImageId[], worldview: string | undefined) {
     // Layers are shared and may have been used by a WorkerTile with a different zoom.
-    const parameters = new EvaluationParameters(zoom, {brightness});
+    const parameters = new EvaluationParameters(zoom, {brightness, worldview});
     for (const layer of layers) {
         layer.recalculate(parameters, availableImages);
     }

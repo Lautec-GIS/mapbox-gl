@@ -1,4 +1,8 @@
 
+/**
+ * NOTE: When skipping a GL JS test, it also needs to be skipped in Native at projects/gl-native/metrics/ignores/platform-all.json
+ */
+
 const todo = [
     // "https://github.com/mapbox/mapbox-gl-js/issues/2716
     "query-tests/regressions/mapbox-gl-js#4494",
@@ -104,8 +108,6 @@ const todo = [
     "render-tests/icon-text-fit/stretch-nine-part-content-interpolate-text-size",
     // https://mapbox.atlassian.net/browse/GLJS-1189
     "render-tests/background-pattern/image-update/delayed/same-size-before-color-theme-change",
-    // https://mapbox.atlassian.net/browse/GLJS-1184
-    "render-tests/raster-array/semi-transparent-icon"
 ];
 
 const skip = [
@@ -183,32 +185,6 @@ const skip = [
     // Extremely flaky: https://github.com/mapbox/mapbox-gl-js/issues/11726
     "query-tests/terrain/draped/lines/slope-occlusion",
 
-    // Broken due to chrome update https://mapbox.atlassian.net/browse/GLJS-303
-    "query-tests/terrain/circle/map-aligned/overzoomed",
-    "render-tests/debug/collision-overscaled-fractional-zoom",
-    "render-tests/globe/globe-transforms/north-pole",
-    "render-tests/icon-image/stretchable-content",
-    "render-tests/icon-opacity/default",
-    "render-tests/icon-opacity/function",
-    "render-tests/icon-opacity/icon-only",
-    "render-tests/icon-opacity/literal",
-    "render-tests/icon-opacity/text-and-icon",
-    "render-tests/icon-translate-anchor/map",
-    "render-tests/icon-translate-anchor/viewport",
-    "render-tests/icon-translate/default",
-    "render-tests/icon-translate/function",
-    "render-tests/icon-translate/literal",
-    "render-tests/icon-visibility/visible",
-    "render-tests/raster-resampling/function",
-    "render-tests/raster-resampling/literal",
-    "render-tests/regressions/mapbox-gl-js#7172",
-    "render-tests/runtime-styling/set-style-sprite",
-    "render-tests/symbol-placement/point",
-    "render-tests/symbol-spacing/point-close",
-    "render-tests/symbol-spacing/point-far",
-    "render-tests/symbol-visibility/visible",
-    "render-tests/terrain/wireframe",
-
     // Unimplemented in -js:
     // https://mapbox.atlassian.net/browse/MAPS3D-671
     "render-tests/lighting-3d-mode/shadow/fill-extrusion-flat-roof",
@@ -282,7 +258,37 @@ const skip = [
     // Support image updates with different size
     "render-tests/background-pattern/image-update/delayed/different-size",
     "render-tests/background-pattern/image-update/delayed/different-size-before-color-theme-change",
-    "render-tests/background-pattern/image-update/delayed/different-size-with-color-theme"
+    "render-tests/background-pattern/image-update/delayed/different-size-with-color-theme",
+
+    // 3D intersections gl-js port
+    // https://mapbox.atlassian.net/browse/MAPS3D-1659
+    "render-tests/3d-intersections/elevated-wireframe",
+
+    // Procedural buildings gl-js port
+    // https://mapbox.atlassian.net/browse/MAPS3D-1664
+    "render-tests/building/conflation",
+    "render-tests/building/emissive-strength",
+    "render-tests/building/facades",
+    "render-tests/building/gabled",
+    "render-tests/building/ground-ao",
+    "render-tests/building/hipped",
+    "render-tests/building/mansard",
+    "render-tests/building/parapet",
+    "render-tests/building/property-update",
+    "render-tests/building/pyramidal",
+    "render-tests/building/skillion",
+    "render-tests/building/symbol-z-offset",
+    "render-tests/building/tile-border",
+    "render-tests/building/vertical-scale",
+    "render-tests/building/with-shadows",
+    "render-tests/building/opacity",
+
+    // Flaky model tests
+    "render-tests/model-layer/style-model-api-remove",
+    "render-tests/model-layer/vector-layer-external-models-import",
+
+    // Flaky image test
+    "render-tests/image/styleimagemissing"
 ];
 
 export default {todo, skip};

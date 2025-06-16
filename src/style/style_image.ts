@@ -24,6 +24,10 @@ export type StyleImageMetadata = {
 export type StyleImage = StyleImageData & StyleImageMetadata;
 
 export type StyleImages = Record<string, StyleImage>;
+
+/**
+ * A Map of `StyleImages` indexed by some type `T`.
+ */
 export type StyleImageMap<T> = Map<T, StyleImage>;
 
 export type StyleImageInterface = {
@@ -118,7 +122,7 @@ export function renderStyleImage(image: StyleImage): boolean {
  * @memberof StyleImageInterface
  * @instance
  * @name render
- * @return {boolean} `true` if this method updated the image. `false` if the image was not changed.
+ * @returns {boolean} `true` if this method updated the image. `false` if the image was not changed.
  */
 
 /**
