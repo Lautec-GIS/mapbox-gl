@@ -23,7 +23,7 @@ export default drawPieCharts;
 
 type TileRenderState = {
     programConfiguration: ProgramConfiguration,
-    program: Program<any>,
+    program: Program<PieChartUniformsType>,
     layoutVertexBuffer: VertexBuffer,
     globeExtVertexBuffer?: VertexBuffer | null,
     indexBuffer: IndexBuffer,
@@ -68,6 +68,8 @@ function drawPieCharts(
         const coord = coords[i];
 
         const tile = sourceCache.getTile(coord);
+
+        // eslint-disable-next-line
         const bucket: PieChartBucket<any> | null | undefined = (tile.getBucket(layer) as any);
         if (!bucket || bucket.projection.name !== tr.projection.name) continue;
 
@@ -125,8 +127,11 @@ function drawPieCharts(
         } = segmentsState.state;
         const segments = segmentsState.segments;
 
-        if (painter.terrain)
+        if (painter.terrain) {
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-expect-error
             painter.terrain.setupElevationDraw(tile, program, terrainOptions);
+        }
 
         painter.uploadCommonUniforms(context, program, tile.tileID.toUnwrapped());
 
