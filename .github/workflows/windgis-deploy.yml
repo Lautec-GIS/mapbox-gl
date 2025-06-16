@@ -3,7 +3,7 @@ name: WindGIS Deploy Package
 on:
   push:
     tags:
-      - 'windgis-v*.*.*'  # Triggers on tags like windgis-v1.0.0
+      - 'windgis-mapbox-gl-v*.*.*'  # Triggers on tags like windgis-v1.0.0
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
