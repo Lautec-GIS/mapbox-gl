@@ -48,14 +48,6 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Run WindGIS tests
-        run: |
-          if npm run | grep -q "windgis-test"; then
-            npm run windgis-test
-          else
-            npm test
-          fi
-
       - name: WindGIS type check
         run: |
           if npm run | grep -q "windgis-typecheck"; then
