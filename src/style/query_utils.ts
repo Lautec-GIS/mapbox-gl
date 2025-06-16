@@ -1,15 +1,16 @@
 import Point from '@mapbox/point-geometry';
 
 import type {PossiblyEvaluatedPropertyValue} from './properties';
-import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
+import type {TypedStyleLayer} from './style_layer/typed_style_layer';
 import type CircleBucket from '../data/bucket/circle_bucket';
 import type LineBucket from '../data/bucket/line_bucket';
+import type PieChartBucket from "../data/bucket/pie_chart_bucket";
 
 export function getMaximumPaintValue(
     property: string,
     layer: TypedStyleLayer,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    bucket: CircleBucket<any> | LineBucket,
+    bucket: CircleBucket<any> | LineBucket | PieChartBucket<any>,
 ): number {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const value = ((layer.paint as any).get(property) as PossiblyEvaluatedPropertyValue<any>).value;

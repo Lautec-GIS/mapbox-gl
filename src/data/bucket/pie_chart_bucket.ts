@@ -54,6 +54,7 @@ function addGlobeExtVertex(vertexArray: CircleGlobeExtArray, pos: {x: number, y:
  */
 class PieChartBucket<Layer extends PieChartStyleLayer> implements Bucket {
     index: number;
+    worldview: string;
     zoom: number;
     overscaling: number;
     layerIds: Array<string>;
@@ -143,7 +144,7 @@ class PieChartBucket<Layer extends PieChartStyleLayer> implements Bucket {
             const {geometry, index, sourceLayerIndex} = bucketFeature;
             const feature = features[index].feature;
 
-            this.addFeature(bucketFeature, geometry, index, options.availableImages, canonical, globeProjection,options.brightness);
+            this.addFeature(bucketFeature, geometry, index, options.availableImages, canonical, globeProjection, options.brightness);
             options.featureIndex.insert(feature, geometry, index, sourceLayerIndex, this.index);
         }
     }
@@ -205,7 +206,7 @@ class PieChartBucket<Layer extends PieChartStyleLayer> implements Bucket {
                 if (projection) {
                     const projectedPoint = projection.projectTilePoint(x, y, canonical);
                     const normal = projection.upVector(canonical, x, y);
-                    const array: any = this.globeExtVertexArray;
+                    const array = this.globeExtVertexArray;
 
                     addGlobeExtVertex(array, projectedPoint, normal);
                     addGlobeExtVertex(array, projectedPoint, normal);

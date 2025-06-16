@@ -65,6 +65,8 @@ const pieChartUniformValues = (
     const isGlobe = transform.projection.name === "globe";
 
     let extrudeScale: mat2;
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-expect-error
     if (layer.paint.get("circle-pitch-alignment") === "map") {
         if (isGlobe) {
             const s =
@@ -85,10 +87,7 @@ const pieChartUniformValues = (
 
     const colors = layer.paint.get("pie-chart-colors");
 
-    const pieColors = colors.value.value.reduce((a, b) => {
-        a.push(b.r, b.g, b.b, b.a);
-        return a;
-    }, []);
+    const pieColors = colors.value.kind === "constant" ? colors.value.value.map(({r, g, b, a}) => [r, g, b, a]).flat() : new Float32Array(0);
 
     const values = {
         'u_camera_to_center_distance': transform.cameraToCenterDistance,
@@ -101,9 +100,11 @@ const pieChartUniformValues = (
         'u_zoom_transition': 0,
         'u_up_dir': [0, 0, 0],
         'colors': pieColors,
-        'segment_count': colors.value.value.length
+        'segment_count': colors.value.kind === "constant" ? colors.value.value.length : 0
     };
 
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-expect-error
     return values;
 };
 
@@ -111,13 +112,16 @@ const pieChartDefinesValues = (
     layer: PieChartStyleLayer
 ): PieChartDefinesType[] => {
     const values: PieChartDefinesType[] = [];
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-expect-error
     if (layer.paint.get("circle-pitch-alignment") === "map")
         values.push("PITCH_WITH_MAP");
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-expect-error
     if (layer.paint.get("circle-pitch-scale") === "map")
         values.push("SCALE_WITH_MAP");
 
     return values;
 };
-
 
 export {pieChartUniforms, pieChartUniformValues, pieChartDefinesValues};

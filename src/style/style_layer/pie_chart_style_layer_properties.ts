@@ -1,8 +1,8 @@
-import styleSpec from '../../style-spec/reference/latest.js';
+import styleSpec from '../../style-spec/reference/latest';
 import {
     Properties,
     DataDrivenProperty,
-} from '../properties.js';
+} from '../properties';
 
 import type Color from '../../style-spec/util/color.js';
 

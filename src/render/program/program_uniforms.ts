@@ -103,7 +103,7 @@ export const programUniforms = {
     rasterParticleTexture: rasterParticleTextureUniforms,
     rasterParticleDraw: rasterParticleDrawUniforms,
     rasterParticleUpdate: rasterParticleUpdateUniforms,
-    pieChart:pieChartUniforms,
+    pieChart: pieChartUniforms,
     symbol: symbolUniforms,
     background: backgroundUniforms,
     backgroundPattern: backgroundPatternUniforms,
