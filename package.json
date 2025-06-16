@@ -169,7 +169,13 @@
     "check-ts-suppressions": "node build/check-ts-suppressions.js",
     "codegen": "tsx ./build/generate-style-code.ts && tsx ./build/generate-struct-arrays.ts",
     "build-typed-style-spec": "tsx ./build/generate-typed-style-spec.ts",
-    "tsc": "tsc --project tsconfig.json"
+    "tsc": "tsc --project tsconfig.json",
+    "windgis-build": "npm run build-prod-min && npm run build-prod && npm run build-css",
+    "windgis-test": "npm run test-unit && npm run test-expressions",
+    "windgis-typecheck": "npm run tsc",
+    "windgis-lint": "npm run lint && npm run lint-css",
+    "windgis-deploy": "echo 'Use GitHub Actions for deployment'",
+    "windgis-version": "echo 'WindGIS version deployment'"
   },
   "files": [
     "dist/mapbox-gl*",
