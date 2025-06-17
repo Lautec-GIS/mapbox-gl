@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  windgis-mapbox-gl-build-and-deploy:
+  windgis-build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -34,24 +34,17 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: WindGIS type check
+      - name: Type check and lint
         run: |
-          if npm run | grep -q "windgis-typecheck"; then
-            npm run windgis-typecheck
-          else
-            npm run tsc
-          fi
-
-      - name: WindGIS lint
-        run: |
-          if npm run | grep -q "windgis-lint"; then
-            npm run windgis-lint
-          else
-            npm run lint
-          fi
+          npm run tsc
+          npm run lint
+          npm run lint-css
 
       - name: Build
-        run: npm run windgis-build
+        run: |
+          npm run build-prod-min
+          npm run build-prod
+          npm run build-css
 
       - name: Update package.json for deployment
         run: |
@@ -71,21 +64,16 @@ jobs:
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/windgis-')
         run: |
-          tar -czf windgis-package-${{ steps.version.outputs.version }}.tar.gz dist/ build/
+          tar -czf windgis-package-${{ steps.version.outputs.version }}.tar.gz dist/
 
           gh release create ${{ github.ref_name }} \
             --title "WindGIS Release ${{ steps.version.outputs.version }}" \
-            --notes "WindGIS version of Mapbox GL JS - Release ${{ steps.version.outputs.version }}
+            --notes "WindGIS version of Mapbox GL JS
 
           ## Installation
           \`\`\`bash
           npm install @lautec-gis/mapbox-gl@${{ steps.version.outputs.version }}
-          \`\`\`
-
-          ## Changes
-          - Custom WindGIS build based on Mapbox GL JS
-          - Enhanced TypeScript declarations
-          - Optimized for Lautec-GIS organization usage" \
+          \`\`\`" \
             windgis-package-${{ steps.version.outputs.version }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
