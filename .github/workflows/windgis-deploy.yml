@@ -113,31 +113,14 @@ jobs:
 
       - name: Create WindGIS package.json
         run: |
-          # Create a separate package.json for WindGIS deployment
-          cat > package.json << EOF
-          {
-            "name": "@lautec-gis/mapbox-gl",
-            "version": "${{ needs.windgis-prepare.outputs.version }}",
-            "description": "WindGIS version of Mapbox GL JS",
-            "main": "dist/mapbox-gl.js",
-            "types": "dist/mapbox-gl.d.ts",
-            "publishConfig": {
-              "registry": "https://npm.pkg.github.com",
-              "@lautec-gis:registry": "https://npm.pkg.github.com"
-            },
-            "repository": {
-              "type": "git",
-              "url": "https://github.com/Lautec-GIS/mapbox-gl.git"
-            },
-            "keywords": ["windgis", "mapbox", "gl", "maps"],
-            "license": "BSD-3-Clause",
-            "files": [
-              "dist/",
-              "build/",
-              "README.md"
-            ]
-          }
-          EOF
+            # Use jq to modify only specific fields
+            jq '.name = "@lautec-gis/mapbox-gl" |
+                .version = "${{ needs.windgis-prepare.outputs.version }}" |
+                .repository.url = "https://github.com/Lautec-GIS/mapbox-gl.git" |
+                .publishConfig = {
+                  "registry": "https://npm.pkg.github.com",
+                  "@lautec-gis:registry": "https://npm.pkg.github.com"
+                }' package.json > package.json.tmp && mv package.json.tmp package.json
 
       - name: Publish WindGIS to GitHub Packages
         run: npm publish
