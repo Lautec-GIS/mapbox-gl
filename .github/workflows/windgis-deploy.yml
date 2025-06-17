@@ -28,7 +28,7 @@ jobs:
         run: |
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             # Extract version from windgis-v1.0.0 -> 1.0.0
-            echo "version=${GITHUB_REF#refs/tags/windgis-v}" >> $GITHUB_OUTPUT
+            echo "version=${GITHUB_REF#refs/tags/windgis-mapbox-gl-v}" >> $GITHUB_OUTPUT
           else
             echo "version=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
           fi
@@ -97,7 +97,7 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
-          scope: '@Lautec-GIS'  # Replace with your actual org name
+          scope: '@lautec-gis'
 
       - name: Download WindGIS build artifacts
         uses: actions/download-artifact@v4
@@ -119,7 +119,7 @@ jobs:
             "types": "dist/mapbox-gl.d.ts",
             "publishConfig": {
               "registry": "https://npm.pkg.github.com",
-              "@Lautec-GIS:registry": "https://npm.pkg.github.com"
+              "@lautec-gis:registry": "https://npm.pkg.github.com"
             },
             "repository": {
               "type": "git",
