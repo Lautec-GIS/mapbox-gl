@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  windgis-build-and-deploy:
+  windgis-mapbox-gl-build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -50,10 +50,8 @@ jobs:
             npm run lint
           fi
 
-      - name: Build and generate types
-        run: |
-          npm run windgis-build
-          npm run windgis-generate-types
+      - name: Build
+        run: npm run windgis-build
 
       - name: Update package.json for deployment
         run: |
