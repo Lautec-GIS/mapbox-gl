@@ -9,7 +9,7 @@ interface TypesConfig {
 }
 
 const config: TypesConfig = {
-    packageName: '@lautec-gis/windgis-mapbox-gl',
+    packageName: '@lautec-gis/mapbox-gl',
     outDir: 'dist',
     typesDir: 'dist/types'
 };
