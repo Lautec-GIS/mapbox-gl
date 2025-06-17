@@ -74,6 +74,10 @@ jobs:
             npm run build-css
           fi
 
+      - name: Generate TypeScript declarations from source
+        run: |
+          npm run windgis-generate-types
+
       - name: Upload WindGIS build artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -172,6 +172,7 @@
     "tsc": "tsc --project tsconfig.json",
     "windgis-build": "npm run build-prod-min && npm run build-prod && npm run build-css",
     "windgis-test": "npm run test-unit && npm run test-expressions",
+    "windgis-generate-types": "npx tsx scripts/generate-types.ts",
     "windgis-typecheck": "npm run tsc",
     "windgis-lint": "npm run lint && npm run lint-css",
     "windgis-deploy": "echo 'Use GitHub Actions for deployment'",
