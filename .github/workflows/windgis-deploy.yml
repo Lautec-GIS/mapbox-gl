@@ -112,7 +112,7 @@ jobs:
           # Create a separate package.json for WindGIS deployment
           cat > package.json << EOF
           {
-            "name": "Lautec-GIS/mapbox-gl",
+            "name": "@lautec-gis/mapbox-gl",
             "version": "${{ needs.windgis-prepare.outputs.version }}",
             "description": "WindGIS version of Mapbox GL JS",
             "main": "dist/mapbox-gl.js",
