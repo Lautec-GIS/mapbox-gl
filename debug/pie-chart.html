@@ -38,29 +38,29 @@
 <script src="../dist/mapbox-gl-dev.js"></script>
 <script src="../debug/access_token_generated.js"></script>
 <script>
-    let map = (window.map = new mapboxgl.Map({
+    var map = (window.map = new mapboxgl.Map({
         container: "map",
         zoom: 12.5,
         center: [-77.01866, 38.888],
-        style: "mapbox://styles/mapbox/streets-v10",
-        // style: {
-        //     version: 8,
-        //     name: "Empty",
-        //     metadata: {
-        //         "mapbox:autocomposite": true,
-        //     },
-        //     glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
-        //     sources: {},
-        //     layers: [
-        //         {
-        //             id: "background",
-        //             type: "background",
-        //             paint: {
-        //                 "background-color": "rgba(0,0,0,0)",
-        //             },
-        //         },
-        //     ],
-        // },
+        //style: "mapbox://styles/mapbox/streets-v10",
+        style: {
+            version: 8,
+            name: "Empty",
+            metadata: {
+                "mapbox:autocomposite": true,
+            },
+            glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+            sources: {},
+            layers: [
+                {
+                    id: "background",
+                    type: "background",
+                    paint: {
+                        "background-color": "rgba(0,0,0,0)",
+                    },
+                },
+            ],
+        },
         hash: true,
         useWebGL2: true,
     }));
@@ -76,7 +76,7 @@
                         coordinates: [-77.01866, 38.888],
                     },
                     properties: {
-                        progress: 0.0000037550928446705847,
+                        progress: 0.49803922,
                     },
                 },
                 {
@@ -87,6 +87,26 @@
                     },
                     properties: {
                         progress: 1.7881394498431355e-7,
+                    },
+                },
+                {
+                    type: "Feature",
+                    geometry: {
+                        type: "Point",
+                        coordinates: [-79.801633, 37.64734],
+                    },
+                    properties: {
+                        progress: 1,
+                    },
+                },
+                {
+                    type: "Feature",
+                    geometry: {
+                        type: "Point",
+                        coordinates: [-79.701633, 37.64734],
+                    },
+                    properties: {
+                        progress: 0,
                     },
                 },
             ],
@@ -105,6 +125,7 @@
             source: "test",
             paint: {
                 "pie-chart-colors": [
+                    "rgba(255,0,0,0)",
                     "#673AB7",
                     "#3F51B5",
                     "#2196F3",
@@ -114,15 +135,47 @@
                 ],
                 "pie-chart-size": 250,
                 "pie-chart-mask": ["get", "progress"],
-                "pie-chart-center-size": 0,
-                "pie-chart-stroke-color": "white",
+                "pie-chart-center-size": 50,
+                "pie-chart-stroke-color": "blue",
                 "pie-chart-stroke-width": 4,
                 "pie-chart-divider-width": 4,
+                "pie-chart-labels": ["test"]
             },
         });
 
-        console.log(map.getLayer("test"));
-        console.log(map.getSource("test"));
+        // map.addLayer({
+        //     id: "test",
+        //     type: "box-chart",
+        //     source: "test",
+        //     paint: {
+        //         "box-chart-colors": [
+        //             "#673AB7",
+        //             "#3F51B5",
+        //             "#2196F3",
+        //             "#03A9F4",
+        //             "#00BCD4",
+        //             "#009688",
+        //         ],
+        //         "box-chart-size": 500,
+        //         "box-chart-mask": ["get", "progress"],
+        //         "box-chart-stroke-color": "gray",
+        //         "box-chart-stroke-width": 4,
+        //     },
+        // });
+
+        map.on('click', (e) => {
+            // Set `bbox` as 5px reactangle area around clicked point.
+            const bbox = [
+                [e.point.x - 1, e.point.y - 1],
+                [e.point.x + 1, e.point.y + 1]
+            ];
+            // Find features intersecting the bounding box.
+            const selectedFeatures = map.queryRenderedFeatures(bbox, {
+                layers: ['test']
+            });
+
+        });
+
 
         // map.addSource("mapbox-dem", {
         //     type: "raster-dem",
@@ -142,7 +195,21 @@
         //         "circle-radius": 75,
         //     },
         // });
+
+
     });
+
+    document.getElementById("terrain-checkbox").onclick =
+        function () {
+            map.setPaintProperty("test","pie-chart-colors", [
+                "#673AB7",
+                "pink",
+                "yellow",
+                "#03A9F4",
+                "#00BCD4",
+                "#009688",
+            ]);
+        };
 </script>
 </body>
 </html>

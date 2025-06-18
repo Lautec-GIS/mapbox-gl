@@ -12,7 +12,7 @@ import shaders from '../shaders/shaders';
 import Program from './program';
 import {programUniforms} from './program/program_uniforms';
 import Context from '../gl/context';
-import {fogUniformValues} from '../render/fog';
+import {fogUniformValues} from './fog';
 import DepthMode from '../gl/depth_mode';
 import StencilMode from '../gl/stencil_mode';
 import ColorMode from '../gl/color_mode';
@@ -28,6 +28,7 @@ import line, {prepare as prepareLine} from './draw_line';
 import fill, {drawDepthPrepass as fillDepthPrepass} from './draw_fill';
 import fillExtrusion from './draw_fill_extrusion';
 import pieChart from './draw_pie_chart';
+import boxChart from './draw_box_chart';
 import building from '../../3d-style/render/draw_building';
 import hillshade from './draw_hillshade';
 import raster, {prepare as prepareRaster} from './draw_raster';
@@ -63,7 +64,7 @@ import type Transform from '../geo/transform';
 import type VertexBuffer from '../gl/vertex_buffer';
 import type GlyphManager from './glyph_manager';
 import type {ContextOptions} from '../gl/context';
-import type {CutoffParams} from '../render/cutoff';
+import type {CutoffParams} from './cutoff';
 import type {DepthRangeType, DepthMaskType, DepthFuncType} from '../gl/types';
 import type {ITrackedParameters} from '../tracked-parameters/tracked_parameters_base';
 import type {LightsUniformsType} from '../../3d-style/render/lights';
@@ -140,6 +141,7 @@ const draw: Record<string, DrawStyleLayer> = {
     fill,
     'fill-extrusion': fillExtrusion,
     'pie-chart': pieChart,
+    'box-chart': boxChart,
     building,
     hillshade,
     raster,

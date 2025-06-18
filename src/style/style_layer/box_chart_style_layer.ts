@@ -1,14 +1,14 @@
 import StyleLayer from "../style_layer";
-import PieChartBucket from "../../data/bucket/pie_chart_bucket";
 import {polygonIntersectsBufferedPoint} from "../../util/intersection_tests";
 import {
     getMaximumPaintValue,
     tilespaceTranslate,
 } from "../query_utils";
-import {getLayoutProperties, getPaintProperties} from "./pie_chart_style_layer_properties";
 import {vec4, vec3} from "gl-matrix";
 import Point from "@mapbox/point-geometry";
 import ProgramConfiguration from "../../data/program_configuration";
+import {getLayoutProperties, getPaintProperties} from "./box_chart_style_layer_properties";
+import BoxChartBucket from "../../data/bucket/box_chart_bucket";
 
 import type {
     Transitionable,
@@ -18,7 +18,7 @@ import type {
 } from "../properties";
 import type {FeatureState} from "../../style-spec/expression/index";
 import type {BucketParameters, Bucket} from "../../data/bucket";
-import type {LayoutProps, PaintProps} from "./pie_chart_style_layer_properties";
+import type {LayoutProps, PaintProps} from "./box_chart_style_layer_properties";
 import type Transform from "../../geo/transform";
 import type {LayerSpecification} from "../../style-spec/types";
 import type {TilespaceQueryGeometry} from "../query_geometry";
@@ -28,10 +28,10 @@ import type {Ray} from "../../util/primitives";
 import type {LUT} from "../../util/lut";
 import type {ProgramName} from "../../render/program";
 
-class PieChartStyleLayer extends StyleLayer {
+class BoxChartStyleLayer extends StyleLayer {
     override _unevaluatedLayout: Layout<LayoutProps>;
     override layout: PossiblyEvaluated<LayoutProps>;
-    override type: "pie-chart";
+    override type: "box-chart";
     override _transitionablePaint: Transitionable<PaintProps>;
     override _transitioningPaint: Transitioning<PaintProps>;
     override paint: PossiblyEvaluated<PaintProps>;
@@ -39,26 +39,27 @@ class PieChartStyleLayer extends StyleLayer {
     constructor(layer: LayerSpecification, scope: string, lut: LUT | null, options?: ConfigOptions | null) {
         const properties = {
             layout: getLayoutProperties(),
-            paint: getPaintProperties()
+            paint: getPaintProperties(),
         };
+
         super(layer, properties, scope, lut, options);
     }
 
     override getProgramIds(): ProgramName[] | null {
-        return ["pieChart"];
+        return ["boxChart"];
     }
 
     getProgramConfiguration(zoom: number): ProgramConfiguration {
         return new ProgramConfiguration(this, {zoom, lut: this.lut});
     }
 
-    createBucket(parameters: BucketParameters<PieChartStyleLayer>): PieChartBucket<PieChartStyleLayer> {
-        return new PieChartBucket(parameters);
+    createBucket(parameters: BucketParameters<BoxChartStyleLayer>): BoxChartBucket<BoxChartStyleLayer> {
+        return new BoxChartBucket(parameters);
     }
 
     override queryRadius(bucket: Bucket): number {
-        const pieChartBucket: PieChartBucket<PieChartStyleLayer> = bucket as PieChartBucket<PieChartStyleLayer>;
-        return getMaximumPaintValue('pie-chart-size', this, pieChartBucket) / 2;
+        const pieChartBucket: BoxChartBucket<BoxChartStyleLayer> = bucket as BoxChartBucket<BoxChartStyleLayer>;
+        return getMaximumPaintValue('box-chart-size', this, pieChartBucket) / 2;
     }
 
     override queryIntersectsFeature(
@@ -71,6 +72,7 @@ class PieChartStyleLayer extends StyleLayer {
         pixelPosMatrix: Float32Array,
         elevationHelper: DEMSampler | null
     ): boolean {
+
         const translation = tilespaceTranslate(
             [0, 0],
             'viewport',
@@ -78,7 +80,7 @@ class PieChartStyleLayer extends StyleLayer {
             queryGeometry.pixelToTileUnitsFactor
         );
 
-        const size = this.paint.get('pie-chart-size').evaluate(feature, featureState);
+        const size = this.paint.get('box-chart-size').evaluate(feature, featureState);
 
         return queryIntersectsCircle(
             queryGeometry,
@@ -105,6 +107,7 @@ function queryIntersectsCircle(
     translation: Point,
     size: number
 ): boolean {
+
     const tileId = queryGeometry.tileID.canonical;
     const elevationScale = transform.projection.upVectorScale(tileId, transform.center.lat, transform.worldSize).metersToTile;
 
@@ -153,4 +156,4 @@ function intersectAtHeight(r: Ray, z: number): Point {
     return new Point(intersectionPt[0], intersectionPt[1]);
 }
 
-export default PieChartStyleLayer;
+export default BoxChartStyleLayer;

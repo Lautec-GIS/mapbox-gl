@@ -190,6 +190,10 @@ import elevatedStructuresModelVert from '../../3d-style/shaders/elevated_structu
 import pieChartFrag from './pie_chart.fragment.glsl';
 // @ts-expect-error - GLSL import
 import pieChartVert from './pie_chart.vertex.glsl';
+// @ts-expect-error - GLSL import
+import boxChartFrag from './box_chart.fragment.glsl';
+// @ts-expect-error - GLSL import
+import boxChartVert from './box_chart.vertex.glsl';
 // 3d-style related shaders
 // @ts-expect-error - GLSL import
 import fillExtrusionDepthFrag from '../../3d-style/shaders/fill_extrusion_depth.fragment.glsl';
@@ -296,6 +300,7 @@ export default {
     vignette: compile(vignetteFrag, vignetteVert),
     occlusion: compile(occlusionFrag, occlusionVert),
     pieChart: compile(pieChartFrag, pieChartVert),
+    boxChart: compile(boxChartFrag, boxChartVert),
 } as const;
 
 export function parseUsedPreprocessorDefines(source: string, defines: DynamicDefinesType[]): void {

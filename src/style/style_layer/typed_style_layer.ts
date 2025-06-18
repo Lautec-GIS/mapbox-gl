@@ -18,6 +18,7 @@ import type {LUT} from '../../util/lut';
 import type {ConfigOptions} from '../properties';
 import type {LayerSpecification} from '../../style-spec/types';
 import type PieChartStyleLayer from "./pie_chart_style_layer";
+import type BoxChartStyleLayer from "./box_chart_style_layer";
 
 export type TypedStyleLayerConstructor = new (
     layer: LayerSpecification,
@@ -42,5 +43,6 @@ export type TypedStyleLayer =
     | RasterParticleStyleLayer
     | RasterStyleLayer
     | SkyStyleLayer
+    | BoxChartStyleLayer
     | SlotStyleLayer
     | SymbolStyleLayer;

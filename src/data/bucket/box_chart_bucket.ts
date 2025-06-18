@@ -24,7 +24,7 @@ import type {ProjectionSpecification} from '../../style-spec/types';
 import type Projection from '../../geo/projection/projection';
 import type {FeatureStates} from "../../source/source_state";
 import type {SpritePositions} from "../../util/image";
-import type  PieChartStyleLayer from "../../style/style_layer/pie_chart_style_layer";
+import type BoxChartStyleLayer from "../../style/style_layer/box_chart_style_layer";
 import type {VectorTileLayer} from "@mapbox/vector-tile";
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
@@ -52,7 +52,7 @@ function addGlobeExtVertex(vertexArray: CircleGlobeExtArray, pos: {x: number, y:
  * vector that is where it points.
  * @private
  */
-class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> implements Bucket {
+class BoxChartBucket<Layer extends BoxChartStyleLayer = BoxChartStyleLayer> implements Bucket {
     index: number;
     worldview: string;
     zoom: number;
@@ -233,6 +233,6 @@ class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> impl
     }
 }
 
-register(PieChartBucket, 'PieChartBucket', {omit: ['layers']});
+register(BoxChartBucket, 'BoxChartBucket', {omit: ['layers']});
 
-export default PieChartBucket;
+export default BoxChartBucket;

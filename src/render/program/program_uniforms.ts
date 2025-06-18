@@ -24,6 +24,7 @@ import {snowUniforms} from '../../precipitation/snow_program';
 import {rainUniforms} from "../../precipitation/rain_program";
 import {vignetteUniforms} from "../../precipitation/vignette_program";
 import {pieChartUniforms} from "./pie_chart_program";
+import {boxChartUniforms} from "./box_chart_program";
 
 import type {GlobeDefinesType} from '../../terrain/globe_raster_program';
 import type {HeatmapDefinesType} from './heatmap_program';
@@ -82,6 +83,7 @@ export const programUniforms = {
     fillPattern: fillPatternUniforms,
     fillOutline: fillOutlineUniforms,
     fillOutlinePattern: fillOutlinePatternUniforms,
+    boxChart: boxChartUniforms,
     building: buildingUniforms,
     buildingDepth: buildingDepthUniforms,
     elevatedStructuresDepth: elevatedStructuresDepthUniforms,

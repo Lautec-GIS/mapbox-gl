@@ -124,9 +124,21 @@ class Uniform4fv extends Uniform<Array<number>> implements IUniform<number[]> {
 
     override set(program: WebGLProgram, name: string, v: Array<number>): void {
         if (!this.fetchUniformLocation(program, name)) return;
-        if (v[0] !== this.current[0] || v[1] !== this.current[1] ||
-            v[2] !== this.current[2] || v[3] !== this.current[3]) {
-            this.current = v;
+
+        // Check if update is needed
+        let needsUpdate = this.current.length !== v.length;
+
+        if (!needsUpdate) {
+            for (let i = 0; i < v.length; i++) {
+                if (v[i] !== this.current[i]) {
+                    needsUpdate = true;
+                    break;
+                }
+            }
+        }
+
+        if (needsUpdate) {
+            this.current = [...v]; // Consider using spread for safety
             this.gl.uniform4fv(this.location, v);
         }
     }
