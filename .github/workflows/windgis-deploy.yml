@@ -1,0 +1,79 @@
+name: WindGIS Deploy Package
+on:
+  push:
+    tags:
+      - 'windgis-mapbox-gl-v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  windgis-build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@lautec-gis'
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/windgis-mapbox-gl-v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check and lint
+        run: |
+          npm run tsc
+          npm run lint
+          npm run lint-css
+
+      - name: Build
+        run: |
+          npm run build-prod-min
+          npm run build-prod
+          npm run build-css
+
+      - name: Update package.json for deployment
+        run: |
+          jq '.name = "@lautec-gis/mapbox-gl" |
+              .version = "${{ steps.version.outputs.version }}" |
+              .repository.url = "https://github.com/Lautec-GIS/mapbox-gl.git" |
+              .publishConfig = {
+                "registry": "https://npm.pkg.github.com",
+                "@lautec-gis:registry": "https://npm.pkg.github.com"
+              }' package.json > package.json.tmp && mv package.json.tmp package.json
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/windgis-')
+        run: |
+          tar -czf windgis-package-${{ steps.version.outputs.version }}.tar.gz dist/
+
+          gh release create ${{ github.ref_name }} \
+            --title "WindGIS Release ${{ steps.version.outputs.version }}" \
+            --notes "WindGIS version of Mapbox GL JS
+
+          ## Installation
+          \`\`\`bash
+          npm install @lautec-gis/mapbox-gl@${{ steps.version.outputs.version }}
+          \`\`\`" \
+            windgis-package-${{ steps.version.outputs.version }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
