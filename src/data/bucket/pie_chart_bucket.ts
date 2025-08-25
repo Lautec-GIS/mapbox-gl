@@ -1,0 +1,238 @@
+import {CircleLayoutArray, CircleGlobeExtArray, TriangleIndexArray} from '../array_types';
+import {pieChartAttributes, pieChartGlobeAttributesExt} from './pie_chart_attributes';
+import SegmentVector from '../segment';
+import {ProgramConfigurationSet} from '../program_configuration';
+import loadGeometry from '../load_geometry';
+import toEvaluationFeature from '../evaluation_feature';
+import {register} from '../../util/web_worker_transfer';
+import EvaluationParameters from '../../style/evaluation_parameters';
+
+import type {TileTransform} from '../../geo/projection/tile_transform';
+import type {CanonicalTileID, UnwrappedTileID} from '../../source/tile_id';
+import type {
+    Bucket,
+    BucketParameters,
+    BucketFeature,
+    IndexedFeature,
+    PopulateParameters
+} from '../bucket';
+import type Context from '../../gl/context';
+import type  IndexBuffer from '../../gl/index_buffer';
+import type  VertexBuffer from '../../gl/vertex_buffer';
+import type Point from '@mapbox/point-geometry';
+import type {ProjectionSpecification} from '../../style-spec/types';
+import type Projection from '../../geo/projection/projection';
+import type {FeatureStates} from "../../source/source_state";
+import type {SpritePositions} from "../../util/image";
+import type  PieChartStyleLayer from "../../style/style_layer/pie_chart_style_layer";
+import type {VectorTileLayer} from "@mapbox/vector-tile";
+import type {TileFootprint} from '../../../3d-style/util/conflation';
+import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
+import type {ImageId} from '../../style-spec/expression/types/image_id';
+
+const EXTENT = 8192;
+
+function addCircleVertex(layoutVertexArray: CircleLayoutArray, x: number, y: number, extrudeX: number, extrudeY: number) {
+    layoutVertexArray.emplaceBack(
+        (x * 2) + ((extrudeX + 1) / 2),
+        (y * 2) + ((extrudeY + 1) / 2));
+}
+
+function addGlobeExtVertex(vertexArray: CircleGlobeExtArray, pos: {x: number, y: number, z: number}, normal: [number, number, number]) {
+    const encode = 1 << 14;
+    vertexArray.emplaceBack(
+        pos.x, pos.y, pos.z,
+        normal[0] * encode, normal[1] * encode, normal[2] * encode);
+}
+
+/**
+ * Circles are represented by two triangles.
+ *
+ * Each corner has a pos that is the center of the circle and an extrusion
+ * vector that is where it points.
+ * @private
+ */
+class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> implements Bucket {
+    index: number;
+    worldview: string;
+    zoom: number;
+    overscaling: number;
+    layerIds: Array<string>;
+    layers: Array<Layer>;
+    stateDependentLayers: Array<Layer>;
+    stateDependentLayerIds: Array<string>;
+
+    layoutVertexArray: CircleLayoutArray;
+    layoutVertexBuffer: VertexBuffer;
+    globeExtVertexArray: CircleGlobeExtArray | null;
+    globeExtVertexBuffer: VertexBuffer | null;
+
+    indexArray: TriangleIndexArray;
+    indexBuffer: IndexBuffer;
+
+    hasPattern: boolean;
+    programConfigurations: ProgramConfigurationSet<Layer>;
+    segments: SegmentVector;
+    uploaded: boolean;
+    projection: ProjectionSpecification;
+
+    constructor(options: BucketParameters<Layer>) {
+        this.zoom = options.zoom;
+        this.overscaling = options.overscaling;
+        this.layers = options.layers;
+        this.layerIds = this.layers.map(layer => layer.id);
+        this.index = options.index;
+        this.hasPattern = false;
+        this.projection = options.projection;
+
+        this.layoutVertexArray = new CircleLayoutArray();
+        this.indexArray = new TriangleIndexArray();
+        this.segments = new SegmentVector();
+        this.programConfigurations = new ProgramConfigurationSet(options.layers, {
+            zoom: options.zoom,
+            lut: options.lut,
+        });
+        this.stateDependentLayerIds = this.layers.filter((l) => l.isStateDependent()).map((l) => l.id);
+    }
+
+    updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
+    }
+
+    populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
+        const bucketFeatures = [];
+        const circleSortKey = null;
+
+        for (const {feature, id, index, sourceLayerIndex} of features) {
+            const needGeometry = this.layers[0]._featureFilter.needGeometry;
+            const evaluationFeature = toEvaluationFeature(feature, needGeometry);
+
+            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom), evaluationFeature, canonical)) continue;
+
+            const sortKey = circleSortKey ?
+                circleSortKey.evaluate(evaluationFeature, {}, canonical) :
+                undefined;
+
+            const bucketFeature: BucketFeature = {
+                id,
+                properties: feature.properties,
+                type: feature.type,
+                sourceLayerIndex,
+                index,
+                geometry: needGeometry ? evaluationFeature.geometry : loadGeometry(feature, canonical, tileTransform),
+                patterns: {},
+                sortKey
+            };
+
+            bucketFeatures.push(bucketFeature);
+
+        }
+
+        if (circleSortKey) {
+            bucketFeatures.sort((a, b) => {
+                return (a.sortKey as number) - (b.sortKey as number);
+            });
+        }
+
+        let globeProjection: Projection | null | undefined = null;
+
+        if (tileTransform.projection.name === 'globe') {
+            this.globeExtVertexArray = new CircleGlobeExtArray();
+            globeProjection = tileTransform.projection;
+        }
+
+        for (const bucketFeature of bucketFeatures) {
+            const {geometry, index, sourceLayerIndex} = bucketFeature;
+            const feature = features[index].feature;
+
+            this.addFeature(bucketFeature, geometry, index, options.availableImages, canonical, globeProjection, options.brightness);
+            options.featureIndex.insert(feature, geometry, index, sourceLayerIndex, this.index);
+        }
+    }
+
+    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
+        this.programConfigurations.updatePaintArrays(states, vtLayer, layers, availableImages, imagePositions, isBrightnessChanged, brightness);
+    }
+
+    isEmpty(): boolean {
+        return this.layoutVertexArray.length === 0;
+    }
+
+    uploadPending(): boolean {
+        return !this.uploaded || this.programConfigurations.needsUpload;
+    }
+
+    upload(context: Context) {
+        if (!this.uploaded) {
+            this.layoutVertexBuffer = context.createVertexBuffer(this.layoutVertexArray, pieChartAttributes.members);
+            this.indexBuffer = context.createIndexBuffer(this.indexArray);
+
+            if (this.globeExtVertexArray) {
+                this.globeExtVertexBuffer = context.createVertexBuffer(this.globeExtVertexArray, pieChartGlobeAttributesExt.members);
+            }
+        }
+        this.programConfigurations.upload(context);
+        this.uploaded = true;
+    }
+
+    destroy() {
+        if (!this.layoutVertexBuffer) return;
+        this.layoutVertexBuffer.destroy();
+        this.indexBuffer.destroy();
+        this.programConfigurations.destroy();
+        this.segments.destroy();
+        if (this.globeExtVertexBuffer) {
+            this.globeExtVertexBuffer.destroy();
+        }
+    }
+
+    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, availableImages: ImageId[], canonical: CanonicalTileID, projection?: Projection | null, brightness?: number | null) {
+        for (const ring of geometry) {
+            for (const point of ring) {
+                const x = point.x;
+                const y = point.y;
+
+                // Do not include points that are outside the tile boundaries.
+                if (x < 0 || x >= EXTENT || y < 0 || y >= EXTENT) continue;
+
+                // this geometry will be of the Point type, and we'll derive
+                // two triangles from it.
+                //
+                // ┌─────────┐
+                // │ 3     2 │
+                // │         │
+                // │ 0     1 │
+                // └─────────┘
+
+                if (projection) {
+                    const projectedPoint = projection.projectTilePoint(x, y, canonical);
+                    const normal = projection.upVector(canonical, x, y);
+                    const array = this.globeExtVertexArray;
+
+                    addGlobeExtVertex(array, projectedPoint, normal);
+                    addGlobeExtVertex(array, projectedPoint, normal);
+                    addGlobeExtVertex(array, projectedPoint, normal);
+                    addGlobeExtVertex(array, projectedPoint, normal);
+                }
+                const segment = this.segments.prepareSegment(4, this.layoutVertexArray, this.indexArray, feature.sortKey);
+                const index = segment.vertexLength;
+
+                addCircleVertex(this.layoutVertexArray, x, y, -1, -1);
+                addCircleVertex(this.layoutVertexArray, x, y, 1, -1);
+                addCircleVertex(this.layoutVertexArray, x, y, 1, 1);
+                addCircleVertex(this.layoutVertexArray, x, y, -1, 1);
+
+                this.indexArray.emplaceBack(index, index + 1, index + 2);
+                this.indexArray.emplaceBack(index, index + 2, index + 3);
+
+                segment.vertexLength += 4;
+                segment.primitiveLength += 2;
+            }
+        }
+
+        this.programConfigurations.populatePaintArrays(this.layoutVertexArray.length, feature, index, {}, availableImages, canonical, brightness);
+    }
+}
+
+register(PieChartBucket, 'PieChartBucket', {omit: ['layers']});
+
+export default PieChartBucket;

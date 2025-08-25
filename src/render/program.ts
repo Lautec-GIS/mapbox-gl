@@ -33,7 +33,7 @@ import type {UniformBindings, UniformValues} from './uniform_binding';
 import type {BinderUniform} from '../data/program_configuration';
 import type Painter from './painter';
 import type {Segment} from "../data/segment";
-import type {ProgramUniformsType, DynamicDefinesType} from '../render/program/program_uniforms';
+import type {ProgramUniformsType, DynamicDefinesType} from './program/program_uniforms';
 import type {PossiblyEvaluated} from '../style/properties';
 
 export type ProgramName = keyof ProgramUniformsType;
@@ -488,7 +488,7 @@ class Program<Us extends UniformBindings> {
         }
 
         const primitiveSize = {
-            [gl.POINTS]: 1,
+            [gl.POINTS]: 3,
             [gl.LINES]: 2,
             [gl.TRIANGLES]: 3,
             [gl.LINE_STRIP]: 1

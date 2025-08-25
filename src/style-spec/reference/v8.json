@@ -1394,6 +1394,28 @@
             }
           }
         },
+        "pie-chart": {
+          "doc": "A pie chart.",
+          "sdk-support": {
+            "basic functionality": {
+              "js": "0.10.0",
+              "android": "2.0.1",
+              "ios": "2.0.0",
+              "macos": "0.1.0"
+            }
+          }
+        },
+        "box-chart": {
+          "doc": "A box chart.",
+          "sdk-support": {
+            "basic functionality": {
+              "js": "0.10.0",
+              "android": "2.0.1",
+              "ios": "2.0.0",
+              "macos": "0.1.0"
+            }
+          }
+        },
         "heatmap": {
           "doc": "A heatmap.",
           "sdk-support": {
@@ -1580,6 +1602,7 @@
     "layout_clip",
     "layout_fill",
     "layout_line",
+    "layout_pie-chart",
     "layout_circle",
     "layout_heatmap",
     "layout_fill-extrusion",
@@ -1592,6 +1615,54 @@
     "layout_sky",
     "layout_model"
   ],
+  "layout_pie-chart": {
+    "visibility": {
+      "type": "enum",
+      "values": {
+        "visible": {
+          "doc": "The layer is shown."
+        },
+        "none": {
+          "doc": "The layer is not shown."
+        }
+      },
+      "default": "visible",
+      "doc": "Whether this layer is displayed.",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        }
+      },
+      "property-type": "constant"
+    }
+  },
+  "layout_box-chart": {
+    "visibility": {
+      "type": "enum",
+      "values": {
+        "visible": {
+          "doc": "The layer is shown."
+        },
+        "none": {
+          "doc": "The layer is not shown."
+        }
+      },
+      "default": "visible",
+      "doc": "Whether this layer is displayed.",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        }
+      },
+      "property-type": "constant"
+    }
+  },
   "layout_background": {
     "visibility": {
       "type": "enum",
@@ -6544,6 +6615,8 @@
   "paint": [
     "paint_fill",
     "paint_line",
+    "paint_pie-chart",
+    "paint_box-chart",
     "paint_circle",
     "paint_heatmap",
     "paint_fill-extrusion",
@@ -6556,6 +6629,527 @@
     "paint_sky",
     "paint_model"
   ],
+  "paint_pie-chart": {
+    "pie-chart-size": {
+      "type": "number",
+      "default": 100.0,
+      "minimum": 0,
+      "transition": true,
+      "units": "pixels",
+      "doc": "Pie chart size",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "0.18.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "pie-chart-colors": {
+      "type": "array",
+      "value": "string",
+      "default": ["red","green","blue","yellow"],
+      "doc": "Specifies the lengths of the alternating dashes and gaps that form the dash pattern. The lengths are later scaled by the line width. To convert a dash length to pixels, multiply the length by the current line width. Note that GeoJSON sources with `lineMetrics: true` specified won't render dashed lines to the expected scale. Also note that zoom-dependent expressions will be evaluated only at integer zoom levels.",
+      "minimum": 0,
+      "transition": false,
+      "units": "line widths",
+      "requires": [
+        {
+          "!": "line-pattern"
+        }
+      ],
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "2.3.0"
+        }
+      },
+      "expression": {
+        "interpolated": false,
+        "parameters": [
+          "zoom",
+          "feature"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "pie-chart-labels": {
+      "type": "array",
+      "value": "string",
+      "default": ["red","green","blue","yellow"],
+      "doc": "labels for pie slices",
+      "minimum": 0,
+      "transition": false,
+      "units": "line widths",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "2.3.0"
+        }
+      },
+      "expression": {
+        "interpolated": false,
+        "parameters": [
+          "zoom",
+          "feature"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "pie-chart-mask": {
+      "type": "number",
+      "default": 0,
+      "doc": "Amount to blur the circle. 1 blurs the circle such that only the centerpoint is full opacity.",
+      "transition": true,
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "0.20.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "pie-chart-center-size": {
+      "type": "number",
+      "default": 0.0,
+      "minimum": 0,
+      "transition": true,
+      "units": "pixels",
+      "doc": "Pie chart center size",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "0.18.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "pie-chart-stroke-width": {
+      "type": "number",
+      "default": 2,
+      "minimum": 0,
+      "transition": true,
+      "units": "pixels",
+      "doc": "The width of the pie charts stroke. Strokes are placed outside of the `circle-radius`.",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        },
+        "data-driven styling": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "pie-chart-stroke-color": {
+      "type": "color",
+      "default": "#000000",
+      "doc": "The stroke color of the circle.",
+      "transition": true,
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        },
+        "data-driven styling": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "circle-stroke-opacity": {
+      "type": "number",
+      "doc": "The opacity of the circle's stroke.",
+      "default": 1,
+      "minimum": 0,
+      "maximum": 1,
+      "transition": true,
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        },
+        "data-driven styling": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "pie-chart-divider-width": {
+      "type": "number",
+      "default": 2,
+      "minimum": 0,
+      "transition": true,
+      "units": "pixels",
+      "doc": "The width of the pie charts dividers.",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        },
+        "data-driven styling": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    }
+  },
+  "paint_box-chart": {
+    "box-chart-size": {
+      "type": "number",
+      "default": 100.0,
+      "minimum": 0,
+      "transition": true,
+      "units": "pixels",
+      "doc": "Pie chart size",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "0.18.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "box-chart-colors": {
+      "type": "array",
+      "value": "color",
+      "default": ["red","green","blue","yellow"],
+      "doc": "Specifies the lengths of the alternating dashes and gaps that form the dash pattern. The lengths are later scaled by the line width. To convert a dash length to pixels, multiply the length by the current line width. Note that GeoJSON sources with `lineMetrics: true` specified won't render dashed lines to the expected scale. Also note that zoom-dependent expressions will be evaluated only at integer zoom levels.",
+      "minimum": 0,
+      "transition": false,
+      "units": "line widths",
+      "requires": [
+        {
+          "!": "line-pattern"
+        }
+      ],
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "2.3.0"
+        }
+      },
+      "expression": {
+        "interpolated": false,
+        "parameters": [
+          "zoom",
+          "feature"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "box-chart-labels": {
+      "type": "array",
+      "value": "string",
+      "default": ["red","green","blue","yellow"],
+      "doc": "labels for pie slices",
+      "minimum": 0,
+      "transition": false,
+      "units": "line widths",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "2.3.0"
+        }
+      },
+      "expression": {
+        "interpolated": false,
+        "parameters": [
+          "zoom",
+          "feature"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "box-chart-mask": {
+      "type": "number",
+      "default": 0,
+      "doc": "Amount to blur the circle. 1 blurs the circle such that only the centerpoint is full opacity.",
+      "transition": true,
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "0.20.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "box-chart-columns": {
+      "type": "number",
+      "default": 2.0,
+      "minimum": 0,
+      "transition": true,
+      "units": "pixels",
+      "doc": "Box chart columns",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "0.18.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "box-chart-rows": {
+      "type": "number",
+      "default": 2.0,
+      "minimum": 0,
+      "transition": true,
+      "units": "pixels",
+      "doc": "Box chart rows",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.10.0",
+          "android": "2.0.1",
+          "ios": "2.0.0",
+          "macos": "0.1.0"
+        },
+        "data-driven styling": {
+          "js": "0.18.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "box-chart-stroke-width": {
+      "type": "number",
+      "default": 2,
+      "minimum": 0,
+      "transition": true,
+      "units": "pixels",
+      "doc": "The width of the pie charts stroke. Strokes are placed outside of the `circle-radius`.",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        },
+        "data-driven styling": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    },
+    "box-chart-stroke-color": {
+      "type": "color",
+      "default": "#000000",
+      "doc": "The stroke color of the circle.",
+      "transition": true,
+      "sdk-support": {
+        "basic functionality": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        },
+        "data-driven styling": {
+          "js": "0.29.0",
+          "android": "5.0.0",
+          "ios": "3.5.0",
+          "macos": "0.4.0"
+        }
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "feature",
+          "feature-state"
+        ]
+      },
+      "property-type": "data-driven"
+    }
+  },
   "paint_fill": {
     "fill-antialias": {
       "type": "boolean",

@@ -64,6 +64,15 @@ export type StylePropertySpecification = {
     default?: Array<string>,
     tokens: never
 } | {
+    type: 'array',
+    value: 'color',
+    'property-type': ExpressionType,
+    expression?: ExpressionSpecification,
+    length?: number,
+    transition?: boolean,
+    default?: Array<string>,
+    tokens: never
+} | {
     type: 'resolvedImage',
     'property-type': ExpressionType,
     expression?: ExpressionSpecification,
