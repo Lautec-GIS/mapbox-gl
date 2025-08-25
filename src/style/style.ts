@@ -126,6 +126,7 @@ import type {StyleModelMap} from './style_mode';
 import type {TypedStyleLayer} from './style_layer/typed_style_layer';
 import type {LngLatLike} from '../geo/lng_lat';
 import type {RasterQueryParameters, RasterQueryResult} from '../source/raster_array_tile_source';
+import type {GeoJSON} from "geojson";
 
 export type QueryRenderedFeaturesParams = {
     layers?: string[];

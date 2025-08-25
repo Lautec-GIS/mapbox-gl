@@ -63,7 +63,7 @@ export type StylePropertySpecification = {
     transition?: boolean,
     default?: Array<string>,
     tokens: never
-} |{
+} | {
     type: 'array',
     value: 'color',
     'property-type': ExpressionType,
@@ -72,7 +72,7 @@ export type StylePropertySpecification = {
     transition?: boolean,
     default?: Array<string>,
     tokens: never
-}| {
+} | {
     type: 'resolvedImage',
     'property-type': ExpressionType,
     expression?: ExpressionSpecification,

@@ -30,7 +30,7 @@ export type BoxChartUniformsType = {
     ['u_zoom_transition']: Uniform1f;
     ['u_up_dir']: Uniform3f;
     ['colors']: Uniform4fv;
-}
+};
 
 export type BoxChartDefinesType =
     | "PITCH_WITH_MAP"
