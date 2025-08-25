@@ -954,8 +954,9 @@ export type PieChartLayerSpecification = {
         "circle-stroke-opacity-transition"?: TransitionSpecification,
         "pie-chart-divider-width"?: DataDrivenPropertyValueSpecification<number>,
         "pie-chart-divider-width-transition"?: TransitionSpecification
-    }
-}
+    },
+    "appearances"?: Array<AppearanceSpecification>
+};
 
 /**
  * @deprecated Use `PieChartLayerSpecification['layout']` instead.
@@ -995,8 +996,9 @@ export type BoxChartLayerSpecification = {
         "box-chart-stroke-width-transition"?: TransitionSpecification,
         "box-chart-stroke-color"?: DataDrivenPropertyValueSpecification<ColorSpecification>,
         "box-chart-stroke-color-transition"?: TransitionSpecification
-    }
-}
+    },
+    "appearances"?: Array<AppearanceSpecification>
+};
 
 /**
  * @deprecated Use `BoxChartLayerSpecification['layout']` instead.
