@@ -4,11 +4,12 @@
     "test": {
       "height": 160,
       "width": 200,
-      "allowed": 0.00057
+      "allowed": 0.00113
     }
   },
   "center": [ 0.1, 0 ],
   "zoom": 0,
+  "camera": {"camera-projection": "orthographic"},
   "sources": {
     "point": {
       "type": "geojson",

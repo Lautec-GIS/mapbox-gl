@@ -22,6 +22,14 @@ in highp vec4 v_pos_light_view_1;
 in highp float v_depth;
 #endif
 
+#ifdef ELEVATED_ROADS
+in highp float v_road_z_offset;
+#endif
+
+#ifdef APPLY_LUT_ON_GPU
+uniform highp sampler3D u_lutTexture;
+#endif
+
 #pragma mapbox: define lowp float opacity
 #pragma mapbox: define lowp vec4 pattern
 #ifdef FILL_PATTERN_TRANSITION
@@ -43,6 +51,10 @@ void main() {
     highp vec2 lod_pos = mix(pattern_tl / u_texsize, pattern_br / u_texsize, v_pos);
     vec4 out_color = textureLodCustom(u_image, pos, lod_pos);
 
+#ifdef APPLY_LUT_ON_GPU
+    out_color = applyLUT(u_lutTexture, out_color);
+#endif
+
 #ifdef FILL_PATTERN_TRANSITION
     vec2 pattern_b_tl = pattern_b.xy;
     vec2 pattern_b_br = pattern_b.zw;
@@ -55,9 +67,17 @@ void main() {
     out_color = apply_lighting_with_emission_ground(out_color, u_emissive_strength);
 #ifdef RENDER_SHADOWS
     float light = shadowed_light_factor(v_pos_light_view_0, v_pos_light_view_1, v_depth);
+#ifdef ELEVATED_ROADS
+    out_color.rgb *= mix(v_road_z_offset != 0.0 ? u_ground_shadow_factor : vec3(1.0), vec3(1.0), light);
+#else
     out_color.rgb *= mix(u_ground_shadow_factor, vec3(1.0), light);
+#endif
 #endif // RENDER_SHADOWS
 #endif // LIGHTING_3D_MODE
+
+#ifdef FEATURE_CUTOUT
+    out_color = apply_feature_cutout(out_color, gl_FragCoord);
+#endif
 
 #ifdef FOG
     out_color = fog_dither(fog_apply_premultiplied(out_color, v_fog_pos));

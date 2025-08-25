@@ -27,6 +27,7 @@ import LngLat, {LngLatBounds} from '../geo/lng_lat';
 import Point from '@mapbox/point-geometry';
 import AttributionControl from './control/attribution_control';
 import LogoControl from './control/logo_control';
+import IndoorControl from './control/indoor_control';
 import {supported} from '@mapbox/mapbox-gl-supported';
 import {RGBAImage} from '../util/image';
 import {Event, ErrorEvent} from '../util/evented';
@@ -50,7 +51,6 @@ import {ImageId} from '../style-spec/expression/types/image_id';
 import type Marker from '../ui/marker';
 import type Popup from '../ui/popup';
 import type SourceCache from '../source/source_cache';
-import type {Evented} from '../util/evented';
 import type {MapEventType, MapEventOf} from './events';
 import type {PointLike} from '../types/point-like';
 import type {FeatureState} from '../style-spec/expression/index';
@@ -105,6 +105,7 @@ import type {SpriteFormat} from '../render/image_manager';
 import type {PitchRotateKey} from './handler_manager';
 import type {CanvasSourceOptions} from '../source/canvas_source';
 import type {CustomSourceInterface} from '../source/custom_source';
+import type {RasterQueryParameters, RasterQueryResult} from '../source/raster_array_tile_source';
 
 export type ControlPosition = 'top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left';
 
@@ -490,6 +491,7 @@ export class Map extends Camera {
     _markers: Array<Marker>;
     _popups: Array<Popup>;
     _logoControl: IControl;
+    _indoorControl: IControl;
     _mapId: number;
     _localIdeographFontFamily: string;
     _localFontFamily?: string;
@@ -2131,6 +2133,30 @@ export class Map extends Camera {
         }
 
         return this.style.querySourceFeatures(sourceId, parameters);
+    }
+
+    /**
+     * Returns the value of a raster source at a given coordinate.
+     * Currently, this API only supports raster array sources.
+     *
+     * @experimental
+     * @param {string} sourceId The ID of the raster source to query.
+     * @param {LngLatLike} lnglat The mercator coordinates at which to query the raster.
+     * @param {RasterQueryParameters} [parameters] (optional) Parameters of the query.
+     * @param {string} [parameters.layerName] (optional) The name of the layer to query raster array source. If not provided, all layers in the source will be queried.
+     * @param {string} [parameters.bands] (optional) The IDs of the band to query raster array source.
+     * @returns {Promise<RasterQueryResult | null>} Promise which resolves to the result of the raster array query, containing the value at the specified point. If not specified all bands of the raster array source layers will be queried.
+     *
+     * @example
+     * const value = await map.queryRasterValue('my-raster-source', {lng: -122.4194, lat: 37.7749}, {bands: ['1000']});
+     * console.log(value['Layer']) // {1000: [0.34]}
+     */
+    queryRasterValue(sourceId: string, lnglat: LngLatLike, parameters: RasterQueryParameters): Promise<RasterQueryResult | null> {
+        if (!this._isValidId(sourceId)) {
+            return Promise.resolve(null);
+        }
+
+        return this.style.queryRasterValue(sourceId, lnglat, parameters);
     }
 
     /**
@@ -4071,6 +4097,33 @@ export class Map extends Camera {
         return this.style.getFeatureState(feature);
     }
 
+    /**
+     * *This API is experimental and subject to change in future versions*.
+     *
+     * @experimental
+     * @param {string} floorId The id of the floor to select.
+     * @example
+     * map._selectIndoorFloor('floor-1');
+     */
+    _selectIndoorFloor(floorId: string) {
+        this.indoor.selectFloor(floorId);
+    }
+
+    _addIndoorControl() {
+        if (!this._indoorControl) {
+            this._indoorControl = new IndoorControl();
+        }
+
+        this.addControl(this._indoorControl, 'right');
+    }
+
+    _removeIndoorControl() {
+        if (!this._indoorControl) {
+            return;
+        }
+        this.removeControl(this._indoorControl);
+    }
+
     _updateContainerDimensions() {
         if (!this._container) return;
 
@@ -4214,6 +4267,8 @@ export class Map extends Camera {
         this.painter.resize(Math.ceil(this._containerWidth), Math.ceil(this._containerHeight));
         this._updateTerrain();
         if (this.style) {
+            this.style.clearLayers();
+            this.style.imageManager.destroyAtlasTextures();
             this.style.reloadModels();
             this.style.clearSources();
         }
@@ -5216,18 +5271,18 @@ export class Map extends Camera {
 
 /**
  * A [`Point` geometry](https://github.com/mapbox/point-geometry) object, which has
- * `x` and `y` properties representing screen coordinates in pixels.
+ * `x` and `y` screen coordinates in pixels, or other units.
  *
  * @typedef {Point} Point
  * @example
- * const point = new mapboxgl.Point(-77, 38);
+ * const point = new mapboxgl.Point(400, 525);
  */
 
 /**
- * A {@link Point} or an array of two numbers representing `x` and `y` screen coordinates in pixels.
+ * A {@link Point} or an array of two numbers representing `x` and `y` screen coordinates in pixels, or other units.
  *
  * @typedef {(Point | Array<number>)} PointLike
  * @example
- * const p1 = new mapboxgl.Point(-77, 38); // a PointLike which is a Point
- * const p2 = [-77, 38]; // a PointLike which is an array of two numbers
+ * const p1 = new mapboxgl.Point(400, 525); // a PointLike which is a Point
+ * const p2 = [400, 525]; // a PointLike which is an array of two numbers
  */

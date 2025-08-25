@@ -2,8 +2,7 @@ import refProperties from './util/ref_properties';
 
 import type {LayerSpecification} from './types';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function stringify(obj: any) {
+function stringify(obj: unknown) {
     if (typeof obj === 'number' || typeof obj === 'boolean' || typeof obj === 'string' || obj === undefined || obj === null)
         return JSON.stringify(obj);
 
@@ -25,21 +24,12 @@ function stringify(obj: any) {
 function getKey(layer: LayerSpecification) {
     let key = '';
     for (const k of refProperties) {
-        // Ignore minzoom and maxzoom for model layers so that multiple model layers
-        // referencing the same source (but with different zoom ranges) produce the same
-        // key. This ensures they get grouped into a single bucket, preventing a scenario
-        // where shared node data is serialized twice and triggers an assert in struct_array.ts.
-        if (layer.type === 'model' && (k === 'minzoom' || k === 'maxzoom')) {
-            continue;
-        } else {
-            key += `/${stringify(layer[k])}`;
-        }
+        key += `/${stringify(layer[k])}`;
     }
     return key;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function containsKey(obj: any, key: string) {
+function containsKey(obj: unknown, key: string) {
     function recursiveSearch(item) {
         if (typeof item === 'string' && item === key) {
             return true;
@@ -114,12 +104,11 @@ export default function groupByLayout(
         group.push(layer);
     }
 
-    const result = [];
+    const result: LayerSpecification[][] = [];
 
     for (const k in groups) {
         result.push(groups[k]);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return result;
 }

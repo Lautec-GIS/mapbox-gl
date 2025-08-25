@@ -107,7 +107,7 @@ const todo = [
     // https://mapbox.atlassian.net/browse/MAPSNAT-2636
     "render-tests/icon-text-fit/stretch-nine-part-content-interpolate-text-size",
     // https://mapbox.atlassian.net/browse/GLJS-1189
-    "render-tests/background-pattern/image-update/delayed/same-size-before-color-theme-change",
+    "render-tests/background-pattern/image-update/delayed/same-size-before-color-theme-change"
 ];
 
 const skip = [
@@ -163,12 +163,6 @@ const skip = [
     // non-deterministic symbol placement on tile boundaries"
     "render-tests/text-variable-anchor/pitched",
 
-    // Flaky
-    // https://mapbox.atlassian.net/browse/GLJS-1226
-    // https://github.com/mapbox/mapbox-gl-js/issues/11234
-    "render-tests/video/projected",
-    "render-tests/video/default",
-
     // Non-deterministic
     "query-tests/terrain/draped/lines/slope-occlusion-box-query",
 
@@ -210,6 +204,52 @@ const skip = [
     // Dithering of fog is always enabled in GL-JS
     "render-tests/fog/dithering-runtime-off",
 
+    // Not implemented in gl-js
+    "render-tests/fill-extrusion-partial-rendering/partial-rendering-0",
+    "render-tests/fill-extrusion-partial-rendering/partial-rendering-1",
+    "render-tests/fill-extrusion-partial-rendering/partial-rendering-2",
+    "render-tests/fill-extrusion-partial-rendering/partial-rendering-3",
+
+    // Flaky in CI, covered by unit tests
+    "render-tests/terrain/camera-placement/elevation-not-yet-available",
+
+    // Flaky, https://mapbox.atlassian.net/browse/GLJS-608
+    "render-tests/model-layer/terrain-2-wheels-stunt",
+    "render-tests/model-layer/multiple-models-terrain",
+
+    // The algorithm for raster colour gradient texels stretching needs an adjustment
+    "render-tests/raster-color/categorical",
+
+    // Not working correctly
+    // https://github.com/mapbox/mapbox-gl-js-internal/pull/1909
+    "render-tests/lines-elevated-line-join-none",
+    "render-tests/lines-elevated-line-joins-linear-elevation",
+
+    // Support image updates with different size
+    "render-tests/background-pattern/image-update/delayed/different-size",
+    "render-tests/background-pattern/image-update/delayed/different-size-before-color-theme-change",
+    "render-tests/background-pattern/image-update/delayed/different-size-with-color-theme",
+
+    "render-tests/building/opacity",
+    "render-tests/building/faux-facade/building-facade",
+    "render-tests/building/faux-facade/building-facade-color-theme",
+    "render-tests/building/faux-facade/emissive-chance",
+    "render-tests/building/faux-facade/property-update",
+    "render-tests/building/faux-facade/shadows-supported",
+    "render-tests/building/faux-facade/skillion-unsupported",
+    "render-tests/building/faux-facade/window-ao",
+    "render-tests/building/faux-facade/building-facade-true-with-facade-hint",
+    "render-tests/building/faux-facade/building-facade-true-without-facade-hint",
+    "render-tests/building/faux-facade/feature-state",
+    "render-tests/building/cutoff-fade",
+
+    // https://mapbox.atlassian.net/browse/GLJS-1295
+    "render-tests/placement/icon-optional",
+    "render-tests/placement/text-optional/basic",
+    "render-tests/placement/text-optional/text-variable-anchor",
+    // limit number of holes experimental for native
+    "render-tests/fill-limit-number-holes",
+
     // Needs updated model fixtures
     "render-tests/model-layer/landmark-conflation-border-overlapping-extrusion",
     "render-tests/model-layer/landmark-conflation-borders",
@@ -231,64 +271,8 @@ const skip = [
     "render-tests/model-layer/landmark-front-cutoff-terrain",
     "render-tests/clip-layer/clip-layer-default-below-one-batched-model",
 
-    // Not implemented in gl-js
-    "render-tests/fill-extrusion-partial-rendering/partial-rendering-0",
-    "render-tests/fill-extrusion-partial-rendering/partial-rendering-1",
-    "render-tests/fill-extrusion-partial-rendering/partial-rendering-2",
-    "render-tests/fill-extrusion-partial-rendering/partial-rendering-3",
-
-    // Flaky in CI, covered by unit tests
-    "render-tests/terrain/camera-placement/elevation-not-yet-available",
-
-    // Flaky, https://mapbox.atlassian.net/browse/GLJS-608
-    "render-tests/model-layer/terrain-2-wheels-stunt",
-    "render-tests/model-layer/multiple-models-terrain",
-
-    // The algorithm for raster colour gradient texels stretching needs an adjustment
-    "render-tests/raster-color/categorical",
-
     // fill-extrusions always get removed. This will be separated (similar to symbol and model) in future.
     "render-tests/clip-layer/clip-layer-keep-fill-extrusions",
-
-    // Not working correctly
-    // https://github.com/mapbox/mapbox-gl-js-internal/pull/1909
-    "render-tests/lines-elevated-line-join-none",
-    "render-tests/lines-elevated-line-joins-linear-elevation",
-
-    // Support image updates with different size
-    "render-tests/background-pattern/image-update/delayed/different-size",
-    "render-tests/background-pattern/image-update/delayed/different-size-before-color-theme-change",
-    "render-tests/background-pattern/image-update/delayed/different-size-with-color-theme",
-
-    // 3D intersections gl-js port
-    // https://mapbox.atlassian.net/browse/MAPS3D-1659
-    "render-tests/3d-intersections/elevated-wireframe",
-
-    // Procedural buildings gl-js port
-    // https://mapbox.atlassian.net/browse/MAPS3D-1664
-    "render-tests/building/conflation",
-    "render-tests/building/emissive-strength",
-    "render-tests/building/facades",
-    "render-tests/building/gabled",
-    "render-tests/building/ground-ao",
-    "render-tests/building/hipped",
-    "render-tests/building/mansard",
-    "render-tests/building/parapet",
-    "render-tests/building/property-update",
-    "render-tests/building/pyramidal",
-    "render-tests/building/skillion",
-    "render-tests/building/symbol-z-offset",
-    "render-tests/building/tile-border",
-    "render-tests/building/vertical-scale",
-    "render-tests/building/with-shadows",
-    "render-tests/building/opacity",
-
-    // Flaky model tests
-    "render-tests/model-layer/style-model-api-remove",
-    "render-tests/model-layer/vector-layer-external-models-import",
-
-    // Flaky image test
-    "render-tests/image/styleimagemissing"
 ];
 
 export default {todo, skip};

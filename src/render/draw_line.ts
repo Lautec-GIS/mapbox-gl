@@ -174,7 +174,7 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
             }
 
             const affectedByFog = painter.isTileAffectedByFog(coord);
-            const program = painter.getOrCreateProgram(programId, {config: programConfiguration, defines, overrideFog: affectedByFog, overrideRtt: elevated ? false : undefined});
+            const program = painter.getOrCreateProgram(programId, {config: programConfiguration, defines, overrideFog: affectedByFog});
 
             if (!image && constantDash && constantCap && tile.lineAtlas) {
                 const posTo = tile.lineAtlas.getDash(constantDash, constantCap);
@@ -182,7 +182,7 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
             }
 
             if (renderWithShadows) {
-                shadowRenderer.setupShadows(tile.tileID.toUnwrapped(), program, 'vector-tile', tile.tileID.overscaledZ);
+                shadowRenderer.setupShadows(tile.tileID.toUnwrapped(), program, 'vector-tile');
             }
 
             let [trimStart, trimEnd] = layer.paint.get('line-trim-offset');

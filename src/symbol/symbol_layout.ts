@@ -163,7 +163,7 @@ export function evaluateVariableOffset(anchor: TextAnchor, [offsetX, offsetY]: [
     return [x, y];
 }
 
-type ShapedTextOrientations = { horizontal: Partial<Record<PlacementTypes, Shaping>>, vertical?: Shaping};
+type ShapedTextOrientations = {horizontal: Partial<Record<PlacementTypes, Shaping>>, vertical?: Shaping};
 export type SymbolFeatureData = {
     feature: SymbolFeature,
     shapedTextOrientations: ShapedTextOrientations,
@@ -177,7 +177,8 @@ export type SymbolFeatureData = {
     textOffset: [number, number],
     isSDFIcon: boolean,
     iconTextFit: "none" | "width" | "height" | "both",
-    iconOffset: [number, number]};
+    iconOffset: [number, number]
+};
 
 export type SymbolBucketData = {
     featureData: SymbolFeatureData[],
@@ -185,7 +186,7 @@ export type SymbolBucketData = {
     hasAnySecondaryIcon: boolean,
     textAlongLine: boolean,
     symbolPlacement: "point" | "line" | "line-center"
-}
+};
 
 export function performSymbolLayout(bucket: SymbolBucket,
                              glyphMap: GlyphMap,
@@ -431,9 +432,8 @@ function scaleShapedIconImage(outImagePosition: ImagePosition, image: StyleImage
 
     const beforeFitIconSize = getPositionedIconSize(beforeFitIcon);
     const afterFitIconSize = getPositionedIconSize(afterFitIcon);
-    // Multipliers should be bigger than 1 because we want to at least, keep the size we computed before
-    const widthMultiplier = (iconTextFit === 'both' || iconTextFit === 'width') && isFullyStretchableX(beforeFitIcon) ? Math.max(1, afterFitIconSize.width / beforeFitIconSize.width) : 1;
-    const heightMultiplier = (iconTextFit === 'both' || iconTextFit === 'height') && isFullyStretchableY(beforeFitIcon) ?  Math.max(1, afterFitIconSize.height / beforeFitIconSize.height) : 1;
+    const widthMultiplier = (iconTextFit === 'both' || iconTextFit === 'width') && isFullyStretchableX(beforeFitIcon) ? (afterFitIconSize.width / beforeFitIconSize.width) : 1;
+    const heightMultiplier = (iconTextFit === 'both' || iconTextFit === 'height') && isFullyStretchableY(beforeFitIcon) ?  (afterFitIconSize.height / beforeFitIconSize.height) : 1;
     variant.scaleSelf(widthMultiplier, heightMultiplier);
 
     const scaledIconId = variant.toString();
@@ -462,7 +462,7 @@ export function checkCrossFadeImagePositions(primary: ImageVariant, secondary: I
     const primaryPosition = iconPositions.get(primary.toString());
     const secondaryPosition = iconPositions.get(secondary.toString());
 
-    if (!secondaryPosition) {
+    if (!primaryPosition || !secondaryPosition) {
         return;
     }
 
@@ -572,7 +572,7 @@ type IconTextFit = "none" | "height" | "width" | "both";
 
 function fitIconsToText(bucket: SymbolBucket, shapedIcon: PositionedIcon | undefined, layout: PossiblyEvaluated<LayoutProps>, feature: SymbolFeature,
     canonical: CanonicalTileID, shapedTextOrientations: ShapedTextOrientations, fontScale: number,
-    iconOffset: [number, number], iconTextFit: IconTextFit): { defaultShapedIcon: PositionedIcon, verticallyShapedIcon: PositionedIcon | undefined} {
+    iconOffset: [number, number], iconTextFit: IconTextFit): {defaultShapedIcon: PositionedIcon, verticallyShapedIcon: PositionedIcon | undefined} {
     const defaultShaping = getDefaultHorizontalShaping(shapedTextOrientations.horizontal) || shapedTextOrientations.vertical;
     const iconTextFitPadding = layout.get('icon-text-fit-padding').evaluate(feature, {}, canonical);
     const hasIconTextFit = iconTextFit !== 'none';

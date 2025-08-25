@@ -1,22 +1,27 @@
 import validate from './validate';
 import {default as ValidationError, ValidationWarning} from '../error/validation_error';
-import getType from '../util/get_type';
+import {isString} from '../util/get_type';
 import {isFunction} from '../function/index';
 import {unbundle, deepUnbundle} from '../util/unbundle_jsonlint';
 import {supportsLightExpression, supportsPropertyExpression, supportsZoomExpression} from '../util/properties';
 import {isGlobalPropertyConstant, isFeatureConstant, isStateConstant} from '../expression/is_constant';
 import {createPropertyExpression, isExpression} from '../expression/index';
 
-import type {ValidationOptions} from './validate';
+import type {StyleReference} from '../reference/latest';
+import type {StyleSpecification, LayerSpecification} from '../types';
 
-export type PropertyValidationOptions = ValidationOptions & {
+export type PropertyValidatorOptions = {
+    key: string;
+    value: unknown;
+    valueSpec: unknown;
+    style: Partial<StyleSpecification>;
+    styleSpec: StyleReference;
     objectKey: string;
     layerType: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    layer: any;
+    layer: LayerSpecification;
 };
 
-export default function validateProperty(options: PropertyValidationOptions, propertyType: string): Array<ValidationError> {
+export default function validateProperty(options: PropertyValidatorOptions, propertyType: string): ValidationError[] {
     const key = options.key;
     const style = options.style;
     const layer = options.layer;
@@ -28,10 +33,9 @@ export default function validateProperty(options: PropertyValidationOptions, pro
     if (!layerSpec) return [];
 
     const useThemeMatch = propertyKey.match(/^(.*)-use-theme$/);
-    if (propertyType === 'paint' && useThemeMatch && layerSpec[useThemeMatch[1]]) {
+    if (useThemeMatch && layerSpec[useThemeMatch[1]]) {
         if (isExpression(value)) {
-            const errors = [];
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            const errors: ValidationError[] = [];
             return errors.concat(validate({
                 key: options.key,
                 value,
@@ -48,7 +52,6 @@ export default function validateProperty(options: PropertyValidationOptions, pro
                 },
                 style,
                 styleSpec,
-                // @ts-expect-error - TS2353 - Object literal may only specify known properties, and 'expressionContext' does not exist in type 'ValidationOptions'.
                 expressionContext: 'property',
                 propertyType,
                 propertyKey
@@ -80,7 +83,7 @@ export default function validateProperty(options: PropertyValidationOptions, pro
     }
 
     let tokenMatch: RegExpExecArray | undefined;
-    if (getType(value) === 'string' && supportsPropertyExpression(valueSpec) && !valueSpec.tokens && (tokenMatch = /^{([^}]+)}$/.exec(value))) {
+    if (isString(value) && supportsPropertyExpression(valueSpec) && !valueSpec.tokens && (tokenMatch = /^{([^}]+)}$/.exec(value))) {
         const example = `\`{ "type": "identity", "property": ${tokenMatch ? JSON.stringify(tokenMatch[1]) : '"_"'} }\``;
         return [new ValidationError(
             key, value,
@@ -88,13 +91,13 @@ export default function validateProperty(options: PropertyValidationOptions, pro
                 `Use an identity property function instead: ${example}.`)];
     }
 
-    const errors = [];
+    const errors: ValidationError[] = [];
 
     if (options.layerType === 'symbol') {
         if (propertyKey === 'text-field' && style && !style.glyphs && !style.imports) {
             errors.push(new ValidationError(key, value, 'use of "text-field" requires a style "glyphs" property'));
         }
-        if (propertyKey === 'text-font' && isFunction(deepUnbundle(value)) && unbundle(value.type) === 'identity') {
+        if (propertyKey === 'text-font' && isFunction(deepUnbundle(value)) && unbundle((value as {type: unknown}).type) === 'identity') {
             errors.push(new ValidationError(key, value, '"text-font" does not support identity functions'));
         }
     } else if (options.layerType === 'model' && propertyType === 'paint' && layer && layer.layout && layer.layout.hasOwnProperty('model-id')) {
@@ -112,14 +115,12 @@ export default function validateProperty(options: PropertyValidationOptions, pro
         }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return errors.concat(validate({
         key: options.key,
         value,
         valueSpec,
         style,
         styleSpec,
-        // @ts-expect-error - TS2353 - Object literal may only specify known properties, and 'expressionContext' does not exist in type 'ValidationOptions'.
         expressionContext: 'property',
         propertyType,
         propertyKey

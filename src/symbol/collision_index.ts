@@ -2,13 +2,16 @@ import Point from '@mapbox/point-geometry';
 import PathInterpolator from './path_interpolator';
 import * as intersectionTests from '../util/intersection_tests';
 import Grid from './grid_index';
-import {mat4, vec4} from 'gl-matrix';
+import {mat4, vec2, vec4} from 'gl-matrix';
 import ONE_EM from '../symbol/one_em';
 import {FOG_SYMBOL_CLIPPING_THRESHOLD, getFogOpacityAtTileCoord} from '../style/fog_helpers';
 import assert from 'assert';
 import * as symbolProjection from '../symbol/projection';
-import {degToRad} from '../util/util';
+import {degToRad, wrap} from '../util/util';
 import {clipLines} from '../util/line_clipping';
+import EXTENT from '../style-spec/data/extent';
+import {number as mix} from '../style-spec/util/interpolate';
+import {globeToMercatorTransition} from '../geo/projection/globe_util';
 
 import type {OverscaledTileID} from '../source/tile_id';
 import type {vec3} from 'gl-matrix';
@@ -92,6 +95,9 @@ class CollisionIndex {
         bucket: SymbolBucket,
         scale: number,
         collisionBox: SingleCollisionBox,
+        mercatorCenter: [number, number],
+        invMatrix: mat4,
+        projectedPosOnLabelSpace: boolean,
         shift: Point,
         allowOverlap: boolean,
         textPixelRatio: number,
@@ -101,9 +107,11 @@ class CollisionIndex {
     ): PlacedCollisionBox {
         assert(!this.transform.elevation || collisionBox.elevation !== undefined);
 
-        let anchorX = collisionBox.projectedAnchorX;
-        let anchorY = collisionBox.projectedAnchorY;
-        let anchorZ = collisionBox.projectedAnchorZ;
+        let projectedAnchorX = collisionBox.projectedAnchorX;
+        let projectedAnchorY = collisionBox.projectedAnchorY;
+        let projectedAnchorZ = collisionBox.projectedAnchorZ;
+        const anchorX = collisionBox.tileAnchorX;
+        const anchorY = collisionBox.tileAnchorY;
 
         // Apply elevation vector to the anchor point
         const elevation = collisionBox.elevation;
@@ -113,13 +121,36 @@ class CollisionIndex {
             const [ux, uy, uz] = projection.upVector(tileID.canonical, collisionBox.tileAnchorX, collisionBox.tileAnchorY);
             const upScale = projection.upVectorScale(tileID.canonical, this.transform.center.lat, this.transform.worldSize).metersToTile;
 
-            anchorX += ux * elevation * upScale;
-            anchorY += uy * elevation * upScale;
-            anchorZ += uz * elevation * upScale;
+            projectedAnchorX += ux * elevation * upScale;
+            projectedAnchorY += uy * elevation * upScale;
+            projectedAnchorZ += uz * elevation * upScale;
+        }
+
+        const bucketIsGlobeProjection = bucket.projection.name === 'globe';
+        const globeToMercator = bucket.projection.name === 'globe' ? globeToMercatorTransition(this.transform.zoom) : 0.0;
+        const isGlobeToMercatorTransition = globeToMercator < 1;
+
+        if (tileID && bucketIsGlobeProjection && isGlobeToMercatorTransition && !projectedPosOnLabelSpace) {
+            const tilesCount = 1 << tileID.canonical.z;
+            const mercator = vec2.fromValues(anchorX, anchorY);
+            vec2.scale(mercator, mercator, 1 / EXTENT);
+            vec2.add(mercator, mercator, vec2.fromValues(tileID.canonical.x, tileID.canonical.y));
+            vec2.scale(mercator, mercator, 1 / tilesCount);
+            vec2.sub(mercator, mercator, vec2.fromValues(mercatorCenter[0], mercatorCenter[1]));
+            mercator[0] = wrap(mercator[0], -0.5, 0.5);
+
+            vec2.scale(mercator, mercator, EXTENT);
+
+            const mercatorPosition = vec4.fromValues(mercator[0], mercator[1], EXTENT / (2.0 * Math.PI), 1.0);
+            vec4.transformMat4(mercatorPosition, mercatorPosition, invMatrix);
+
+            projectedAnchorX = mix(projectedAnchorX, mercatorPosition[0], globeToMercator);
+            projectedAnchorY = mix(projectedAnchorY, mercatorPosition[1], globeToMercator);
+            projectedAnchorZ = mix(projectedAnchorZ, mercatorPosition[2], globeToMercator);
         }
 
         const checkOcclusion = projection.name === 'globe' || !!elevation || this.transform.pitch > 0;
-        const projectedPoint = this.projectAndGetPerspectiveRatio(posMatrix, anchorX, anchorY, anchorZ, collisionBox.tileID, checkOcclusion, projection);
+        const projectedPoint = this.projectAndGetPerspectiveRatio(posMatrix, projectedAnchorX, projectedAnchorY, projectedAnchorZ, collisionBox.tileID, checkOcclusion, projection);
 
         const tileToViewport = textPixelRatio * projectedPoint.perspectiveRatio;
         const tlX = (collisionBox.x1 * scale + shift.x - collisionBox.padding) * tileToViewport + projectedPoint.point.x;
@@ -246,9 +277,7 @@ class CollisionIndex {
             // The path might need to be converted into screen space if a pitched map is used as the label space
             if (labelToScreenMatrix) {
                 assert(pitchWithMap);
-                // @ts-expect-error - TS2322 - Type 'vec4[]' is not assignable to type 'vec3[]'.
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                projectedPath = projectedPath.map(([x, y, z]: [any, any, any], index) => {
+                projectedPath = projectedPath.map(([x, y, z]: [number, number, number], index) => {
                     if (getElevation && !isGlobe) {
                         z = getElevation(index < firstLen - 1 ? first.tilePath[firstLen - 1 - index] : last.tilePath[index - firstLen + 2])[2];
                     }
@@ -458,7 +487,6 @@ class CollisionIndex {
                 behindFog = fogOpacity > FOG_SYMBOL_CLIPPING_THRESHOLD;
             }
         } else {
-            // @ts-expect-error - TS2345 - Argument of type 'number[]' is not assignable to parameter of type 'vec4'.
             symbolProjection.xyTransformMat4(p, p, posMatrix);
         }
         const w = p[3];

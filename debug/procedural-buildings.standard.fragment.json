@@ -1,0 +1,420 @@
+{
+    "version": 8,
+    "name": "Procedural Buildings",
+    "sources": {
+        "procedural-buildings": {
+            "type": "vector",
+            "url": "mapbox://mapbox-geodata.procedural-buildings-v1",
+            "maxzoom": 15
+        }
+    },
+    "sprite": "",
+    "glyphs": "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+    "projection": {"name": "globe"},
+    "layers": [
+        {
+            "id": "procedural-buildings",
+            "type": "building",
+            "metadata": {
+                "mapbox:group": "Buildings, built"
+            },
+            "source": "procedural-buildings",
+            "source-layer": "procedural_buildings",
+            "minzoom": 15,
+            "slot": "middle",
+            "filter": [
+                "any",
+                [
+                    "all",
+                    [
+                        "==",
+                        [
+                            "get",
+                            "extrude"
+                        ],
+                        "true"
+                    ],
+                    [
+                        "==",
+                        [
+                            "get",
+                            "underground"
+                        ],
+                        "false"
+                    ],
+                    [
+                        "any",
+                        [
+                            "<=",
+                            [
+                                "get",
+                                "distance_to_landmark"
+                            ],
+                            200
+                        ],
+                        [
+                            "==",
+                            [
+                                "get",
+                                "mbx_commercial"
+                            ],
+                            true
+                        ]
+                    ]
+                ],
+                [
+                    "<",
+                    [
+                        "get",
+                        "cross_perc"
+                    ],
+                    0.5
+                ]
+            ],
+            "layout": {
+                "building-roof-shape": [
+                    "case",
+                    [
+                        "all",
+                        [
+                            "<=",
+                            [
+                                "get",
+                                "area"
+                            ],
+                            200
+                        ],
+                        [
+                            ">=",
+                            [
+                                "get",
+                                "height"
+                            ],
+                            100
+                        ]
+                    ],
+                    "flat",
+                    [
+                        ">=",
+                        [
+                            "get",
+                            "vertex_count"
+                        ],
+                        9
+                    ],
+                    "parapet",
+                    [
+                        "has",
+                        "roof_type"
+                    ],
+                    [
+                        "get",
+                        "roof_type"
+                    ],
+                    "parapet"
+                ],
+                "building-base": [
+                    "get",
+                    "min_height"
+                ],
+                "building-height": [
+                    "get",
+                    "height"
+                ],
+                "building-facade": [
+                    "all",
+                    [
+                        ">=",
+                        [
+                            "get",
+                            "area"
+                        ],
+                        500
+                    ],
+                    [
+                        ">=",
+                        [
+                            "get",
+                            "height"
+                        ],
+                        5
+                    ]
+                ],
+                "building-facade-floors": [
+                    "case",
+                    [
+                        "<",
+                        [
+                            "get",
+                            "height"
+                        ],
+                        20
+                    ],
+                    [
+                        "/",
+                        [
+                            "-",
+                            [
+                                "get",
+                                "height"
+                            ],
+                            [
+                                "get",
+                                "min_height"
+                            ]
+                        ],
+                        [
+                            "random",
+                            6,
+                            8,
+                            [
+                                "id"
+                            ]
+                        ]
+                    ],
+                    [
+                        "/",
+                        [
+                            "-",
+                            [
+                                "get",
+                                "height"
+                            ],
+                            [
+                                "get",
+                                "min_height"
+                            ]
+                        ],
+                        [
+                            "random",
+                            20,
+                            30,
+                            [
+                                "id"
+                            ]
+                        ]
+                    ]
+                ],
+                "building-facade-window": [
+                    "case",
+                    [
+                        "==",
+                        [
+                            "get",
+                            "roof_type"
+                        ],
+                        "parapet"
+                    ],
+                    [
+                        [
+                            "random",
+                            0.7,
+                            0.95,
+                            [
+                                "id"
+                            ]
+                        ],
+                        [
+                            "random",
+                            0.9,
+                            1,
+                            [
+                                "id"
+                            ]
+                        ]
+                    ],
+                    [
+                        0.5,
+                        0.9
+                    ]
+                ]
+            },
+            "paint": {
+                "building-cutoff-fade-range": 0.5,
+                "building-facade-emissive-chance": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "measure-light",
+                        "brightness"
+                    ],
+                    0.1,
+                    0.1,
+                    0.4,
+                    0
+                ],
+                "building-emissive-strength": [
+                    "match",
+                    [
+                        "get",
+                        "building-part"
+                    ],
+                    "window",
+                    [
+                        "interpolate",
+                        [
+                            "linear"
+                        ],
+                        [
+                            "measure-light",
+                            "brightness"
+                        ],
+                        0.1,
+                        [
+                            "random",
+                            0,
+                            0.1,
+                            [
+                                "id"
+                            ]
+                        ],
+                        0.4,
+                        0.8
+                    ],
+                    "door",
+                    0.5,
+                    0
+                ],
+                "building-color": [
+                    "match",
+                    [
+                        "get",
+                        "building-part"
+                    ],
+                    "window",
+                    [
+                        "hsl",
+                        38,
+                        [
+                            "random",
+                            10,
+                            20,
+                            [
+                                "id"
+                            ]
+                        ],
+                        90
+                    ],
+                    "wall",
+                    "hsl(38, 40%, 96%)",
+                    "roof",
+                    [
+                        "match",
+                        [
+                            "get",
+                            "roof_type"
+                        ],
+                        [
+                            "gabled",
+                            "hipped",
+                            "mansard",
+                            "pyramidal"
+                        ],
+                        [
+                            "hsl",
+                            [
+                                "random",
+                                23,
+                                32,
+                                [
+                                    "id"
+                                ]
+                            ],
+                            65,
+                            [
+                                "at",
+                                [
+                                    "round",
+                                    [
+                                        "random",
+                                        0,
+                                        1,
+                                        [
+                                            "id"
+                                        ]
+                                    ]
+                                ],
+                                [
+                                    92,
+                                    96
+                                ]
+                            ]
+                        ],
+                        "skillion",
+                        [
+                            "hsl",
+                            32,
+                            80,
+                            95
+                        ],
+                        [
+                            "hsl",
+                            [
+                                "random",
+                                20,
+                                30,
+                                [
+                                    "id"
+                                ]
+                            ],
+                            50,
+                            [
+                                "random",
+                                90,
+                                94,
+                                [
+                                    "id"
+                                ]
+                            ]
+                        ]
+                    ],
+                    "door",
+                    [
+                        "hsl",
+                        0.0,
+                        0.0,
+                        100.0
+                    ],
+                    [
+                        "hsl",
+                        41,
+                        80,
+                        96
+                    ]
+                ],
+                "building-vertical-scale": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    15,
+                    0,
+                    15.3,
+                    1
+                ],
+                "building-opacity": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    15,
+                    0.1,
+                    15.3,
+                    1
+                ],
+                "building-ambient-occlusion-ground-intensity": 0.1,
+                "building-ambient-occlusion-ground-radius": 10,
+                "building-ambient-occlusion-ground-attenuation": 1,
+                "building-ambient-occlusion-intensity": 0.6
+            }
+        }
+    ]
+}

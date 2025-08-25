@@ -503,6 +503,15 @@ class ImageManager extends Evented {
         this.patterns.get(scope).set(id.toString(), {bin, position});
     }
 
+    destroyAtlasTextures() {
+        for (const atlasTexture of this.atlasTexture.values()) {
+            if (atlasTexture) {
+                atlasTexture.destroy();
+            }
+        }
+        this.atlasTexture.clear();
+    }
+
     bind(context: Context, scope: string) {
         const gl = context.gl;
         let atlasTexture = this.atlasTexture.get(scope);
@@ -577,6 +586,10 @@ class ImageManager extends Evented {
                 this.updateImage(id, scope, image);
             }
         }
+    }
+
+    destroy() {
+        if (this.imageRasterizerDispatcher) this.imageRasterizerDispatcher.remove();
     }
 }
 

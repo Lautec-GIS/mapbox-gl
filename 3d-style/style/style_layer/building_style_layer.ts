@@ -28,6 +28,22 @@ class BuildingStyleLayer extends StyleLayer {
     createBucket(parameters: BucketParameters<BuildingStyleLayer>): BuildingBucket {
         return new BuildingBucket(parameters);
     }
+
+    override hasShadowPass(): boolean {
+        return this.paint.get('building-cast-shadows');
+    }
+
+    override hasLightBeamPass(): boolean {
+        return true;
+    }
+
+    override canCastShadows(): boolean {
+        return true;
+    }
+
+    override is3D(terrainEnabled?: boolean): boolean {
+        return true;
+    }
 }
 
 export default BuildingStyleLayer;

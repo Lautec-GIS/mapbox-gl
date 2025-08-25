@@ -153,9 +153,9 @@ Object.keys(mapboxglVersions).forEach(function (version) {
 
 document.addEventListener('DOMContentLoaded', function () {
     const jsLatest = document.createElement("a");
-    jsLatest.href = "../../dist/mapbox-gl.js";
+    jsLatest.href = "./dist/mapbox-gl.js";
     const cssLatest = document.createElement("a");
-    cssLatest.href = "../../dist/mapbox-gl.css";
+    cssLatest.href = "./dist/mapbox-gl.css";
 
     const titleItem = document.querySelector('#title');
     const titleElement = document.querySelector('#title-text');
@@ -188,7 +188,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (mapboxgl.accessToken) {
             params.access_token = mapboxgl.accessToken;
         } else {
-            params.access_token = prompt("Access Token");
+            // This default access token is scoped to localhost and internal mapbox pages
+            params.accessToken = 'pk.eyJ1IjoiZ2wtanMtdGVhbSIsImEiOiJjbTV1d3l0d3AwMThnMmpzZ2M5OTNyeDE1In0.2nygBIo7PXbkFCCt6LEBgw'
         }
     }
 

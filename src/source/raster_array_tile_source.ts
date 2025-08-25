@@ -1,4 +1,6 @@
-import Texture from '../render/texture';
+// Import MRTData as a module with side effects to ensure
+// it's registered as a serializable class on the main thread
+import '../data/mrt_data';
 import RasterTileSource from './raster_tile_source';
 import {extend} from '../util/util';
 import {RGBAImage} from '../util/image';
@@ -6,12 +8,16 @@ import {ErrorEvent} from '../util/evented';
 import {ResourceType} from '../util/ajax';
 import RasterStyleLayer from '../style/style_layer/raster_style_layer';
 import RasterParticleStyleLayer from '../style/style_layer/raster_particle_style_layer';
-// Import MRTData as a module with side effects to ensure
-// it's registered as a serializable class on the main thread
-import '../data/mrt_data';
+import MercatorCoordinate from '../geo/mercator_coordinate';
+import {OverscaledTileID} from './tile_id';
+import {getPointLonLat} from '../data/mrt/mrt.query';
+import LngLat from '../geo/lng_lat';
+import browser from '../util/browser';
+import {makeFQID} from '../util/fqid';
 
-import type Dispatcher from '../util/dispatcher';
 import type RasterArrayTile from './raster_array_tile';
+import type Texture from '../render/texture';
+import type Dispatcher from '../util/dispatcher';
 import type {Map as MapboxMap} from '../ui/map';
 import type {Evented} from '../util/evented';
 import type {Callback} from '../types/callback';
@@ -21,6 +27,15 @@ import type {TextureDescriptor} from './raster_array_tile';
 import type {StyleImage, StyleImageMap} from '../style/style_image';
 import type {RasterArraySourceSpecification} from '../style-spec/types';
 import type {WorkerSourceRasterArrayTileRequest} from './worker_source';
+import type {LngLatLike} from '../geo/lng_lat';
+
+type RasterQueryResultEntry = Record<string, number[] | null>;
+export type RasterQueryResult = Record<string, RasterQueryResultEntry> | null;
+
+export type RasterQueryParameters = {
+    layerName?: string;
+    bands?: string[];
+};
 
 /**
  * A data source containing raster-array tiles created with [Mapbox Tiling Service](https://docs.mapbox.com/mapbox-tiling-service/guides/).
@@ -37,6 +52,9 @@ import type {WorkerSourceRasterArrayTileRequest} from './worker_source';
  * @see [Example: Create a wind particle animation](https://docs.mapbox.com/mapbox-gl-js/example/raster-particle-layer/)
  */
 class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
+    private _loadTilePending: Record<string, Array<Callback<MapboxRasterTile>>>;
+    private _loadTileLoaded: Record<string, boolean>;
+
     override map: MapboxMap;
 
     /**
@@ -51,6 +69,8 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         this.type = 'raster-array';
         this.maxzoom = 22;
         this.partial = true;
+        this._loadTilePending = {};
+        this._loadTileLoaded = {};
         this._options = extend({type: 'raster-array'}, options);
     }
 
@@ -104,9 +124,9 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
                 tile.setExpiryData({cacheControl, expires});
             }
 
-            if (this.partial) {
+            if (this.partial && tile.state !== 'expired') {
                 tile.state = 'empty';
-            } else {
+            } else if (!this.partial) {
                 if (!data) return callback(null);
 
                 tile.state = 'loaded';
@@ -138,33 +158,22 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
     }
 
     override unloadTile(tile: RasterArrayTile, _?: Callback<undefined> | null) {
-        const texture = tile.texture;
-        if (texture && texture instanceof Texture) {
+        const textures = tile.texturePerLayer;
+
+        tile.flushAllQueues();
+
+        if (textures.size) {
             // Clean everything else up owned by the tile, but preserve the texture.
             // Destroy first to prevent racing with the texture cache being popped.
             tile.destroy(true);
-
-            // Save the texture to the cache
-            this.map.painter.saveTileTexture(texture);
+            // Preserve the textures in the cache
+            for (const texture of textures.values()) {
+                // Save the texture to the cache
+                this.map.painter.saveTileTexture(texture);
+            }
         } else {
             tile.destroy();
-            tile.flushQueues();
-            tile._isHeaderLoaded = false;
-
-            delete tile._mrt;
-            delete tile.textureDescriptor;
         }
-
-        if (tile.fbo) {
-            tile.fbo.destroy();
-            delete tile.fbo;
-        }
-
-        delete tile.request;
-        delete tile.requestParams;
-
-        delete tile.neighboringTiles;
-        tile.state = 'unloaded';
     }
 
     /**
@@ -172,7 +181,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
      * for the requested band, fetch and repaint once it's acquired.
      * @private
      */
-    prepareTile(tile: RasterArrayTile, sourceLayer: string, band: string | number) {
+    prepareTile(tile: RasterArrayTile, sourceLayer: string, layerId: string, band: string | number) {
         // Skip if tile is not yet loaded or if no update is needed
         if (!tile._isHeaderLoaded) return;
 
@@ -180,7 +189,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         if (tile.state !== 'empty') tile.state = 'reloading';
 
         // Fetch data for band and then repaint once data is acquired.
-        tile.fetchBand(sourceLayer, band, (error, data) => {
+        tile.fetchBandForRender(sourceLayer, layerId, band, (error, data) => {
             if (error) {
                 tile.state = 'errored';
                 this.fire(new ErrorEvent(error));
@@ -190,7 +199,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
 
             if (data) {
                 tile._isHeaderLoaded = true;
-                tile.setTexture(data, this.map.painter);
+                tile.setTexturePerLayer(layerId, data, this.map.painter);
                 tile.state = 'loaded';
                 this.triggerRepaint(tile);
             }
@@ -236,15 +245,17 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         const band = layerBand || this.getInitialBand(sourceLayer);
         if (band == null) return;
 
-        if (!tile.textureDescriptor) {
-            this.prepareTile(tile, sourceLayer, band);
+        if (!tile.textureDescriptorPerLayer.get(layer.id)) {
+            this.prepareTile(tile, sourceLayer, layer.id, band);
             return;
         }
 
         // Fallback to previous texture even if update is needed
-        if (tile.updateNeeded(sourceLayer, band) && !fallbackToPrevious) return;
+        if (tile.updateNeeded(layer.id, band) && !fallbackToPrevious) return;
 
-        return Object.assign({}, tile.textureDescriptor, {texture: tile.texture});
+        const textureDescriptor = tile.textureDescriptorPerLayer.get(layer.id);
+
+        return Object.assign({}, textureDescriptor, {texture: tile.texturePerLayer.get(layer.id)});
     }
 
     /**
@@ -281,6 +292,139 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         }
 
         return styleImages;
+    }
+
+    queryRasterArrayValueByBandId(lngLat: LngLat, tile: RasterArrayTile, params: RasterQueryParameters): Promise<RasterQueryResult> {
+        const mrt = tile._mrt;
+        return new Promise((resolve) => {
+            const queryResult: RasterQueryResult = {};
+            const fetchLayerBandsRequests = new Set<string>();
+
+            for (const [layerName, layer] of Object.entries(mrt.layers)) {
+                if (params.layerName && layerName !== params.layerName) continue;
+                const entry: RasterQueryResultEntry = {};
+                queryResult[layerName] = entry;
+                for (const {bands} of layer.dataIndex) {
+                    for (const band of bands) {
+                        if (params.bands && !(params.bands).includes(band)) continue;
+                        fetchLayerBandsRequests.add(makeFQID(layerName, band));
+                        tile.fetchBand(layerName, null, band, (err) => {
+                            browser.frame(() => {
+                                if (err) {
+                                    entry[band] = null;
+                                } else {
+                                    entry[band] = getPointLonLat([lngLat.lng, lngLat.lat], mrt, layer.getBandView(band)) as number[];
+                                }
+                                fetchLayerBandsRequests.delete(makeFQID(layerName, band));
+                                if (fetchLayerBandsRequests.size === 0) {
+                                    resolve(queryResult);
+                                }
+                            });
+                        }, false);
+                    }
+                }
+            }
+
+            if (fetchLayerBandsRequests.size === 0) {
+                resolve(queryResult);
+            }
+        });
+    }
+
+    _loadTileForQuery(tile: RasterArrayTile, callback: Callback<MapboxRasterTile>) {
+        if (this._loadTileLoaded[tile.uid]) {
+            callback(null, tile._mrt);
+            return;
+        }
+
+        if (this._loadTilePending[tile.uid]) {
+            this._loadTilePending[tile.uid].push(callback);
+            return;
+        }
+
+        this._loadTilePending[tile.uid] = [callback];
+
+        const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), false, this.tileSize);
+        const request = this.map._requestManager.transformRequest(url, ResourceType.Tile);
+        const requestParams: WorkerSourceRasterArrayTileRequest = {
+            request,
+            uid: tile.uid,
+            tileID: tile.tileID,
+            type: this.type,
+            source: this.id,
+            scope: this.scope,
+            partial: false
+        };
+
+        tile.actor.send('loadTile', requestParams, (error: AJAXError | null, data?: MapboxRasterTile, cacheControl?: string, expires?: string) => {
+            if (error) {
+                this._loadTilePending[tile.uid].forEach(cb => cb(error, null));
+                delete this._loadTilePending[tile.uid];
+                return;
+            }
+
+            if (!data) {
+                this._loadTilePending[tile.uid].forEach(cb => cb(null, null));
+                delete this._loadTilePending[tile.uid];
+                return;
+            }
+
+            if (this.map._refreshExpiredTiles && data) {
+                tile.setExpiryData({cacheControl, expires});
+            }
+
+            tile._mrt = data;
+            tile._isHeaderLoaded = true;
+            tile.state = 'loaded';
+
+            this._loadTilePending[tile.uid].forEach(cb => cb(null, data));
+            this._loadTileLoaded[tile.uid] = true;
+            delete this._loadTilePending[tile.uid];
+        }, undefined, true);
+    }
+
+    queryRasterArrayValueByAllBands(lngLat: LngLat, tile: RasterArrayTile, params: RasterQueryParameters): Promise<RasterQueryResult> {
+        return new Promise((resolve, reject) => {
+            this._loadTileForQuery(tile, (error, data) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                if (!data) {
+                    resolve(null);
+                    return;
+                }
+
+                resolve(this.queryRasterArrayValueByBandId(lngLat, tile, params));
+            });
+        });
+    }
+
+    queryRasterArrayValue(lngLatLike: LngLatLike, params: RasterQueryParameters): Promise<RasterQueryResult> {
+        const lngLat = LngLat.convert(lngLatLike);
+        const tile = this.findLoadedParent(lngLat);
+        if (!tile) return Promise.resolve(null);
+        const mrt = tile._mrt;
+        if (!mrt) return Promise.resolve(null);
+
+        if (params.bands || !this.partial) {
+            return this.queryRasterArrayValueByBandId(lngLat, tile, params);
+        } else {
+            return this.queryRasterArrayValueByAllBands(lngLat, tile, params);
+        }
+    }
+
+    findLoadedParent(lngLat: LngLat) {
+        const point = MercatorCoordinate.fromLngLat(lngLat, this.map.transform.tileSize);
+        const z = this.maxzoom + 1;
+        const tiles = 1 << z;
+        const wrap = Math.floor(point.x);
+        const px = point.x - wrap;
+        const x = Math.floor(px * tiles);
+        const y = Math.floor(point.y * tiles);
+        const sourceCache = this.map.style.getSourceCache(this.id);
+        const tileID = new OverscaledTileID(z, wrap, z, x, y);
+        return sourceCache.findLoadedParent(tileID, this.minzoom) as RasterArrayTile | null | undefined;
     }
 }
 

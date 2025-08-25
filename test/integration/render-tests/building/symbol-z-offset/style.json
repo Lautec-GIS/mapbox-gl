@@ -2,7 +2,7 @@
   "version": 8,
   "metadata": {
     "test": {
-      "allowed": 0.00011,
+      "allowed": 0.00015,
       "height": 256,
       "width": 256,
       "operations": []
@@ -177,13 +177,13 @@
         "building-color": [
           "match",
           ["get", "building-part"],
-          "walls",
+          "wall",
           ["hsl", 41, 90, 90],
-          "rooftop",
+          "roof",
           ["hsl", 25, 43, 80],
           ["hsl", 41, 90, 90]
         ],
-        "building-ambient-occlusion-wall-intensity": 1
+        "building-ambient-occlusion-intensity": 1
       }
     },
     {

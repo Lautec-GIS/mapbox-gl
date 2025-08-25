@@ -75,8 +75,8 @@ let reportFragment: string | undefined;
 const getTest = (queryTestName) => async () => {
     let errorMessage: string | undefined;
     try {
-        const testName = queryTestName.replace('query-tests/', '');
         const queryTest = integrationTests[queryTestName];
+        const testPath = queryTest.path;
         const {style, expected} = queryTest;
 
         if (!style) {
@@ -119,6 +119,10 @@ const getTest = (queryTestName) => async () => {
             performanceMetricsCollection: false
         });
 
+        if (options.collisionDebug) {
+            map.showCollisionBoxes = true;
+        }
+
         map.repaint = true;
         map._authenticate = () => {};
 
@@ -151,18 +155,18 @@ const getTest = (queryTestName) => async () => {
             testMetaData['jsonDiff'] = jsonDiff;
         }
 
-        assert.ok(success, queryTestName);
-
         testMetaData.status = success ? 'passed' : 'failed';
 
         if (!import.meta.env.VITE_CI && import.meta.env.VITE_UPDATE) {
-            await server.commands.writeFile(`${testName}/expected.json`, jsonDiff.replace('+ ', '').trim());
+            await server.commands.writeFile(`${testPath}/expected.json`, jsonDiff.replace('+ ', '').trim());
         } else if (!import.meta.env.VITE_CI) {
-            await server.commands.writeFile(`${testName}/actual.png`, testMetaData.actual!.split(',')[1], {encoding: 'base64'});
-            await server.commands.writeFile(`${testName}/actual.json`, jsonDiff.trim());
+            await server.commands.writeFile(`${testPath}/actual.png`, testMetaData.actual!.split(',')[1], {encoding: 'base64'});
+            await server.commands.writeFile(`${testPath}/actual.json`, JSON.stringify(actual, undefined, 2));
         }
 
         reportFragment = updateHTML(testMetaData);
+
+        if (!success) errorMessage = `Query test ${queryTestName} failed`;
     } catch (error) {
         reportFragment = updateHTML({
             name: queryTestName,
@@ -179,13 +183,14 @@ const getTest = (queryTestName) => async () => {
 
 const {ignores, timeout} = getEnvironmentParams();
 
-Object.keys(integrationTests).forEach((queryTestName) => {
+Object.keys(integrationTests).forEach((testName) => {
+    const queryTestName = `query-tests/${testName}`;
     if (ignores.skip.includes(queryTestName)) {
-        test.skip(queryTestName, getTest(queryTestName));
+        test.skip(testName, getTest(testName));
     } else if (ignores.todo.includes(queryTestName)) {
-        test.todo(queryTestName, getTest(queryTestName));
+        test.todo(testName, getTest(testName));
     } else {
-        test(queryTestName, {timeout}, getTest(queryTestName));
+        test(testName, {timeout}, getTest(testName));
     }
 });
 

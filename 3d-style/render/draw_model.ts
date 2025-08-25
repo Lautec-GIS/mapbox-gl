@@ -602,7 +602,7 @@ function drawVectorLayerModels(painter: Painter, source: SourceCache, layer: Mod
             const tileMatrix = tr.calculatePosMatrix(coord.toUnwrapped(), tr.worldSize);
             renderData.tileMatrix.set(tileMatrix);
             renderData.shadowTileMatrix = Float32Array.from(shadowRenderer.calculateShadowPassMatrixFromMatrix(tileMatrix));
-            renderData.aabb.min.fill(0);
+            renderData.aabb.min = [0, 0, 0];
             renderData.aabb.max[0] = renderData.aabb.max[1] = EXTENT;
             renderData.aabb.max[2] = 0;
             if (calculateTileShadowPassCulling(bucket, renderData, painter, layer.scope)) continue;
@@ -706,7 +706,7 @@ function drawInstancedNode(painter: Painter, layer: ModelStyleLayer, node: Model
                 );
                 if (shadowRenderer) {
                     if (!renderData.shadowUniformsInitialized) {
-                        shadowRenderer.setupShadows(coord.toUnwrapped(), program, 'model-tile', coord.overscaledZ);
+                        shadowRenderer.setupShadows(coord.toUnwrapped(), program, 'model-tile');
                         renderData.shadowUniformsInitialized = true;
                     } else {
                         program.setShadowUniformValues(context, shadowRenderer.getShadowUniformValues());

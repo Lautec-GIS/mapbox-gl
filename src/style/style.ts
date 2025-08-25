@@ -69,7 +69,6 @@ import {loadIconset} from './load_iconset';
 import {ImageId} from '../style-spec/expression/types/image_id';
 import {ImageProvider} from '../render/image_provider';
 
-import type {GeoJSON} from 'geojson';
 import type Tile from '../source/tile';
 import type GeoJSONSource from '../source/geojson_source';
 import type {ReplacementSource} from "../../3d-style/source/replacement_source";
@@ -125,6 +124,8 @@ import type {StringifiedImageId} from '../style-spec/expression/types/image_id';
 import type {CustomSourceInterface} from '../source/custom_source';
 import type {StyleModelMap} from './style_mode';
 import type {TypedStyleLayer} from './style_layer/typed_style_layer';
+import type {LngLatLike} from '../geo/lng_lat';
+import type {RasterQueryParameters, RasterQueryResult} from '../source/raster_array_tile_source';
 
 export type QueryRenderedFeaturesParams = {
     layers?: string[];
@@ -190,7 +191,7 @@ const empty = emptyStyle();
 
 type AnyLayerSource = {
     source?: LayerSpecification['source'] | SourceSpecification
-}
+};
 
 /**
  * Helper type that represents user provided layer in addLayer method.
@@ -202,13 +203,13 @@ export type FeatureSelector = {
     id: string | number;
     source: string;
     sourceLayer?: string;
-}
+};
 
 export type SourceSelector = {
     id?: string | number;
     source: string;
     sourceLayer?: string;
-}
+};
 
 export type StyleOptions = {
     validate?: boolean;
@@ -782,7 +783,8 @@ class Style extends Evented<MapEvents> {
                 this.dispatcher.broadcast('spriteLoaded', {scope: this.scope, isLoaded: true});
             }
 
-            this.setGlyphsUrl(json.glyphs);
+            // for style fragments, only set a glyphs url if it's not already set by the root style (GLJS-1345)
+            if (!this.glyphManager.url && json.glyphs) this.glyphManager.setURL(json.glyphs);
 
             const layers: Array<LayerSpecification> = deref(this.stylesheet.layers);
             this._order = layers.map((layer) => layer.id);
@@ -1889,6 +1891,9 @@ class Style extends Evented<MapEvents> {
      * @returns {Style}
      */
     addImages(images: StyleImageMap<ImageId>): this {
+        if (images.size === 0) {
+            return this;
+        }
         for (const [id, image] of images.entries()) {
             if (this.getImage(id)) {
                 return this.fire(new ErrorEvent(new Error(`An image with the name "${id.name}" already exists.`)));
@@ -1966,7 +1971,9 @@ class Style extends Evented<MapEvents> {
         if (!this.hasModel(id)) {
             return this.fire(new ErrorEvent(new Error('No model with this ID exists.')));
         }
-        this.modelManager.removeModel(id, this.scope);
+        const keepModelURI = false;
+        const forceRemoval = true;
+        this.modelManager.removeModel(id, this.scope, keepModelURI, forceRemoval);
         this.fire(new Event('data', {dataType: 'style'}));
         return this;
     }
@@ -2259,7 +2266,7 @@ class Style extends Evented<MapEvents> {
     setFeaturesetSelectors(featuresets?: FeaturesetsSpecification) {
         if (!featuresets) return;
 
-        const sourceInfoMap: { [sourceInfo: string]: string } = {};
+        const sourceInfoMap: {[sourceInfo: string]: string} = {};
         // Helper to create consistent keys
         const createKey = (sourceId: string, sourcelayerId: string = '') => `${sourceId}::${sourcelayerId}`;
 
@@ -3173,6 +3180,22 @@ class Style extends Evented<MapEvents> {
         return features;
     }
 
+    queryRasterValue(sourceId: string, lnglat: LngLatLike, parameters: RasterQueryParameters): Promise<RasterQueryResult | null> {
+        const source = this.getOwnSource(sourceId);
+
+        if (!source) {
+            this.fire(new ErrorEvent(new Error(`Source with id "${sourceId}" does not exist in the style.`)));
+            return Promise.resolve(null);
+        }
+
+        if (source.type !== 'raster-array') {
+            this.fire(new ErrorEvent(new Error(`queryRasterValue support only "raster-array" sources.`)));
+            return Promise.resolve(null);
+        }
+
+        return source.queryRasterArrayValue(lnglat, parameters);
+    }
+
     queryRenderedFeatures(queryGeometry: PointLike | [PointLike, PointLike], params: QueryRenderedFeaturesParams | undefined, transform: Transform): GeoJSONFeature[] {
         let filter;
         if (params && !Array.isArray(params) && params.filter) {
@@ -3841,6 +3864,7 @@ class Style extends Evented<MapEvents> {
         // Shared managers should be removed only on removing the root style
         if (this.isRootStyle()) {
             this.imageManager.setEventedParent(null);
+            this.imageManager.destroy();
             this.modelManager.setEventedParent(null);
             this.modelManager.destroy();
             this.dispatcher.remove();
@@ -3857,6 +3881,15 @@ class Style extends Evented<MapEvents> {
     clearSources() {
         for (const id in this._mergedSourceCaches) {
             this._mergedSourceCaches[id].clearTiles();
+        }
+    }
+
+    clearLayers() {
+        for (const id in this._mergedLayers) {
+            const layer = this._mergedLayers[id];
+            if (layer._clear) {
+                layer._clear();
+            }
         }
     }
 
@@ -4293,7 +4326,7 @@ class Style extends Evented<MapEvents> {
 
     setGlyphsUrl(url: string) {
         this.stylesheet.glyphs = url;
-        this.glyphManager.setURL(url, this.scope);
+        this.glyphManager.setURL(url);
     }
 
     // Callbacks from web workers
@@ -4321,6 +4354,13 @@ class Style extends Evented<MapEvents> {
         const fqid = makeFQID(params.source, params.scope);
         setDependencies(this._mergedOtherSourceCaches[fqid]);
         setDependencies(this._mergedSymbolSourceCaches[fqid]);
+
+        if (params.images.some(id => id.iconsetId)) {
+            // If the image is an iconset, we need another render cycle
+            // to mark the raster-array tiles as used so we will
+            // request them during Style#updateImageProviders
+            this.fire(new Event('data', {dataType: 'style'}));
+        }
     }
 
     rasterizeImages(mapId: string, params: ActorMessages['rasterizeImages']['params'], callback: ActorMessages['rasterizeImages']['callback']) {
@@ -4328,7 +4368,7 @@ class Style extends Evented<MapEvents> {
     }
 
     getGlyphs(mapId: string, params: ActorMessages['getGlyphs']['params'], callback: ActorMessages['getGlyphs']['callback']) {
-        this.glyphManager.getGlyphs(params.stacks, params.scope, callback);
+        this.glyphManager.getGlyphs(params.stacks, callback);
     }
 
     getResource(mapId: string, params: ActorMessages['getResource']['params'], callback: ActorMessages['getResource']['callback']): Cancelable {
@@ -4381,9 +4421,9 @@ class Style extends Evented<MapEvents> {
     isLayerClipped(layer: TypedStyleLayer, source?: Source | null): boolean {
         // fill-extrusions can be conflated by landmarks.
         if (!this._clipLayerPresent && layer.type !== 'fill-extrusion' && layer.type !== 'building') return false;
-        const isFillExtrusion = layer.type === 'fill-extrusion' && layer.sourceLayer === 'building';
-        const isBuilding = layer.type === 'building';
 
+        const isFillExtrusion = layer.type === 'fill-extrusion' && (layer.sourceLayer === 'building' || layer.sourceLayer === 'procedural_buildings');
+        const isBuilding = layer.type === 'building';
         if (layer.is3D(!!this.terrain)) {
             if (isFillExtrusion || isBuilding || (!!source && source.type === 'batched-model')) return true;
             if (layer.type === 'model') {

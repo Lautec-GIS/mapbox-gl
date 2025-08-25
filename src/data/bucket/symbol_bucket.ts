@@ -431,6 +431,7 @@ class SymbolBucket implements Bucket {
     lineVertexArray: SymbolLineVertexArray;
     features: Array<SymbolFeature>;
     symbolInstances: SymbolInstanceArray;
+    hasAnySecondaryIcon: boolean;
     collisionArrays: Array<CollisionArrays>;
     sortKeyRanges: Array<SortKeyRange>;
     pixelRatio: number;
@@ -481,7 +482,6 @@ class SymbolBucket implements Bucket {
     constructor(options: BucketParameters<SymbolStyleLayer>) {
         this.collisionBoxArray = options.collisionBoxArray;
         this.zoom = options.zoom;
-        this.lut = options.lut;
         this.overscaling = options.overscaling;
         this.layers = options.layers;
         this.layerIds = this.layers.map(layer => layer.fqid);
@@ -511,6 +511,8 @@ class SymbolBucket implements Bucket {
         const sortKey = layout.get('symbol-sort-key');
         const zOrder = layout.get('symbol-z-order');
 
+        this.lut = options.lut;
+
         this.canOverlap =
             layout.get('text-allow-overlap') ||
             layout.get('icon-allow-overlap') ||
@@ -537,7 +539,7 @@ class SymbolBucket implements Bucket {
 
         this.activeReplacements = [];
         this.replacementUpdateTime = 0;
-
+        this.hasAnySecondaryIcon = false;
     }
 
     createArrays() {
@@ -718,6 +720,7 @@ class SymbolBucket implements Bucket {
                 }
 
                 if (iconSecondary) {
+                    this.hasAnySecondaryIcon = true;
                     const iconSecondaryId = iconSecondary.id.toString();
                     if (icons.has(iconSecondaryId)) {
                         icons.get(iconSecondaryId).push(iconSecondary);

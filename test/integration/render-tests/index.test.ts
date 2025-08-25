@@ -78,10 +78,13 @@ async function base64PngToImageDataWithCanvas(base64Png: string): Promise<ImageD
 
 async function getExpectedImages(currentTestName: string, renderTest: Record<string, unknown>): Promise<ImageDataWithCanvas[]> {
     const expectedPaths: string[] = [];
+    
+    // Use test's path property instead of global suiteDir
+    const testPath = renderTest.path;
 
     for (const prop in renderTest) {
         if (prop.indexOf('expected') > -1) {
-            expectedPaths.push(`${currentTestName}/${prop}.png`);
+            expectedPaths.push(`${testPath}/${prop}.png`);
         }
     }
 
@@ -109,13 +112,19 @@ let reportFragment: string | undefined;
 const getTest = (renderTestName) => async () => {
     let errorMessage: string | undefined;
     try {
-        const testName = renderTestName.replace('render-tests/', '');
         const renderTest = integrationTests[renderTestName];
+        const testPath = renderTest.path;
         const style = parseStyle(renderTest);
         const options = parseOptions(renderTest, style);
 
-        const expectedImages = await getExpectedImages(testName, renderTest);
+        const expectedImages = await getExpectedImages(renderTestName, renderTest);
         const {actualImageData, w, h} = await getActualImage(style, options, renderTestName);
+
+        const actual = getActualImageDataURL(actualImageData, mapRef.current, {w, h}, options);
+
+        if (!import.meta.env.VITE_CI) {
+            await server.commands.writeFile(`${testPath}/actual.png`, actual.split(',')[1], {encoding: 'base64'});
+        }
 
         if (expectedImages.length === 0 && !import.meta.env.VITE_UPDATE) {
             throw new Error(`No expected images found for ${renderTestName}. Please run the test with UPDATE=true to generate expected images.`);
@@ -130,8 +139,6 @@ const getTest = (renderTestName) => async () => {
             errors
         };
 
-        const actual = getActualImageDataURL(actualImageData, mapRef.current, {w, h}, options);
-
         if (minDiffImage && expectedIndex !== -1 && (!import.meta.env.VITE_CI || !pass)) {
             diffCanvas.width = w;
             diffCanvas.height = h;
@@ -141,8 +148,7 @@ const getTest = (renderTestName) => async () => {
             const imgDiff = diffCanvas.toDataURL();
 
             if (!import.meta.env.VITE_CI) {
-                await server.commands.writeFile(`${testName}/actual.png`, actual.split(',')[1], {encoding: 'base64'});
-                await server.commands.writeFile(`${testName}/diff.png`, imgDiff.split(',')[1], {encoding: 'base64'});
+                await server.commands.writeFile(`${testPath}/diff.png`, imgDiff.split(',')[1], {encoding: 'base64'});
             }
 
             testMetaData.actual = actual;
@@ -152,7 +158,7 @@ const getTest = (renderTestName) => async () => {
         }
 
         if (!pass && import.meta.env.VITE_UPDATE) {
-            await server.commands.writeFile(`${testName}/expected.png`, actual.split(',')[1], {encoding: 'base64'});
+            await server.commands.writeFile(`${testPath}/expected.png`, actual.split(',')[1], {encoding: 'base64'});
         } else if (!pass) {
             errorMessage = `Render test ${renderTestName} failed with ${minDiff} diff`;
         }
@@ -174,13 +180,14 @@ const getTest = (renderTestName) => async () => {
 
 const {ignores, timeout} = getEnvironmentParams();
 
-Object.keys(integrationTests).forEach((renderTestName) => {
+Object.keys(integrationTests).forEach((testName) => {
+    const renderTestName = `render-tests/${testName}`;
     if (ignores.skip.includes(renderTestName)) {
-        test.skip(renderTestName, getTest(renderTestName));
+        test.skip(testName, getTest(testName));
     } else if (ignores.todo.includes(renderTestName)) {
-        test.todo(renderTestName, getTest(renderTestName));
+        test.todo(testName, getTest(testName));
     } else {
-        test(renderTestName, {timeout}, getTest(renderTestName));
+        test(testName, {timeout}, getTest(testName));
     }
 });
 

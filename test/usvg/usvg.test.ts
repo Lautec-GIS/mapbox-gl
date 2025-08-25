@@ -6,17 +6,12 @@ import {describe, test, expect, afterEach, afterAll, onTestFailed, onTestFinishe
 import {readIconSet} from '../../src/data/usvg/usvg_pb_decoder';
 import {renderIcon} from '../../src/data/usvg/usvg_pb_renderer';
 import {allowed, ignores, scales, formatName} from './utils';
+import {readArrayBuffer} from '../util/read_array_buffer';
 // @ts-expect-error - virtual modules are not typed
 import {fixtures} from 'virtual:usvg-fixtures';
 
 async function getIconSet(iconsetPath) {
-    const data = await server.commands.readFile(iconsetPath, 'binary');
-    const arrayBuffer = new ArrayBuffer(data.length);
-    const view = new Uint8Array(arrayBuffer);
-    for (let i = 0; i < data.length; i++) {
-        view[i] = data.charCodeAt(i);
-    }
-    const pbf = new Pbf(arrayBuffer);
+    const pbf = new Pbf(await readArrayBuffer(iconsetPath));
     const iconSet = readIconSet(pbf);
     return iconSet;
 }
@@ -64,68 +59,75 @@ describe('uSVG', async () => {
         }
         html += `<div><h2>Failed (${failed.length})</h2><pre>${JSON.stringify(failed, null, 2)}</pre></div>`;
         html += `<div><h2>Ignored (${ignores.length})</h2><pre>${JSON.stringify(ignores, null, 2)}</pre></div>`;
-        await server.commands.writeFile('./vitest/index.html', html);
+        await server.commands.writeFile('test/usvg/vitest/index.html', html);
     });
 
-    const iconset = await getIconSet('./test-suite/test-suite.iconset');
-    for (const icon of iconset.icons.sort((a, b) => a.name.localeCompare(b.name))) {
-        for (const scale of scales) {
-            if (ignores.some(ignore => icon.name.startsWith(ignore))) {
-                test.skip(icon.name, () => {});
-                continue;
+    const testIconSet = async (iconsetPath: string) => {
+        const iconset = await getIconSet(iconsetPath);
+
+        for (const icon of iconset.icons.sort((a, b) => a.name.localeCompare(b.name))) {
+            for (const scale of scales) {
+                if (ignores.some(ignore => icon.name.startsWith(ignore))) {
+                    test.skip(icon.name, () => {});
+                    continue;
+                }
+                const name = formatName(icon.name, scale);
+                test(name, async () => {
+                    onTestFailed(() => {
+                        failed.push(name);
+                    });
+
+                    onTestFinished(({task}) => {
+                        if (task.result.state === 'pass') {
+                            passed.push(icon.name);
+                        }
+                    });
+
+                    const transform = new DOMMatrix().scale(scale);
+                    const actualImageData = renderIcon(icon, {transform, params: {}});
+
+                    // align canvas sizes with the image size
+                    diffCanvas.width = actualCanvas.width = expectedCanvas.width = actualImageData.width;
+                    diffCanvas.height = actualCanvas.height = expectedCanvas.height = actualImageData.height;
+                    page.viewport(actualImageData.width * 3, actualImageData.height);
+
+                    actualContext.putImageData(actualImageData, 0, 0);
+
+                    // Render expected icon
+                    const expectedImage = new Image();
+                    expectedImage.src = `data:image/png;base64,${fixtures[name]}`;
+                    await new Promise((resolve) => {
+                        expectedImage.onload = resolve;
+                    });
+
+                    expectedContext.drawImage(expectedImage, 0, 0, expectedCanvas.width, expectedCanvas.height);
+                    const expectedImageData = expectedContext.getImageData(0, 0, expectedCanvas.width, expectedCanvas.height);
+
+                    // Compare images
+                    diffCanvas.width = actualImageData.width;
+                    diffCanvas.height = actualImageData.height;
+                    const diffImageData = diffContext.createImageData(diffCanvas.width, diffCanvas.height);
+
+                    const threshold = 0.2;
+                    const diff = pixelmatch(
+                        actualImageData.data,
+                        expectedImageData.data,
+                        diffImageData.data,
+                        actualImageData.width,
+                        actualImageData.height,
+                        {threshold}
+                    ) / (actualImageData.width * actualImageData.height);
+
+                    diffs[name] = diff;
+                    diffContext.putImageData(diffImageData, 0, 0);
+                    await page.screenshot({element: document.body, path: `./vitest/${name}.png`});
+
+                    expect(diff).toBeLessThanOrEqual(allowed[icon.name]?.[scale] ?? defaultAllowedDiff);
+                });
             }
-            const name = formatName(icon.name, scale);
-            test(name, async () => {
-                onTestFailed(() => {
-                    failed.push(name);
-                });
-
-                onTestFinished(({task}) => {
-                    if (task.result.state === 'pass') {
-                        passed.push(icon.name);
-                    }
-                });
-
-                const transform = new DOMMatrix().scale(scale);
-                const actualImageData = renderIcon(icon, {transform, params: {}});
-
-                // align canvas sizes with the image size
-                diffCanvas.width = actualCanvas.width = expectedCanvas.width = actualImageData.width;
-                diffCanvas.height = actualCanvas.height = expectedCanvas.height = actualImageData.height;
-                page.viewport(actualImageData.width * 3, actualImageData.height);
-
-                actualContext.putImageData(actualImageData, 0, 0);
-
-                // Render expected icon
-                const expectedImage = new Image();
-                expectedImage.src = `data:image/png;base64,${fixtures[name]}`;
-                await new Promise((resolve) => {
-                    expectedImage.onload = resolve;
-                });
-
-                expectedContext.drawImage(expectedImage, 0, 0, expectedCanvas.width, expectedCanvas.height);
-                const expectedImageData = expectedContext.getImageData(0, 0, expectedCanvas.width, expectedCanvas.height);
-
-                // Compare images
-                diffCanvas.width = actualImageData.width;
-                diffCanvas.height = actualImageData.height;
-                const diffImageData = diffContext.createImageData(diffCanvas.width, diffCanvas.height);
-
-                const threshold = 0.2;
-                const diff = pixelmatch(
-                    actualImageData.data,
-                    expectedImageData.data,
-                    diffImageData.data,
-                    actualImageData.width,
-                    actualImageData.height,
-                    {threshold}
-                ) / (actualImageData.width * actualImageData.height);
-
-                diffs[name] = diff;
-                diffContext.putImageData(diffImageData, 0, 0);
-                await page.screenshot({element: document.body, path: `./vitest/${name}.png`});
-                expect(diff).toBeLessThanOrEqual(allowed[icon.name]?.[scale] ?? defaultAllowedDiff);
-            });
         }
-    }
+    };
+
+    await testIconSet('test/usvg/test-suite/test-suite.iconset');
+    await testIconSet('test/usvg/mapbox_usvg_pb_test_suite/test-suite.iconset');
 });

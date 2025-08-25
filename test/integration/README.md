@@ -42,7 +42,7 @@ npm run test-expressions
 
 To run a subset of tests or an individual test, you can pass a specific subdirectory to the `test-render` script. For example, to run all the tests for a given property, e.g. `circle-radius`:
 ```
-$ npm run test-render -- -t circle-radius
+$ npm run test-render -- -t "circle-radius"
 ...
 * circle-radius/antimeridian
 * circle-radius/default
@@ -55,7 +55,7 @@ $ npm run test-render -- -t circle-radius
 
 Or to run a single test:
 ```
-$ npm run test-render -- -t circle-radius/literal
+$ npm run test-render -- -t "circle-radius/literal"
 ...
 * circle-radius/literal
 ...
@@ -65,14 +65,16 @@ $ npm run test-render -- -t circle-radius/literal
 
 During a test run, the test harness will use Mapbox GL JS to create an `actual.png` image from the given `style.json`, and will then use [pixelmatch](https://github.com/mapbox/pixelmatch) to compare that image to `expected.png`, generating a `diff.png` highlighting the mismatched pixels (if any) in red.
 
-After the test(s) have run, you can view the results graphically by opening the `test/integration/{type}-tests/vitest/tests.html`:
+After the test(s) have run, you can view the render test results in
 
 ```
-open ./test/integration/render-tests/vitest/tests.html
+open ./test/integration/render-tests/vitest/render-tests.html
 ```
-or
+
+or for query tests in:
+
 ```
-open ./test/integration/query-tests/index.html
+open ./test/integration/query-tests/query-tests.html
 ```
 
 ## Running tests in the development environment
@@ -86,17 +88,6 @@ or
 npm run watch-render
 ```
 
-### Enable ANGLE configuration on render tests
-
-Some devices (e.g. M1 Macs) seem to run test with significantly less failures when forcing the ANGLE backend to use OpenGL.
-
-To configure the ANGLE backend, you can set the `--use-angle` input value to `USE_ANGLE` in CLI like so:
-```
-USE_ANGLE={INPUT} npm run test-render
-```
-
-Accepted inputs for `USE_ANGLE` are `metal`, `gl`, `vulkan`, `swiftshader`, and `gles`. See `chrome://flags/#use-angle` for more information on the `--use-angle` flag.
-
 ## Writing new tests
 
 To add a new render test:
@@ -106,7 +97,7 @@ To add a new render test:
 
 3. Generate an `expected.png` image from the given style by running the new test with the `UPDATE` flag enabled:
    ```
-   $ UPDATE=1 npm run test-render tests=<property-name>/<new-test-name>
+   $ UPDATE=1 npm run test-render -t render-tests/<property-name>/<new-test-name>
    ```
    The test will appear to fail, but you'll now see a new `expected.png` in the test directory.
 
@@ -114,9 +105,9 @@ To add a new render test:
 
 5. Commit the new `style.json` and `expected.png` :rocket:
 
-## Tests on CircleCI
+## Tests on GitHub Actions
 
-Every pushed commit triggers test runs on the CircleCI server. These catch regressions and prevent platform-specific bugs.
+Every pushed commit triggers test runs on the GitHub Actions. These catch regressions and prevent platform-specific bugs.
 
 Render tests often fail due to minor antialiasing differences between platforms. In these cases, you can add an `allowed` property under `test` in the test's `style.json` to tell the test runner the degree of difference that is acceptable. This is the fraction of pixels that can differ between `expected.png` and `actual.png`, ignoring some antialiasing, that will still allow the test to pass.
 

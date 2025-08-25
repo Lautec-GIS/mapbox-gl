@@ -470,9 +470,9 @@ export type MapSourceDataEvent = {
  * @see [Example: Change a map's style](https://docs.mapbox.com/mapbox-gl-js/example/setstyle/)
  * @see [Example: Add a GeoJSON line](https://docs.mapbox.com/mapbox-gl-js/example/geojson-line/)
  */
-export type MapDataEvent = MapStyleDataEvent | MapSourceDataEvent
+export type MapDataEvent = MapStyleDataEvent | MapSourceDataEvent;
 
-export type MapContextEvent = MapEventOf<'webglcontextlost' | 'webglcontextrestored'>
+export type MapContextEvent = MapEventOf<'webglcontextlost' | 'webglcontextrestored'>;
 
 export type MapEvents = {
     /** @section Interaction */
@@ -807,9 +807,9 @@ export type MapEvents = {
      * @example
      * // Initialize the map.
      * const map = new mapboxgl.Map({});
-     * // Set an event listener that fires when a `touchstart` event occurs within the map.
-     * map.on('touchstart', () => {
-     *     console.log('A touchstart event occurred.');
+     * // Set an event listener that fires when a `touchend` event occurs within the map.
+     * map.on('touchend', () => {
+     *     console.log('A touchend event occurred.');
      * });
      * @see [Example: Create a draggable point](https://docs.mapbox.com/mapbox-gl-js/example/drag-a-point/)
      */
@@ -1622,7 +1622,7 @@ export type MapEvents = {
      * @private
      */
     'gpu-timing-deferred-render': {gpuTime: number};
-}
+};
 
 /**
  * Utility type that represents all possible Map event types.

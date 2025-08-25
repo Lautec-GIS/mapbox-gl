@@ -23,10 +23,8 @@ uniform mat4 u_color_adj_mat;
 #ifdef INDICATOR_CUTOUT
 in highp float v_z_offset;
 #else
-#ifdef Z_OFFSET
 #ifdef RENDER_SHADOWS
 in highp float v_z_offset;
-#endif
 #endif
 #endif
 
@@ -42,7 +40,6 @@ in float is_sdf;
 in vec2 v_tex_a_icon;
 #endif
 
-#ifdef Z_OFFSET
 #ifdef RENDER_SHADOWS
 uniform vec3 u_ground_shadow_factor;
 
@@ -50,6 +47,9 @@ in highp vec4 v_pos_light_view_0;
 in highp vec4 v_pos_light_view_1;
 in highp float v_depth;
 #endif
+
+#ifdef APPLY_LUT_ON_GPU
+uniform highp sampler3D u_lutTexture;
 #endif
 
 #pragma mapbox: define highp vec4 fill_color
@@ -116,6 +116,10 @@ void main() {
         out_color = texture(u_texture, v_tex_a);
     #endif
 
+    #ifdef APPLY_LUT_ON_GPU
+        out_color = applyLUT(u_lutTexture, out_color);
+    #endif
+
     #ifdef COLOR_ADJUSTMENT
         out_color = u_color_adj_mat * out_color;
     #endif
@@ -125,23 +129,29 @@ void main() {
 
     #ifdef LIGHTING_3D_MODE
         out_color = apply_lighting_with_emission_ground(out_color, emissive_strength);
-        #ifdef Z_OFFSET
         #ifdef RENDER_SHADOWS
             float light = shadowed_light_factor(v_pos_light_view_0, v_pos_light_view_1, v_depth);
-            out_color.rgb *= mix(abs(v_z_offset) > 0.0 ? u_ground_shadow_factor : vec3(1.0), vec3(1.0), light);
+            #ifdef TERRAIN
+                out_color.rgb *= mix(u_ground_shadow_factor, vec3(1.0), light);
+            #else
+                out_color.rgb *= mix(v_z_offset != 0.0 ? u_ground_shadow_factor : vec3(1.0), vec3(1.0), light);
+            #endif
         #endif // RENDER_SHADOWS
-        #endif // Z_OFFSET
     #endif
 
 #ifdef INDICATOR_CUTOUT
     out_color = applyCutout(out_color, v_z_offset);
 #endif
 
+#ifdef FEATURE_CUTOUT
+    out_color = apply_feature_cutout(out_color, gl_FragCoord);
+#endif
+
     glFragColor = out_color;
 
-    #ifdef OVERDRAW_INSPECTOR
-        glFragColor = vec4(1.0);
-    #endif
+#ifdef OVERDRAW_INSPECTOR
+    glFragColor = vec4(1.0);
+#endif
 
     HANDLE_WIREFRAME_DEBUG;
 }

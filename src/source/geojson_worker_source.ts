@@ -1,8 +1,8 @@
 import {getJSON} from '../util/ajax';
 import {getPerformanceMeasurement} from '../util/performance';
-import GeoJSONWrapper, {LayeredGeoJSONWrapper} from './geojson_wrapper';
+import GeoJSONWrapper from './geojson_wrapper';
 import GeoJSONRT from './geojson_rt';
-import vtpbf from 'vt-pbf';
+import writePbf from './vector_tile_to_pbf';
 import Supercluster from 'supercluster';
 import geojsonvt from 'geojson-vt';
 import assert from 'assert';
@@ -15,7 +15,8 @@ import type {
 } from '../source/worker_source';
 import type Actor from '../util/actor';
 import type StyleLayerIndex from '../style/style_layer_index';
-import type {Feature} from '../style-spec/expression/index';
+import type {Feature} from './geojson_wrapper';
+import type {Feature as ExpressionFeature} from '../style-spec/expression/index';
 import type {LoadVectorDataCallback} from './load_vector_tile';
 import type {RequestParameters, ResponseCallback} from '../util/ajax';
 import type {Callback} from '../types/callback';
@@ -77,32 +78,25 @@ function loadGeoJSONTile(params: WorkerSourceVectorTileRequest, callback: LoadVe
     const isElevationfeature = (f) => f.tags && '3d_elevation_id' in f.tags && 'source' in f.tags && f.tags.source === 'elevation';
     const elevationFeatures = geoJSONTile.features.filter(f => isElevationfeature(f));
 
-    let geojsonWrapper: GeoJSONWrapper;
+    let layers: Record<string, Feature[]> = {
+        _geojsonTileLayer: geoJSONTile.features
+    };
 
     if (elevationFeatures.length > 0) {
         const nonElevationFeatures = geoJSONTile.features.filter(f => !isElevationfeature(f));
-
-        geojsonWrapper = new LayeredGeoJSONWrapper({
-            '_geojsonTileLayer': nonElevationFeatures,
+        layers = {
+            _geojsonTileLayer: nonElevationFeatures,
             'hd_road_elevation': elevationFeatures
-        });
-    } else {
-        geojsonWrapper = new GeoJSONWrapper(geoJSONTile.features);
+        };
     }
+    const vectorTile = new GeoJSONWrapper(layers);
 
     // Encode the geojson-vt tile into binary vector tile form.  This
     // is a convenience that allows `FeatureIndex` to operate the same way
     // across `VectorTileSource` and `GeoJSONSource` data.
-    let pbf = vtpbf(geojsonWrapper);
-    if (pbf.byteOffset !== 0 || pbf.byteLength !== pbf.buffer.byteLength) {
-        // Compatibility with node Buffer (https://github.com/mapbox/pbf/issues/35)
-        pbf = new Uint8Array(pbf);
-    }
+    const rawData = writePbf(layers).buffer as ArrayBuffer;
 
-    callback(null, {
-        vectorTile: geojsonWrapper,
-        rawData: pbf.buffer
-    });
+    callback(null, {vectorTile, rawData});
 }
 
 /**
@@ -152,6 +146,8 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
         const requestParam = params && params.request;
         const perf = requestParam && requestParam.collectResourceTiming;
 
+        this._geoJSONIndex = null;
+
         this.loadGeoJSON(params, (err?: Error, data?: FeatureCollectionOrFeature) => {
             if (err || !data) {
                 return callback(err);
@@ -166,7 +162,7 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
                         if (compiled.result === 'error')
                             throw new Error(compiled.value.map(err => `${err.key}: ${err.message}`).join(', '));
 
-                        (data as GeoJSON.FeatureCollection).features = (data as GeoJSON.FeatureCollection).features.filter(feature => compiled.value.evaluate({zoom: 0}, feature as unknown as Feature));
+                        (data as GeoJSON.FeatureCollection).features = (data as GeoJSON.FeatureCollection).features.filter(feature => compiled.value.evaluate({zoom: 0}, feature as unknown as ExpressionFeature));
                     }
 
                     // for GeoJSON sources that are marked as dynamic, we retain the GeoJSON data
@@ -253,11 +249,14 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
         if (params.request) {
             getJSON(params.request, callback);
         } else if (typeof params.data === 'string') {
-            try {
-                return callback(null, JSON.parse(params.data));
-            } catch (e) {
-                return callback(new Error(`Input data given to '${params.source}' is not a valid GeoJSON object.`));
-            }
+            // delay loading by one tick to hopefully let GC clean up the previous index (if present)
+            setTimeout(() => {
+                try {
+                    return callback(null, JSON.parse(params.data));
+                } catch (e) {
+                    return callback(new Error(`Input data given to '${params.source}' is not a valid GeoJSON object.`));
+                }
+            }, 0);
         } else {
             return callback(new Error(`Input data given to '${params.source}' is not a valid GeoJSON object.`));
         }
