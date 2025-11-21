@@ -29,7 +29,7 @@ import type {VectorTileLayer} from "@mapbox/vector-tile";
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
-import type { GlobalProperties } from "../../style-spec/expression";
+import type {GlobalProperties} from "../../style-spec/expression";
 
 const EXTENT = 8192;
 
@@ -118,7 +118,9 @@ class BoxChartBucket<Layer extends BoxChartStyleLayer = BoxChartStyleLayer> impl
 
             if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom), evaluationFeature, canonical)) continue;
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const sortKey = circleSortKey ?
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call,@typescript-eslint/no-unsafe-member-access
                 circleSortKey.evaluate(evaluationFeature, {}, canonical) :
                 undefined;
 
@@ -130,6 +132,7 @@ class BoxChartBucket<Layer extends BoxChartStyleLayer = BoxChartStyleLayer> impl
                 index,
                 geometry: needGeometry ? evaluationFeature.geometry : loadGeometry(feature, canonical, tileTransform),
                 patterns: {},
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 sortKey
             };
 
@@ -139,6 +142,7 @@ class BoxChartBucket<Layer extends BoxChartStyleLayer = BoxChartStyleLayer> impl
 
         if (circleSortKey) {
             bucketFeatures.sort((a, b) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 return (a.sortKey as number) - (b.sortKey as number);
             });
         }
@@ -151,10 +155,14 @@ class BoxChartBucket<Layer extends BoxChartStyleLayer = BoxChartStyleLayer> impl
         }
 
         for (const bucketFeature of bucketFeatures) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const {geometry, index, sourceLayerIndex} = bucketFeature;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             const feature = features[index].feature;
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.addFeature(bucketFeature, geometry, index, options.availableImages, canonical, globeProjection, options.brightness);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             options.featureIndex.insert(feature, geometry, index, sourceLayerIndex, this.index);
         }
     }
