@@ -89,7 +89,23 @@ export type ArrayPropertySpecification =
         minimum?: never;
         maximum?: never;
         values?: never;
-    };
+    } | {
+    type: 'array';
+    'property-type': ExpressionType;
+    value: 'color';
+    expression?: ExpressionSpecification;
+    transition?: boolean;
+    default?: string[];
+    length?: number;
+    experimental?: boolean;
+    private?: boolean;
+    requires?: unknown;
+    appearance?: boolean;
+    tokens?: never;
+    minimum?: never;
+    maximum?: never;
+    values?: never;
+};
 
 export type BooleanPropertySpecification = {
     type: 'boolean';

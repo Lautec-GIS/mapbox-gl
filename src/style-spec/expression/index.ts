@@ -493,8 +493,9 @@ export function normalizePropertyExpression<T>(
         return {
             kind: 'constant',
             configDependencies: new Set(),
-            evaluate: () => specification.default.map((color) => Color.parse(color))
-        };
+            isIndoorDependent: false,
+            evaluate: () => specification.default.map((color) => Color.parse(color)) as PropertyValueSpecification<T>
+        } as ConstantExpression;
     } else if (isExpression(value) || (Array.isArray(value) && value.length > 0)) {
         const expression = createPropertyExpression(value, specification, scope, options, iconImageUseTheme);
         if (expression.result === 'error') {

@@ -29,6 +29,7 @@ import type {VectorTileLayer} from "@mapbox/vector-tile";
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
+import type { GlobalProperties } from "../../style-spec/expression";
 
 const EXTENT = 8192;
 
@@ -38,7 +39,11 @@ function addCircleVertex(layoutVertexArray: CircleLayoutArray, x: number, y: num
         (y * 2) + ((extrudeY + 1) / 2));
 }
 
-function addGlobeExtVertex(vertexArray: CircleGlobeExtArray, pos: {x: number, y: number, z: number}, normal: [number, number, number]) {
+function addGlobeExtVertex(vertexArray: CircleGlobeExtArray, pos: {
+    x: number,
+    y: number,
+    z: number
+}, normal: [number, number, number]) {
     const encode = 1 << 14;
     vertexArray.emplaceBack(
         pos.x, pos.y, pos.z,
@@ -94,6 +99,11 @@ class BoxChartBucket<Layer extends BoxChartStyleLayer = BoxChartStyleLayer> impl
         });
         this.stateDependentLayerIds = this.layers.filter((l) => l.isStateDependent()).map((l) => l.id);
     }
+
+    hasAppearances: boolean;
+    evaluateQueryRenderedFeaturePadding?: () => number;
+    prepare?: () => Promise<unknown>;
+    updateAppearances: (canonical?: CanonicalTileID, featureState?: FeatureStates, availableImages?: Array<ImageId>, globalProperties?: GlobalProperties) => void;
 
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
     }
