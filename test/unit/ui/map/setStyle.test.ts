@@ -4,7 +4,6 @@
 import {describe, test, expect, waitFor, vi, createMap} from '../../../util/vitest';
 import {createStyle} from './util';
 import {Map} from '../../../../src/ui/map';
-import {extend} from '../../../../src/util/util';
 import {getPNGResponse} from '../../../util/network';
 import {fixedLngLat, fixedNum} from '../../../util/fixed';
 import {Event} from '../../../../src/util/evented';
@@ -30,6 +29,7 @@ describe('Map#setStyle', () => {
                 expect(error).toBeFalsy();
 
                 const events: Array<any> = [];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 function recordEvent(event) { events.push(event.type); }
 
                 map.on('error', recordEvent);
@@ -57,6 +57,7 @@ describe('Map#setStyle', () => {
                 expect(error).toBeFalsy();
 
                 const events: Array<any> = [];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 function recordEvent(event) { events.push(event.type); }
 
                 map.on('styledata', recordEvent);
@@ -244,19 +245,20 @@ describe('Map#setStyle', () => {
 
         map.setProjection('globe');
         expect(map.getProjection().name).toEqual('globe');
+        expect(map.painter.clearBackgroundTiles).toHaveBeenCalledTimes(1);
 
         map.setZoom(4);
         expect(map.getProjection().name).toEqual('globe');
-        expect(map.painter.clearBackgroundTiles).not.toHaveBeenCalled();
+        expect(map.painter.clearBackgroundTiles).toHaveBeenCalledTimes(1);
     });
 
     test('Setting terrain to null disables the terrain but does not affect draping', async () => {
-        const style = extend(createStyle(), {
+        const style = Object.assign(createStyle(), {
             terrain: null,
             imports: [{
                 id: 'basemap',
                 url: '',
-                data: extend(createStyle(), {
+                data: Object.assign(createStyle(), {
                     projection: {name: 'globe'},
                     terrain: {source: 'dem', exaggeration: 1},
                     sources: {dem: {type: 'raster-dem', tiles: ['http://example.com/{z}/{x}/{y}.png']}}
@@ -265,7 +267,7 @@ describe('Map#setStyle', () => {
             {
                 id: 'navigation',
                 url: '',
-                data: extend(createStyle(), {
+                data: Object.assign(createStyle(), {
                     terrain: {source: 'dem', exaggeration: 2},
                     sources: {dem: {type: 'raster-dem', tiles: ['http://example.com/{z}/{x}/{y}.png']}}
                 })
@@ -360,17 +362,21 @@ describe('Map#setStyle', () => {
                 vi.spyOn(initStyleObj, 'setTerrain');
                 vi.spyOn(initStyleObj, 'setState');
                 await waitFor(map, "style.load");
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const styleWithTerrain = JSON.parse(JSON.stringify(style));
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 styleWithTerrain['sources']["mapbox-dem"] = {
                     "type": "raster-dem",
                     "tiles": ['http://example.com/{z}/{x}/{y}.png'],
                     "tileSize": 256,
                     "maxzoom": 14
                 };
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 styleWithTerrain['terrain'] = {
                     "source": "mapbox-dem"
                 };
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 map.setStyle(styleWithTerrain);
                 await waitFor(map, "load");
                 expect(initStyleObj).toEqual(map.style);
@@ -641,12 +647,15 @@ describe('Map#setStyle', () => {
             vi.spyOn(initStyleObj, 'setFog');
             vi.spyOn(initStyleObj, 'setState');
             await waitFor(map, "style.load");
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const styleWithFog = JSON.parse(JSON.stringify(style));
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             styleWithFog['fog'] = {
                 "range": [2, 5],
                 "color": "white"
             };
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             map.setStyle(styleWithFog);
             expect(initStyleObj).toEqual(map.style);
             expect(initStyleObj.setState).toHaveBeenCalledTimes(1);

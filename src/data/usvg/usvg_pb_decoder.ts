@@ -82,9 +82,9 @@ function readIconSetField(tag: number, obj: IconSet, pbf: Pbf) {
 }
 
 export function buildStretchedAreas(metadata: {stretch_x?: number[]; stretch_y?: number[]}, axis: "x" | "y"): void {
-    const areas = [];
+    const areas: Array<[number, number]> = [];
     const stretch = metadata[`stretch_${axis}`];
-    let left = null;
+    let left: number | null = null;
 
     for (let i = 0; i < stretch.length; i++) {
         if (left === null) {

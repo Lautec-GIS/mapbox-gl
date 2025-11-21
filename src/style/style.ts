@@ -11,7 +11,7 @@ import Terrain, {DrapeRenderMode} from './terrain';
 import Fog from './fog';
 import Snow from './snow';
 import Rain from './rain';
-import {pick, clone, extend, deepEqual, filterObject, cartesianPositionToSpherical, warnOnce} from '../util/util';
+import {pick, clone, deepEqual, filterObject, cartesianPositionToSpherical, warnOnce} from '../util/util';
 import {getJSON, getReferrer, makeRequest, ResourceType} from '../util/ajax';
 import {isMapboxURL} from '../util/mapbox_url';
 import {stripQueryParameters} from '../util/url';
@@ -62,7 +62,6 @@ import {DEFAULT_MAX_ZOOM, DEFAULT_MIN_ZOOM} from '../geo/transform';
 import {RGBAImage} from '../util/image';
 import {evaluateColorThemeProperties} from '../util/lut';
 import EvaluationParameters from './evaluation_parameters';
-import {expandSchemaWithIndoor} from './indoor_manager';
 import featureFilter from '../style-spec/feature_filter/index';
 import {TargetFeature} from '../util/vectortile_to_geojson';
 import {loadIconset} from './load_iconset';
@@ -97,7 +96,9 @@ import type {
     CameraSpecification,
     FeaturesetsSpecification,
     IconsetSpecification,
-    ModelsSpecification
+    ModelsSpecification,
+    AppearanceSpecification,
+    TerrainSpecificationUpdate
 } from '../style-spec/types';
 import type {Callback} from '../types/callback';
 import type {StyleImage, StyleImageMap} from './style_image';
@@ -153,6 +154,7 @@ const supportedDiffOperations = pick(diffOperations, [
     'setLights',
     'setPaintProperty',
     'setLayoutProperty',
+    'setLayerProperty',
     'setSlot',
     'setFilter',
     'addSource',
@@ -232,6 +234,7 @@ export type StyleOptions = {
         [key: string]: ConfigSpecification;
     };
     configDependentLayers?: Set<string>;
+    indoorDependentLayers?: Set<string>;
 };
 
 export type StyleSetterOptions = {
@@ -305,6 +308,7 @@ class Style extends Evented<MapEvents> {
     // Merged layers and sources
     _mergedOrder: Array<string>;
     _mergedLayers: Record<string, TypedStyleLayer>;
+    _mergedIndoor: Record<string, Set<string>>;
     _mergedSlots: Array<string>;
     _mergedSourceCaches: Record<string, SourceCache>;
     _mergedOtherSourceCaches: Record<string, SourceCache>;
@@ -341,12 +345,14 @@ class Style extends Evented<MapEvents> {
     _markersNeedUpdate: boolean;
     _brightness: number | null | undefined;
     _configDependentLayers: Set<string>;
+    _indoorDependentLayers: Set<string>;
     _config: ConfigSpecification | null | undefined;
     _initialConfig: {
         [key: string]: ConfigSpecification;
     } | null | undefined;
     _buildingIndex: BuildingIndex;
     _transition: TransitionSpecification;
+    _importedAsBasemap: boolean;
 
     crossTileSymbolIndex: CrossTileSymbolIndex;
     pauseablePlacement: PauseablePlacement;
@@ -358,6 +364,9 @@ class Style extends Evented<MapEvents> {
     _hasSymbolLayers: boolean;
 
     _worldview: string | undefined;
+    _hasAppearances: boolean;
+
+    _hasDataDrivenEmissive: boolean;
 
     // exposed to allow stubbing by unit tests
     static getSourceType: typeof getSourceType;
@@ -376,10 +385,11 @@ class Style extends Evented<MapEvents> {
 
         this.fragments = [];
         this.importDepth = options.importDepth || 0;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.importsCache = options.importsCache || new Map();
         this.resolvedImports = options.resolvedImports || new Set();
 
-        this.transition = extend({}, defaultTransition);
+        this.transition = Object.assign({}, defaultTransition);
 
         this._buildingIndex = new BuildingIndex(this);
         this.crossTileSymbolIndex = new CrossTileSymbolIndex();
@@ -387,16 +397,22 @@ class Style extends Evented<MapEvents> {
         this._mergedOrder = [];
         this._drapedFirstOrder = [];
         this._mergedLayers = {};
+        this._mergedIndoor = {};
         this._mergedSourceCaches = {};
         this._mergedOtherSourceCaches = {};
         this._mergedSymbolSourceCaches = {};
         this._clipLayerPresent = false;
+        this._hasAppearances = false;
 
         this._has3DLayers = false;
         this._hasCircleLayers = false;
         this._hasSymbolLayers = false;
 
+        this._importedAsBasemap = false;
+
         this._changes = options.styleChanges || new StyleChanges();
+
+        this._hasDataDrivenEmissive = false;
 
         if (options.dispatcher) {
             this.dispatcher = options.dispatcher;
@@ -441,8 +457,10 @@ class Style extends Evented<MapEvents> {
         this._order = [];
         this._markersNeedUpdate = false;
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.options = options.configOptions ? options.configOptions : new Map();
         this._configDependentLayers = options.configDependentLayers ? options.configDependentLayers : new Set();
+        this._indoorDependentLayers = options.indoorDependentLayers ? options.indoorDependentLayers : new Set();
         this._config = options.config;
         this._styleColorTheme = {
             lut: null,
@@ -546,6 +564,7 @@ class Style extends Evented<MapEvents> {
             try {
                 callback(null, this.setState(json, onFinished));
             } catch (e) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 callback(e, false);
             }
         };
@@ -699,7 +718,7 @@ class Style extends Evented<MapEvents> {
         let config;
         const initialConfig = this._initialConfig && this._initialConfig[scope];
         if (importSpec.config || initialConfig) {
-            config = extend({}, importSpec.config, initialConfig);
+            config = Object.assign({}, importSpec.config, initialConfig);
         }
 
         const style = new Style(this.map, {
@@ -714,10 +733,12 @@ class Style extends Evented<MapEvents> {
             imageManager: this.imageManager,
             glyphManager: this.glyphManager,
             modelManager: this.modelManager,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             config,
             configOptions: this.options,
             colorThemeOverride: importSpec["color-theme"],
-            configDependentLayers: this._configDependentLayers
+            configDependentLayers: this._configDependentLayers,
+            indoorDependentLayers: this._indoorDependentLayers
         });
 
         // Bubble all events fired by the style to the map.
@@ -730,6 +751,7 @@ class Style extends Evented<MapEvents> {
         this.mergeAll();
         this._updateMapProjection();
         this.updateConfigDependencies();
+        this._updateLayers(this._indoorDependentLayers);
         this.map._triggerCameraUpdate(this.camera);
 
         this.dispatcher.broadcast('setLayers', {
@@ -746,18 +768,21 @@ class Style extends Evented<MapEvents> {
     }
 
     _load(json: StyleSpecification, validate: boolean) {
-        const schema = json.indoor ? expandSchemaWithIndoor(json.schema) : json.schema;
-
         // This style was loaded as a root style, but it is marked as a fragment and/or has a schema. We instead load
         // it as an import with the well-known ID "basemap" to make sure that we don't expose the internals.
         if (this._isInternalStyle(json)) {
             const basemap = {id: 'basemap', data: json, url: ''};
-            const style = extend({}, empty, {imports: [basemap]});
+            const style = Object.assign({}, empty, {imports: [basemap]}, json.center ? {center: json.center} : {},
+                json.bearing ? {bearing: json.bearing} : {},
+                json.pitch ? {pitch: json.pitch} : {},
+                json.zoom ? {zoom: json.zoom} : {},
+                json.light ? {light: json.light} : {}) as StyleSpecification;
+            this._importedAsBasemap = true;
             this._load(style, validate);
             return;
         }
 
-        this.updateConfig(this._config, schema);
+        this.updateConfig(this._config, json.schema);
 
         if (validate && emitValidationErrors(this, validateStyle(json))) {
             return;
@@ -810,7 +835,9 @@ class Style extends Evented<MapEvents> {
             this._layers = {};
             for (const layer of layers) {
                 const styleLayer = createStyleLayer(layer, this.scope, this._styleColorTheme.lut, this.options);
-                if (styleLayer.configDependencies.size !== 0) this._configDependentLayers.add(styleLayer.fqid);
+                if (styleLayer.expressionDependencies.configDependencies.size !== 0) this._configDependentLayers.add(styleLayer.fqid);
+                if (styleLayer.expressionDependencies.isIndoorDependent) this._indoorDependentLayers.add(styleLayer.fqid);
+                this._hasAppearances = this._hasAppearances || styleLayer.getAppearances().length !== 0;
                 styleLayer.setEventedParent(this, {layer: {id: styleLayer.id}});
                 this._layers[styleLayer.id] = styleLayer;
 
@@ -865,6 +892,7 @@ class Style extends Evented<MapEvents> {
                         this.fire(new Event(isRootStyle ? 'style.load' : 'style.import.load'));
                     })
                     .catch((e) => {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                         this.fire(new ErrorEvent(new Error('Failed to load imports', e)));
                         this.fire(new Event(isRootStyle ? 'style.load' : 'style.import.load'));
                     });
@@ -892,6 +920,10 @@ class Style extends Evented<MapEvents> {
 
     isRootStyle(): boolean {
         return this.importDepth === 0;
+    }
+
+    hasAppearances(): boolean {
+        return this._hasAppearances || this.fragments.some((f => f.style.hasAppearances()));
     }
 
     mergeAll() {
@@ -931,6 +963,7 @@ class Style extends Evented<MapEvents> {
             }
 
             terrain = this._prioritizeTerrain(
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 terrain,
                 style.terrain,
                 style.stylesheet.terrain,
@@ -957,27 +990,38 @@ class Style extends Evented<MapEvents> {
             styleColorThemeForScope[style.scope] = style._styleColorTheme;
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.light = light;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.ambientLight = ambientLight;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.directionalLight = directionalLight;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.fog = fog;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.snow = snow;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.rain = rain;
         this._styleColorThemeForScope = styleColorThemeForScope;
 
         if (terrain === null) {
             delete this.terrain;
         } else {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             this.terrain = terrain;
         }
 
         // Use perspective camera as a fallback if no camera is specified
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.camera = camera || {'camera-projection': 'perspective'};
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.projection = projection || {name: 'mercator'};
-        this.transition = extend({}, defaultTransition, transition);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        this.transition = Object.assign({}, defaultTransition, transition);
 
         this.mergeSources();
         this.mergeLayers();
+        this.mergeIndoor();
     }
 
     forEachFragmentStyle(fn: (style: Style) => void) {
@@ -1034,6 +1078,7 @@ class Style extends Evented<MapEvents> {
 
         this.forEachFragmentStyle((style: Style) => {
             terrain = this._prioritizeTerrain(
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 terrain,
                 style.terrain,
                 style.stylesheet.terrain,
@@ -1043,6 +1088,7 @@ class Style extends Evented<MapEvents> {
         if (terrain === null) {
             delete this.terrain;
         } else {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             this.terrain = terrain;
         }
     }
@@ -1055,6 +1101,7 @@ class Style extends Evented<MapEvents> {
                 projection = style.stylesheet.projection;
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.projection = projection || {name: 'mercator'};
     }
 
@@ -1083,6 +1130,18 @@ class Style extends Evented<MapEvents> {
         this._mergedSourceCaches = mergedSourceCaches;
         this._mergedOtherSourceCaches = mergedOtherSourceCaches;
         this._mergedSymbolSourceCaches = mergedSymbolSourceCaches;
+    }
+
+    mergeIndoor() {
+        this.forEachFragmentStyle((style: Style) => {
+            if (style.stylesheet && style.stylesheet.indoor) {
+                for (const indoor of Object.values(style.stylesheet.indoor)) {
+                    const indoorSpec = indoor;
+                    const fqid = makeFQID(indoorSpec.sourceId, style.scope);
+                    this._mergedIndoor[fqid] = new Set(indoorSpec.sourceLayers || []);
+                }
+            }
+        });
     }
 
     mergeLayers() {
@@ -1115,6 +1174,8 @@ class Style extends Evented<MapEvents> {
 
         this._mergedOrder = [];
 
+        let last3DLayerIdx = -1;
+
         const sort = (layers: TypedStyleLayer[] = []) => {
             for (const layer of layers) {
                 if (layer.type === 'slot') {
@@ -1127,7 +1188,10 @@ class Style extends Evented<MapEvents> {
                     mergedLayers[fqid] = layer;
 
                     // Typed layer bookkeeping
-                    if (layer.is3D(!!this.terrain)) this._has3DLayers = true;
+                    if (layer.is3D(!!this.terrain)) {
+                        this._has3DLayers = true;
+                        last3DLayerIdx = this._mergedOrder.length - 1;
+                    }
                     if (layer.type === 'circle') this._hasCircleLayers = true;
                     if (layer.type === 'symbol') this._hasSymbolLayers = true;
                     if (layer.type === 'clip') this._clipLayerPresent = true;
@@ -1137,31 +1201,42 @@ class Style extends Evented<MapEvents> {
 
         sort(mergedOrder);
 
-        // Sort symbols with occlusion opacity to be rendered after all 3D layers
-        this._mergedOrder.sort((layerName1: string, layerName2: string) => {
-            const l1 = mergedLayers[layerName1];
-            const l2 = mergedLayers[layerName2];
+        // Sort symbols with occlusion opacity to be rendered after last 3D layer
+        if (this._has3DLayers) {
+            const priorities: Record<string, number> = {};
 
-            if ((l1 as SymbolStyleLayer).hasInitialOcclusionOpacityProperties) {
-                if (l2.is3D(!!this.terrain)) {
-                    return 1;
+            for (let i = 0; i < this._mergedOrder.length; ++i) {
+                const layerName = this._mergedOrder[i];
+                const layer = mergedLayers[layerName];
+
+                // All layers after last 3D layer are left unchanged
+                // If there are occlusion layers before last 3D layer they are placed tight after it keeping their relative order
+
+                if (i === last3DLayerIdx) {
+                    priorities[layerName] = 1;
+                } else if (i < last3DLayerIdx) {
+                    if ((layer as SymbolStyleLayer).hasOcclusionOpacityProperties) {
+                        priorities[layerName] = 2;
+                    } else {
+                        priorities[layerName] = 0;
+                    }
+                } else {
+                    priorities[layerName] = 4;
                 }
-                return 0;
             }
 
-            if (l1.is3D(!!this.terrain)) {
-                if ((l2 as SymbolStyleLayer).hasInitialOcclusionOpacityProperties) {
-                    return -1;
-                }
-                return 0;
-            }
+            this._mergedOrder.sort((layerName1: string, layerName2: string) => {
+                const p1 = priorities[layerName1];
+                const p2 = priorities[layerName2];
 
-            return 0;
-        });
+                return p1 - p2;
+            });
+        }
 
         this._mergedLayers = mergedLayers;
         this.updateDrapeFirstLayers();
         this._buildingIndex.processLayersChanged();
+        this._updateDataDrivenEmissiveStrength();
     }
 
     terrainSetForDrapingOnly(): boolean {
@@ -1173,7 +1248,7 @@ class Style extends Evented<MapEvents> {
     }
 
     setCamera(camera: CameraSpecification): Style {
-        this.stylesheet.camera = extend({}, this.stylesheet.camera, camera);
+        this.stylesheet.camera = Object.assign({}, this.stylesheet.camera, camera);
         this.camera = this.stylesheet.camera;
         return this;
     }
@@ -1446,6 +1521,7 @@ class Style extends Evented<MapEvents> {
         for (const cacheId in this._sourceCaches) {
             const source = this._sourceCaches[cacheId].getSource();
             if (!sources[source.id]) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 sources[source.id] = source.serialize();
             }
         }
@@ -1454,14 +1530,13 @@ class Style extends Evented<MapEvents> {
     }
 
     _serializeLayers(ids: Array<string>): Array<LayerSpecification> {
-        const serializedLayers = [];
+        const serializedLayers: LayerSpecification[] = [];
         for (const id of ids) {
             const layer = this._layers[id];
             if (layer && layer.type !== 'custom') {
                 serializedLayers.push(layer.serialize());
             }
         }
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return serializedLayers;
     }
 
@@ -1527,6 +1602,27 @@ class Style extends Evented<MapEvents> {
         }
 
         return false;
+    }
+
+    _updateDataDrivenEmissiveStrength() {
+        for (const layerId in this._mergedLayers) {
+            const layer = this._mergedLayers[layerId];
+
+            if (layer._transitionablePaint && layer._transitionablePaint._values) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                const transitionableValue = layer._transitionablePaint._values['line-emissive-strength'];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+                if (transitionableValue && transitionableValue.value && transitionableValue.value.isDataDriven()) {
+                    this._hasDataDrivenEmissive = true;
+                    return;
+                }
+            }
+        }
+        this._hasDataDrivenEmissive = false;
+    }
+
+    hasDataDrivenEmissiveStrength(): boolean {
+        return this._hasDataDrivenEmissive;
     }
 
     get order(): Array<string> {
@@ -1850,6 +1946,7 @@ class Style extends Evented<MapEvents> {
         const changesPromises = [];
 
         changes.forEach((op) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             changesPromises.push(this[op.command](...op.args));
         });
 
@@ -2005,6 +2102,7 @@ class Style extends Evented<MapEvents> {
 
         sourceInstance.setEventedParent(this, () => ({
             isSourceLoaded: this._isSourceCacheLoaded(sourceInstance.id),
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             source: sourceInstance.serialize(),
             sourceId: sourceInstance.id
         }));
@@ -2294,12 +2392,15 @@ class Style extends Evented<MapEvents> {
                     for (const name in selector.properties) {
                         const expression = createExpression(selector.properties[name]);
                         if (expression.result === 'success') {
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                             properties = properties || {};
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                             properties[name] = expression.value;
                         }
                     }
                 }
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 featuresetSelectors.push({layerId: selector.layer, namespace: selector.featureNamespace, properties, uniqueFeatureID: selector._uniqueFeatureID});
             }
         }
@@ -2352,11 +2453,30 @@ class Style extends Evented<MapEvents> {
         return expression ? expression.serialize() : null;
     }
 
+    isIndoorEnabled(): boolean {
+        return Object.keys(this._mergedIndoor).length > 0;
+    }
+
+    getIndoorSourceLayers(sourceId: string, scope: string): Set<string> | null {
+        const fqid = makeFQID(sourceId, scope);
+        return this._mergedIndoor[fqid];
+    }
+
+    setIndoorData(mapId: string, params: ActorMessages['setIndoorData']['params']) {
+        this.map.indoor.setIndoorData(params);
+    }
+
+    updateIndoorDependentLayers() {
+        this._updateLayers(this._indoorDependentLayers);
+        this.map._styleDirty = true;
+        this.map.triggerRepaint();
+    }
+
     setConfigProperty(fragmentId: string, key: string, value: unknown) {
         const fragmentStyle = this.getFragmentStyle(fragmentId);
         if (!fragmentStyle) return;
 
-        const schema = fragmentStyle.stylesheet.indoor ? expandSchemaWithIndoor(fragmentStyle.stylesheet.schema) : fragmentStyle.stylesheet.schema;
+        const schema = fragmentStyle.stylesheet.schema;
         if (!schema || !schema[key]) return;
 
         const expressionParsed = createExpression(value);
@@ -2385,6 +2505,7 @@ class Style extends Evented<MapEvents> {
 
         this.options.set(fqid, Object.assign({}, expressions, {
             value: expression,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             default: defaultExpression,
             minValue, maxValue, stepValue, type, values
         }));
@@ -2468,7 +2589,9 @@ class Style extends Evented<MapEvents> {
             if (defaultExpression) {
                 const fqid = makeFQID(id, this.scope);
                 this.options.set(fqid, {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     default: defaultExpression,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     value: configExpression,
                     minValue, maxValue, stepValue, type, values
                 });
@@ -2478,18 +2601,21 @@ class Style extends Evented<MapEvents> {
         }
     }
 
-    updateConfigDependencies(configKey?: string) {
-        for (const id of this._configDependentLayers) {
+    _updateLayers(layerIds: Set<string>, condition: (layer: TypedStyleLayer) => boolean = () => true) {
+        for (const id of layerIds) {
             const layer = this.getLayer(id);
-            if (layer) {
-                if (configKey && !layer.configDependencies.has(configKey)) {
-                    continue;
-                }
-
+            if (layer && condition(layer)) {
                 layer.possiblyEvaluateVisibility();
                 this._updateLayer(layer);
+                this._changes.setDirty();
             }
         }
+    }
+
+    updateConfigDependencies(configKey?: string) {
+        this._updateLayers(this._configDependentLayers, (layer) => {
+            return configKey ? layer.expressionDependencies.configDependencies.has(configKey) : true;
+        });
 
         if (this.ambientLight) {
             this.ambientLight.updateConfig(this.options);
@@ -2542,7 +2668,7 @@ class Style extends Evented<MapEvents> {
             return;
         }
 
-        let layer;
+        let layer: TypedStyleLayer;
         if (layerObject.type === 'custom') {
             if (emitValidationErrors(this, validateCustomStyleLayer(layerObject))) return;
             layer = createStyleLayer(layerObject, this.scope, this._styleColorTheme.lut, this.options);
@@ -2550,7 +2676,7 @@ class Style extends Evented<MapEvents> {
             if (typeof layerObject.source === 'object') {
                 this.addSource(id, layerObject.source);
                 layerObject = clone(layerObject);
-                layerObject = (extend(layerObject, {source: id}));
+                layerObject = (Object.assign(layerObject, {source: id}));
             }
 
             // this layer is not in the style.layers array, so we pass an impossible array index
@@ -2563,7 +2689,9 @@ class Style extends Evented<MapEvents> {
             layer.setEventedParent(this, {layer: {id}});
         }
 
-        if (layer.configDependencies.size !== 0) this._configDependentLayers.add(layer.fqid);
+        const fqid = makeFQID(layer.source, layer.scope);
+        if (layer.expressionDependencies.configDependencies.size !== 0) this._configDependentLayers.add(fqid);
+        if (layer.expressionDependencies.isIndoorDependent) this._indoorDependentLayers.add(fqid);
 
         let index = this._order.length;
         if (before) {
@@ -2583,7 +2711,6 @@ class Style extends Evented<MapEvents> {
 
         this._order.splice(index, 0, id);
         this._layerOrderChanged = true;
-
         this._layers[id] = layer;
 
         const sourceCache = this.getOwnLayerSourceCache(layer);
@@ -2619,7 +2746,6 @@ class Style extends Evented<MapEvents> {
         }
 
         layer.scope = this.scope;
-
         this.mergeLayers();
     }
 
@@ -2691,6 +2817,7 @@ class Style extends Evented<MapEvents> {
         this._layerOrderChanged = true;
 
         this._configDependentLayers.delete(layer.fqid);
+        this._indoorDependentLayers.delete(layer.fqid);
         this._changes.removeLayer(layer);
 
         const sourceCache = this.getOwnLayerSourceCache(layer);
@@ -2831,6 +2958,7 @@ class Style extends Evented<MapEvents> {
 
         if (value !== null && value !== undefined && !(options && options.validate === false)) {
             const key = `layers.${layerId}.layout.${name}`;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const errors = emitValidationErrors(layer, validateLayoutProperty.call(validateStyle, {
                 key,
                 layerType: layer.type,
@@ -2846,8 +2974,25 @@ class Style extends Evented<MapEvents> {
         }
 
         layer.setLayoutProperty(name, value);
-        if (layer.configDependencies.size !== 0) this._configDependentLayers.add(layer.fqid);
+        if (layer.expressionDependencies.configDependencies.size !== 0) this._configDependentLayers.add(layer.fqid);
+        if (layer.expressionDependencies.isIndoorDependent) this._indoorDependentLayers.add(layer.fqid);
         this._updateLayer(layer);
+    }
+
+    setLayerProperty<T extends keyof (PaintSpecification | LayoutSpecification)>(layerId: string, name: T | "appearances", value: PaintSpecification[T] | LayoutSpecification[T] | AppearanceSpecification[], options: StyleSetterOptions = {}) {
+        this._checkLoaded();
+
+        const layer = this._checkLayer(layerId);
+        if (!layer) return;
+
+        if (name === 'appearances') {
+            layer.setAppearances(value);
+            this._changes.setDirty();
+        } else if (layer.isPaintProperty(name)) {
+            this.setPaintProperty(layerId, name, value as PaintSpecification[T], options);
+        } else {
+            this.setLayoutProperty(layerId, name, value as LayoutSpecification[T], options);
+        }
     }
 
     /**
@@ -2872,6 +3017,7 @@ class Style extends Evented<MapEvents> {
 
         if (value !== null && value !== undefined && !(options && options.validate === false)) {
             const key = `layers.${layerId}.paint.${name}`;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const errors = emitValidationErrors(layer, validatePaintProperty.call(validateStyle, {
                 key,
                 layerType: layer.type,
@@ -2885,7 +3031,8 @@ class Style extends Evented<MapEvents> {
         }
 
         const requiresRelayout = layer.setPaintProperty(name, value);
-        if (layer.configDependencies.size !== 0) this._configDependentLayers.add(layer.fqid);
+        if (layer.expressionDependencies.configDependencies.size !== 0) this._configDependentLayers.add(layer.fqid);
+        if (layer.expressionDependencies.isIndoorDependent) this._indoorDependentLayers.add(layer.fqid);
         if (requiresRelayout) {
             this._updateLayer(layer);
         }
@@ -3040,13 +3187,13 @@ class Style extends Evented<MapEvents> {
     }
 
     setTransition(transition?: TransitionSpecification | null): Style {
-        this.stylesheet.transition = extend({}, this.stylesheet.transition, transition);
+        this.stylesheet.transition = Object.assign({}, this.stylesheet.transition, transition);
         this.transition = this.stylesheet.transition;
         return this;
     }
 
     getTransition(): TransitionSpecification {
-        return extend({}, this.stylesheet.transition);
+        return Object.assign({}, this.stylesheet.transition);
     }
 
     serialize(): StyleSpecification {
@@ -3216,6 +3363,7 @@ class Style extends Evented<MapEvents> {
             const querySourceCache = queries[sourceCache.id] = queries[sourceCache.id] || {sourceCache, layers: {}, has3DLayers: false};
             if (styleLayer.is3D(!!this.terrain)) querySourceCache.has3DLayers = true;
             querySourceCache.layers[styleLayer.fqid] = querySourceCache.layers[styleLayer.fqid] || {styleLayer, targets: []};
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             querySourceCache.layers[styleLayer.fqid].targets.push({filter});
         };
 
@@ -3263,11 +3411,13 @@ class Style extends Evented<MapEvents> {
         const targets: QrfTarget[] = [];
 
         if (params && params.target) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             targets.push(Object.assign({}, params, {targetId, filter}));
         } else {
             // Query all root-level featuresets
             const featuresetDescriptors = this.getFeaturesetDescriptors();
             for (const featureset of featuresetDescriptors) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 targets.push({targetId, filter, target: featureset});
             }
 
@@ -3275,6 +3425,7 @@ class Style extends Evented<MapEvents> {
             for (const {style} of this.fragments) {
                 const featuresetDescriptors = style.getFeaturesetDescriptors();
                 for (const featureset of featuresetDescriptors) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     targets.push({targetId, filter, target: featureset});
                 }
             }
@@ -3409,13 +3560,12 @@ class Style extends Evented<MapEvents> {
             this._validate(validateFilter, 'querySourceFeatures.filter', filter, null, params);
         }
 
-        let results = [];
+        let results: Array<Feature> = [];
         const sourceCaches = this.getOwnSourceCaches(sourceId);
         for (const sourceCache of sourceCaches) {
             results = results.concat(querySourceFeatures(sourceCache, params));
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return results;
     }
 
@@ -3480,7 +3630,7 @@ class Style extends Evented<MapEvents> {
     // eslint-disable-next-line no-warning-comments
     // TODO: generic approach for root level property: light, terrain, skybox.
     // It is not done here to prevent rebasing issues.
-    setTerrain(terrainOptions?: TerrainSpecification | null, drapeRenderMode: number = DrapeRenderMode.elevated) {
+    setTerrain(terrainOptions?: TerrainSpecification | TerrainSpecificationUpdate | null, drapeRenderMode: number = DrapeRenderMode.elevated) {
         this._checkLoaded();
 
         // Disabling
@@ -3511,24 +3661,24 @@ class Style extends Evented<MapEvents> {
 
         this.checkCanvasFingerprintNoise();
 
-        let options: TerrainSpecification = terrainOptions;
-        const isUpdating = terrainOptions.source == null;
+        let options: TerrainSpecification | TerrainSpecificationUpdate = terrainOptions;
+        const isUpdating = !("source" in terrainOptions) || terrainOptions.source == null;
         if (drapeRenderMode === DrapeRenderMode.elevated) {
             if (this.disableElevatedTerrain) return;
 
             // Input validation and source object unrolling
-            if (typeof options.source === 'object') {
+            if ("source" in options && typeof options.source === 'object') {
                 const id = 'terrain-dem-src';
                 this.addSource(id, options.source);
                 options = clone(options);
-                options = extend(options, {source: id});
+                options = Object.assign(options, {source: id});
             }
 
-            const validationOptions = extend({}, options);
+            const validationOptions = Object.assign({}, options);
             const validationProps: {style?: StyleSpecification} = {};
 
             if (this.terrain && isUpdating) {
-                validationOptions.source = this.terrain.get().source;
+                (validationOptions as TerrainSpecification).source = this.terrain.get().source;
 
                 const fragmentStyle = this.terrain ? this.getFragmentStyle(this.terrain.scope) : null;
                 if (fragmentStyle) {
@@ -3544,22 +3694,25 @@ class Style extends Evented<MapEvents> {
         // Enabling
         if (!this.terrain || (this.terrain.scope !== this.scope && !isUpdating) || (this.terrain && drapeRenderMode !== this.terrain.drapeRenderMode)) {
             if (!options) return;
-            this._createTerrain(options, drapeRenderMode);
+            this._createTerrain(options as TerrainSpecification, drapeRenderMode);
             this.fire(new Event('data', {dataType: 'style'}));
         } else { // Updating
             const terrain = this.terrain;
             const currSpec = terrain.get();
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             for (const name of Object.keys(styleSpec.terrain)) {
                 // Fallback to use default style specification when the properties wasn't set
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 if (!options.hasOwnProperty(name) && !!styleSpec.terrain[name].default) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     options[name] = styleSpec.terrain[name].default;
                 }
             }
             for (const key in terrainOptions) {
                 if (!deepEqual(terrainOptions[key], currSpec[key])) {
                     terrain.set(terrainOptions, this.options);
-                    this.stylesheet.terrain = terrainOptions;
+                    this.stylesheet.terrain = terrainOptions as TerrainSpecification;
                     const parameters = this._getTransitionParameters({duration: 0});
                     terrain.updateTransitions(parameters);
                     this.fire(new Event('data', {dataType: 'style'}));
@@ -3749,7 +3902,7 @@ class Style extends Evented<MapEvents> {
     _getTransitionParameters(transition?: TransitionSpecification | null): TransitionParameters {
         return {
             now: browser.now(),
-            transition: extend(this.transition, transition)
+            transition: Object.assign(this.transition, transition)
         };
     }
 
@@ -3758,8 +3911,8 @@ class Style extends Evented<MapEvents> {
             return;
         }
 
-        const draped = [];
-        const nonDraped = [];
+        const draped: string[] = [];
+        const nonDraped: string[] = [];
         for (const layerId of this._mergedOrder) {
             const layer = this._mergedLayers[layerId];
             if (this.isLayerDraped(layer)) {
@@ -3820,8 +3973,9 @@ class Style extends Evented<MapEvents> {
         }
 
         // Fallback to the default glyphs URL if none is specified
-        const style = extend({}, this.serialize());
-        return emitValidationErrors(this, validate.call(validateStyle, extend({
+        const style = Object.assign({}, this.serialize());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        return emitValidationErrors(this, validate.call(validateStyle, Object.assign({
             key,
             style,
             value,

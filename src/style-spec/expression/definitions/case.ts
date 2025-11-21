@@ -50,6 +50,7 @@ class Case implements Expression {
         if (!otherwise) return null;
 
         assert(outputType);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         return new Case(outputType, branches, otherwise);
     }
 
@@ -72,8 +73,7 @@ class Case implements Expression {
     }
 
     outputDefined(): boolean {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return this.branches.every(([_, out]: [any, any]) => out.outputDefined()) && this.otherwise.outputDefined();
+        return this.branches.every(([_, out]: [Expression, Expression]) => out.outputDefined()) && this.otherwise.outputDefined();
     }
 
     serialize(): SerializedExpression {

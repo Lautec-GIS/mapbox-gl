@@ -43,11 +43,11 @@ export class ImagePosition implements SpritePosition {
     scale: ImagePositionScale;
 
     static getImagePositionScale(imageVariant: ImageVariant | undefined, usvg: boolean, pixelRatio: number): ImagePositionScale {
-        if (usvg && imageVariant && imageVariant.options && imageVariant.options.transform) {
-            const transform = imageVariant.options.transform;
+        if (usvg && imageVariant) {
+            const {sx, sy} = imageVariant;
             return {
-                x: transform.a,
-                y: transform.d
+                x: sx,
+                y: sy
             };
         } else {
             return {
@@ -116,7 +116,7 @@ function getImageBin(image: StyleImage, padding: number, scale: [number, number]
 
 export function getImagePosition(id: StringifiedImageVariant, src: StyleImage, padding: number) {
     const imageVariant = ImageVariant.parse(id);
-    const bin = getImageBin(src, padding, [imageVariant.options.transform.a, imageVariant.options.transform.d]);
+    const bin = getImageBin(src, padding, [imageVariant.sx, imageVariant.sy]);
     return {bin, imagePosition: new ImagePosition(bin, src, padding, imageVariant), imageVariant};
 }
 
@@ -135,9 +135,12 @@ export default class ImageAtlas {
 
         const bins = [];
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this.addImages(icons, iconPositions, ICON_PADDING, bins);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this.addImages(patterns, patternPositions, PATTERN_PADDING, bins);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         const {w, h} = potpack(bins);
         const image = new RGBAImage({width: w || 1, height: h || 1});
 

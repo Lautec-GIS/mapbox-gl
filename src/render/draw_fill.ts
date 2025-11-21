@@ -18,7 +18,7 @@ import ColorMode from '../gl/color_mode';
 import {vec3} from 'gl-matrix';
 import EXTENT from '../style-spec/data/extent';
 import {altitudeFromMercatorZ} from '../geo/mercator_coordinate';
-import {radToDeg, easeIn} from '../util/util';
+import {easeIn} from '../util/util';
 import {OrthographicPitchTranstionValue} from '../geo/transform';
 import {number as lerp} from '../style-spec/util/interpolate';
 import {calculateGroundShadowFactor} from '../../3d-style/render/shadow_renderer';
@@ -71,8 +71,7 @@ function drawFill(painter: Painter, sourceCache: SourceCache, layer: FillStyleLa
 
     const pattern = layer.paint.get('fill-pattern');
     const pass = painter.opaquePassEnabledForLayer() &&
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (!pattern.constantOr((1 as any)) &&
+        (!pattern.constantOr(1) &&
         color.constantOr(Color.transparent).a === 1 &&
         opacity.constantOr(0) === 1) ? 'opaque' : 'translucent';
 
@@ -97,14 +96,16 @@ function drawFill(painter: Painter, sourceCache: SourceCache, layer: FillStyleLa
         return;
     }
 
+    const mrt = painter.emissiveMode === 'mrt-fallback';
+
     // Draw offset elevation
     if (elevationType === 'offset') {
-        drawFillTiles(drawFillParams, false, painter.stencilModeFor3D());
+        drawFillTiles(drawFillParams, false, mrt, painter.stencilModeFor3D());
         return;
     }
 
     // Draw non-elevated polygons
-    drawFillTiles(drawFillParams, false);
+    drawFillTiles(drawFillParams, false, mrt);
 
     if (elevationType === 'road') {
         const roadElevationActive = !terrainEnabled && painter.renderPass === 'translucent';
@@ -115,7 +116,7 @@ function drawFill(painter: Painter, sourceCache: SourceCache, layer: FillStyleLa
         }
 
         // Draw elevated polygons
-        drawFillTiles(drawFillParams, true, StencilMode.disabled);
+        drawFillTiles(drawFillParams, true, mrt, StencilMode.disabled);
 
         if (roadElevationActive) {
             drawElevatedStructures(drawFillParams);
@@ -134,11 +135,10 @@ function computeCameraPositionInTile(id: UnwrappedTileID, cameraMercPos: Mercato
 }
 
 function computeDepthBias(tr: Transform): number {
-    const pitchInDegrees = radToDeg(tr.pitch);
     let bias = 0.01;
 
     if (tr.isOrthographic) {
-        const mixValue = pitchInDegrees >= OrthographicPitchTranstionValue ? 1.0 : pitchInDegrees / OrthographicPitchTranstionValue;
+        const mixValue = tr.pitch >= OrthographicPitchTranstionValue ? 1.0 : tr.pitch / OrthographicPitchTranstionValue;
         bias = lerp(0.0001, bias, easeIn(mixValue));
     }
 
@@ -148,7 +148,8 @@ function computeDepthBias(tr: Transform): number {
 }
 
 export function drawDepthPrepass(painter: Painter, sourceCache: SourceCache, layer: FillStyleLayer, coords: Array<OverscaledTileID>, pass: DepthPrePass) {
-    if (!layer.layout || layer.layout.get('fill-elevation-reference') === 'none') return;
+    if (!layer.layout || layer.layout.get('fill-elevation-reference') === 'none' || layer.paint.get('fill-opacity').constantOr(1) === 0) return;
+
     const gl = painter.context.gl;
 
     assert(!(painter.terrain && painter.terrain.enabled));
@@ -231,9 +232,7 @@ export function drawDepthPrepass(painter: Painter, sourceCache: SourceCache, lay
 }
 
 export function drawGroundShadowMask(painter: Painter, sourceCache: SourceCache, layer: FillStyleLayer, coords: Array<OverscaledTileID>) {
-    if (!layer.layout || layer.layout.get('fill-elevation-reference') === 'none') {
-        return;
-    }
+    if (!layer.layout || layer.layout.get('fill-elevation-reference') === 'none' || layer.paint.get('fill-opacity').constantOr(1) === 0) return;
 
     assert(!(painter.terrain && painter.terrain.enabled));
 
@@ -342,12 +341,13 @@ function drawElevatedStructures(params: DrawFillParams) {
     draw(false);
 }
 
-function drawFillTiles(params: DrawFillParams, elevatedGeometry: boolean, stencilModeOverride?: StencilMode) {
+function drawFillTiles(params: DrawFillParams, elevatedGeometry: boolean, multipleRenderTargets: boolean, stencilModeOverride?: StencilMode) {
     const {painter, sourceCache, layer, coords, colorMode, elevationType, terrainEnabled, pass} = params;
     const gl = painter.context.gl;
 
     const patternProperty = layer.paint.get('fill-pattern');
     const patternTransition = layer.paint.get('fill-pattern-cross-fade');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const constantPattern = patternProperty.constantOr(null);
 
     let activeElevationType = elevationType;
@@ -368,8 +368,8 @@ function drawFillTiles(params: DrawFillParams, elevatedGeometry: boolean, stenci
         }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const image = patternProperty && patternProperty.constantOr((1 as any));
+    const image = patternProperty && patternProperty.constantOr(1);
+    const isDraping = painter.terrain && painter.terrain.renderingToTexture;
 
     const draw = (depthMode: DepthMode, isOutline: boolean) => {
         let programName: 'fillPattern' | 'fill' | 'fillOutlinePattern' | 'fillOutline';
@@ -408,6 +408,9 @@ function drawFillTiles(params: DrawFillParams, elevatedGeometry: boolean, stenci
             if (renderWithShadows) {
                 dynamicDefines.push('RENDER_SHADOWS', 'DEPTH_TEXTURE', 'NORMAL_OFFSET');
             }
+            if (isDraping && multipleRenderTargets) {
+                dynamicDefines.push('USE_MRT1');
+            }
 
             if (image) {
                 painter.context.activeTexture.set(gl.TEXTURE0);
@@ -420,6 +423,7 @@ function drawFillTiles(params: DrawFillParams, elevatedGeometry: boolean, stenci
             let transitionableConstantPattern = false;
             if (constantPattern && tile.imageAtlas) {
                 const atlas = tile.imageAtlas;
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 const pattern = ResolvedImage.from(constantPattern);
                 const primaryPatternImage = pattern.getPrimary().scaleSelf(browser.devicePixelRatio).toString();
                 const secondaryPatternImageVariant = pattern.getSecondary();
@@ -469,8 +473,10 @@ function drawFillTiles(params: DrawFillParams, elevatedGeometry: boolean, stenci
                 activeDepthMode = depthModeFor3D;
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             program.draw(painter, drawMode, activeDepthMode,
                 stencilModeOverride ? stencilModeOverride : painter.stencilModeForClipping(coord), colorMode, CullFaceMode.disabled, uniformValues,
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 layer.id, bufferData.layoutVertexBuffer, indexBuffer, segments,
                 layer.paint, painter.transform.zoom, programConfiguration, dynamicBuffers);
         }

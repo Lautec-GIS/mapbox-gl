@@ -5,12 +5,71 @@
         "procedural-buildings": {
             "type": "vector",
             "url": "mapbox://mapbox-geodata.procedural-buildings-v1",
-            "maxzoom": 15
+            "promoteId": ["coalesce", ["get", "building_id"], ["id"]]
         }
     },
     "sprite": "",
     "glyphs": "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
-    "projection": {"name": "globe"},
+    "projection": {
+        "name": "globe"
+    },
+    "schema": {
+        "colorBuildingHighlight": {
+            "default": "hsl(34, 30%, 93%)",
+            "type": "color",
+            "metadata": {
+                "mapbox:title": "Color",
+                "mapbox:description": "Set a custom color for building fill extrusion when setting highlight state."
+            }
+        },
+        "colorBuildingSelect": {
+            "default": "hsl(214, 82%, 63%)",
+            "type": "color",
+            "metadata": {
+                "mapbox:title": "Color",
+                "mapbox:description": "Set a custom color for building fill extrusion when setting select state."
+            }
+        }
+    },
+    "featuresets": {
+        "buildings": {
+            "metadata": {
+                "mapbox:title": "Buildings",
+                "mapbox:description": "Featureset describing the buildings.",
+                "mapbox:states": [
+                    {
+                        "id": "highlight",
+                        "type": "boolean",
+                        "doc": "When `true`, the building is highlighted. Use this state to create a temporary effect (e.g. hover).",
+                        "importConfigs": ["colorBuildingHighlight"]
+                    },
+                    {
+                        "id": "select",
+                        "type": "boolean",
+                        "doc": "When `true`, the building is selected. Use this state to create a permanent effect. Note: the `select` state has a higher priority than `highlight`.",
+                        "importConfigs": ["colorBuildingSelect"]
+                    }
+                ],
+                "mapbox:properties": [
+                    {
+                        "name": "group",
+                        "type": "string",
+                        "doc": "A high-level building group like building-2d, building-3d, etc."
+                    }
+                ]
+            },
+            "selectors": [
+                {
+                    "layer": "procedural-buildings",
+                    "properties": {
+                        "group": "building-3d"
+                    },
+                    "featureNamespace": "building-A",
+                    "_uniqueFeatureID": true
+                }
+            ]
+        }
+    },
     "layers": [
         {
             "id": "procedural-buildings",
@@ -72,6 +131,19 @@
                 ]
             ],
             "layout": {
+                "building-flood-light-wall-radius": [
+                    "case",
+                    [">", ["number", ["get", "height"]], 200],
+                    ["/", ["number", ["get", "height"]], 3],
+                    0
+                ],
+                "building-flood-light-ground-radius": [
+                    "step",
+                    ["number", ["get", "height"]],
+                    0,
+                    30,
+                    ["random", 30, 100, ["id"]]
+                ],
                 "building-roof-shape": [
                     "case",
                     [
@@ -100,7 +172,7 @@
                             "get",
                             "vertex_count"
                         ],
-                        9
+                        16
                     ],
                     "parapet",
                     [
@@ -118,8 +190,19 @@
                     "min_height"
                 ],
                 "building-height": [
-                    "get",
-                    "height"
+                    "+",
+                    [
+                        "get",
+                        "height"
+                    ],
+                    [
+                        "random",
+                        0.3,
+                        1,
+                        [
+                            "id"
+                        ]
+                    ]
                 ],
                 "building-facade": [
                     "all",
@@ -148,29 +231,78 @@
                             "get",
                             "height"
                         ],
-                        20
+                        25
                     ],
                     [
                         "/",
                         [
                             "-",
                             [
-                                "get",
-                                "height"
+                                "*",
+                                10,
+                                [
+                                    "ceil",
+                                    [
+                                        "/",
+                                        [
+                                            "get",
+                                            "height"
+                                        ],
+                                        10
+                                    ]
+                                ]
                             ],
                             [
                                 "get",
                                 "min_height"
                             ]
                         ],
+                        4.5
+                    ],
+                    [
+                        "all",
                         [
-                            "random",
-                            6,
-                            8,
+                            ">=",
                             [
-                                "id"
-                            ]
+                                "get",
+                                "height"
+                            ],
+                            25
+                        ],
+                        [
+                            "!=",
+                            [
+                                "get",
+                                "roof_type"
+                            ],
+                            "parapet"
                         ]
+                    ],
+                    [
+                        "/",
+                        [
+                            "-",
+                            [
+                                "*",
+                                10,
+                                [
+                                    "ceil",
+                                    [
+                                        "/",
+                                        [
+                                            "get",
+                                            "height"
+                                        ],
+                                        10
+                                    ]
+                                ]
+                            ],
+                            [
+                                "get",
+                                "min_height"
+                            ]
+                        ],
+                        4.5
                     ],
                     [
                         "/",
@@ -198,17 +330,55 @@
                 "building-facade-window": [
                     "case",
                     [
-                        "==",
+                        "all",
                         [
-                            "get",
-                            "roof_type"
+                            "<",
+                            [
+                                "get",
+                                "height"
+                            ],
+                            25
                         ],
-                        "parapet"
+                        [
+                            "<=",
+                            [
+                                "get",
+                                "area"
+                            ],
+                            2000
+                        ]
+                    ],
+                    [
+                        0.5,
+                        0.7
+                    ],
+                    [
+                        "all",
+                        [
+                            ">=",
+                            [
+                                "get",
+                                "height"
+                            ],
+                            25
+                        ],
+                        [
+                            "!=",
+                            [
+                                "get",
+                                "roof_type"
+                            ],
+                            "parapet"
+                        ]
+                    ],
+                    [
+                        0.5,
+                        0.7
                     ],
                     [
                         [
                             "random",
-                            0.7,
+                            0.8,
                             0.95,
                             [
                                 "id"
@@ -216,20 +386,95 @@
                         ],
                         [
                             "random",
-                            0.9,
+                            0.95,
                             1,
                             [
                                 "id"
                             ]
                         ]
+                    ]
+                ],
+                "building-facade-unit-width": [
+                    "case",
+                    [
+                        "all",
+                        [
+                            "<",
+                            [
+                                "get",
+                                "height"
+                            ],
+                            25
+                        ],
+                        [
+                            "<=",
+                            [
+                                "get",
+                                "area"
+                            ],
+                            2000
+                        ]
+                    ],
+                    3,
+                    [
+                        "all",
+                        [
+                            "<",
+                            [
+                                "get",
+                                "height"
+                            ],
+                            25
+                        ],
+                        [
+                            ">",
+                            [
+                                "get",
+                                "area"
+                            ],
+                            2000
+                        ]
                     ],
                     [
-                        0.5,
-                        0.9
+                        "random",
+                        3,
+                        6,
+                        [
+                            "id"
+                        ]
+                    ],
+                    [
+                        "at",
+                        [
+                            "%",
+                            [
+                                "to-number",
+                                [
+                                    "id"
+                                ],
+                                0
+                            ],
+                            3
+                        ],
+                        [
+                            8,
+                            10,
+                            12
+                        ]
                     ]
                 ]
             },
             "paint": {
+                "building-flood-light-intensity": [
+                    "interpolate",
+                    ["linear"],
+                    ["measure-light", "brightness"],
+                    0.015,
+                    ["match", ["config", "theme"], "monochrome", 0, 0.3],
+                    0.026,
+                    0
+                ],
+                "building-flood-light-color": "hsl(30, 79%, 81%)",
                 "building-cutoff-fade-range": 0.5,
                 "building-facade-emissive-chance": [
                     "interpolate",
@@ -246,120 +491,130 @@
                     0
                 ],
                 "building-emissive-strength": [
-                    "match",
-                    [
-                        "get",
-                        "building-part"
-                    ],
-                    "window",
-                    [
-                        "interpolate",
-                        [
-                            "linear"
-                        ],
-                        [
-                            "measure-light",
-                            "brightness"
-                        ],
-                        0.1,
-                        [
-                            "random",
-                            0,
-                            0.1,
-                            [
-                                "id"
-                            ]
-                        ],
-                        0.4,
-                        0.8
-                    ],
-                    "door",
-                    0.5,
-                    0
-                ],
-                "building-color": [
-                    "match",
-                    [
-                        "get",
-                        "building-part"
-                    ],
-                    "window",
-                    [
-                        "hsl",
-                        38,
-                        [
-                            "random",
-                            10,
-                            20,
-                            [
-                                "id"
-                            ]
-                        ],
-                        90
-                    ],
-                    "wall",
-                    "hsl(38, 40%, 96%)",
-                    "roof",
+                    "case",
+                    ["to-boolean", ["feature-state", "select"]],
                     [
                         "match",
                         [
                             "get",
-                            "roof_type"
+                            "building-part"
                         ],
+                        "door",
+                        5.0,
                         [
-                            "gabled",
-                            "hipped",
-                            "mansard",
-                            "pyramidal"
+                            "interpolate",
+                            ["linear"],
+                            ["at", 2, ["to-hsla", ["config", "colorBuildingSelect"]]],
+                            50,
+                            0.6,
+                            90,
+                            0.4
+                        ]
+                    ],
+                    ["to-boolean", ["feature-state", "highlight"]],
+                    [
+                        "match",
+                        [
+                            "get",
+                            "building-part"
                         ],
+                        "door",
+                        5.0,
                         [
-                            "hsl",
+                            "interpolate",
+                            ["linear"],
+                            ["at", 2, ["to-hsla", ["config", "colorBuildingHighlight"]]],
+                            50,
+                            0.6,
+                            90,
+                            0.4
+                        ]
+                    ],
+                    [
+                        "match",
+                        [
+                            "get",
+                            "building-part"
+                        ],
+                        "roof",
+                        0.02,
+                        "window",
+                        [
+                            "match",
+                            [
+                                "config",
+                                "lightPreset"
+                            ],
+                            "day",
+                            0,
                             [
                                 "random",
-                                23,
-                                32,
+                                0,
+                                0.2,
                                 [
                                     "id"
-                                ]
-                            ],
-                            65,
-                            [
-                                "at",
-                                [
-                                    "round",
-                                    [
-                                        "random",
-                                        0,
-                                        1,
-                                        [
-                                            "id"
-                                        ]
-                                    ]
-                                ],
-                                [
-                                    92,
-                                    96
                                 ]
                             ]
                         ],
-                        "skillion",
+                        "door",
+                        0.5,
                         [
-                            "hsl",
-                            32,
-                            80,
-                            95
-                        ],
-                        [
-                            "hsl",
+                            "match",
                             [
-                                "random",
-                                20,
-                                30,
-                                [
-                                    "id"
-                                ]
+                                "config",
+                                "lightPreset"
                             ],
-                            50,
+                            "day",
+                            0.6,
+                            0
+                        ]
+                    ]
+                ],
+                "building-color": [
+                    "case",
+                    ["to-boolean", ["feature-state", "select"]],
+                    [
+                        "match",
+                        [
+                            "get",
+                            "building-part"
+                        ],
+                        "door",
+                        [
+                            "hsl",
+                            0.0,
+                            0.0,
+                            100.0
+                        ],
+                        ["config", "colorBuildingSelect"]
+                    ],
+                    ["to-boolean", ["feature-state", "highlight"]],
+                    [
+                        "match",
+                        [
+                            "get",
+                            "building-part"
+                        ],
+                        "door",
+                        [
+                            "hsl",
+                            0.0,
+                            0.0,
+                            100.0
+                        ],
+                        ["config", "colorBuildingHighlight"]
+                    ],
+                    [
+                        "match",
+                        [
+                            "get",
+                            "building-part"
+                        ],
+                        "window",
+                        [
+                            "hsl",
+                            38,
+                            5,
                             [
                                 "random",
                                 90,
@@ -368,20 +623,134 @@
                                     "id"
                                 ]
                             ]
+                        ],
+                        "wall",
+                        [
+                            "case",
+                            [
+                                "all",
+                                [
+                                    "has",
+                                    "building_id"
+                                ],
+                                [
+                                    ">=",
+                                    [
+                                        "get",
+                                        "height"
+                                    ],
+                                    25
+                                ]
+                            ],
+                            "hsl(40, 43%, 95%)",
+                            [
+                                "hsl",
+                                40,
+                                50,
+                                [
+                                    "random",
+                                    92,
+                                    98,
+                                    [
+                                        "id"
+                                    ]
+                                ]
+                            ]
+                        ],
+                        "roof",
+                        [
+                            "case",
+                            [
+                                "all",
+                                [
+                                    "<=",
+                                    [
+                                        "get",
+                                        "vertex_count"
+                                    ],
+                                    16
+                                ],
+                                [
+                                    "<=",
+                                    [
+                                        "get",
+                                        "height"
+                                    ],
+                                    25
+                                ],
+                                [
+                                    "in",
+                                    [
+                                        "get",
+                                        "roof_type"
+                                    ],
+                                    [
+                                        "literal",
+                                        [
+                                            "gabled",
+                                            "hipped",
+                                            "pyramidal"
+                                        ]
+                                    ]
+                                ]
+                            ],
+                            [
+                                "hsl",
+                                [
+                                    "random",
+                                    23,
+                                    32,
+                                    [
+                                        "id"
+                                    ]
+                                ],
+                                50,
+                                [
+                                    "random",
+                                    88,
+                                    92,
+                                    [
+                                        "id"
+                                    ]
+                                ]
+                            ],
+                            [
+                                "==",
+                                [
+                                    "get",
+                                    "roof_type"
+                                ],
+                                "skillion"
+                            ],
+                            "hsl(23, 80%, 97%)",
+                            [
+                                "interpolate",
+                                [
+                                    "linear"
+                                ],
+                                [
+                                    "get",
+                                    "height"
+                                ],
+                                0,
+                                "hsl(40, 39%, 92%)",
+                                200,
+                                "hsl(23, 80%, 97%)"
+                            ]
+                        ],
+                        "door",
+                        [
+                            "hsl",
+                            0.0,
+                            0.0,
+                            100.0
+                        ],
+                        [
+                            "hsl",
+                            41,
+                            80,
+                            96
                         ]
-                    ],
-                    "door",
-                    [
-                        "hsl",
-                        0.0,
-                        0.0,
-                        100.0
-                    ],
-                    [
-                        "hsl",
-                        41,
-                        80,
-                        96
                     ]
                 ],
                 "building-vertical-scale": [

@@ -6,7 +6,6 @@
       "width": 128,
       "height": 128,
       "scaleFactor": 2,
-      "collisionDebug": true,
       "operations": [
         ["wait"]
       ]
@@ -37,6 +36,13 @@
   },
   "glyphs": "local://glyphs/{fontstack}/{range}.pbf",
   "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "white"
+      }
+    },
     {
       "id": "symbol",
       "type": "symbol",

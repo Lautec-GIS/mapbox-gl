@@ -1,7 +1,7 @@
 import {basename} from 'path';
-import {readFileSync} from 'fs';
+import {readFileSync, globSync} from 'fs';
 import virtual from '@rollup/plugin-virtual';
-import {globSync} from 'glob';
+import {playwright} from '@vitest/browser-playwright';
 import {mergeConfig, defineConfig} from 'vitest/config';
 import baseConfig from './vitest.config.base';
 
@@ -18,8 +18,9 @@ const fixtures = globSync(['./test/usvg/test-suite/*.png', './test/usvg/mapbox_u
 export default mergeConfig(baseConfig, defineConfig({
     test: {
         browser: {
+            provider: playwright({launchOptions: {channel: isCI ? 'chromium' : 'chrome'}}),
             instances: [
-                {browser: 'chromium', launch: {channel: isCI ? 'chromium' : 'chrome'}},
+                {browser: 'chromium'},
             ],
         },
         retry: 0,

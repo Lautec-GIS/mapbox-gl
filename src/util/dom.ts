@@ -30,6 +30,7 @@ let userSelect;
 
 export function disableDrag() {
     if (docStyle && selectProp) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         userSelect = docStyle[selectProp];
         docStyle[selectProp] = 'none';
     }
@@ -37,6 +38,7 @@ export function disableDrag() {
 
 export function enableDrag() {
     if (docStyle && selectProp) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         docStyle[selectProp] = userSelect;
     }
 }
@@ -61,13 +63,12 @@ export function mousePos(el: HTMLElement, e: MouseEvent | WheelEvent): Point {
 }
 
 export function touchPos(el: HTMLElement, touches: TouchList): Array<Point> {
-    const rect = el.getBoundingClientRect(),
-        points = [];
+    const rect = el.getBoundingClientRect();
+    const points: Point[] = [];
 
     for (let i = 0; i < touches.length; i++) {
         points.push(getScaledPoint(el, rect, touches[i]));
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return points;
 }
 

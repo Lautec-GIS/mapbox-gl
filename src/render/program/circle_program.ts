@@ -77,6 +77,7 @@ const circleUniformValues = (
             layer.paint.get('circle-translate'),
             layer.paint.get('circle-translate-anchor')) as Float32Array,
         'u_device_pixel_ratio': browser.devicePixelRatio,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         'u_extrude_scale': extrudeScale,
         'u_inv_rot_matrix': identityMatrix as Float32Array,
         'u_merc_center': [0, 0] as [number, number],
@@ -100,11 +101,10 @@ const circleUniformValues = (
 };
 
 const circleDefinesValues = (layer: CircleStyleLayer): CircleDefinesType[] => {
-    const values = [];
+    const values: CircleDefinesType[] = [];
     if (layer.paint.get('circle-pitch-alignment') === 'map') values.push('PITCH_WITH_MAP');
     if (layer.paint.get('circle-pitch-scale') === 'map') values.push('SCALE_WITH_MAP');
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return values;
 };
 

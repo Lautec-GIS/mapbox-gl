@@ -8,7 +8,7 @@ import {vec3, vec4} from 'gl-matrix';
 import EXTENT from '../../style-spec/data/extent';
 import {Point3D} from '../../util/line_clipping';
 
-import type {Transitionable, Transitioning, PossiblyEvaluated, ConfigOptions} from '../properties';
+import type {Layout, Transitionable, Transitioning, PossiblyEvaluated, ConfigOptions} from '../properties';
 import type {CanonicalTileID} from '../../source/tile_id';
 import type {FeatureState} from '../../style-spec/expression/index';
 import type {BucketParameters} from '../../data/bucket';
@@ -25,10 +25,12 @@ import type {ProgramName} from '../../../src/render/program';
 class FillExtrusionStyleLayer extends StyleLayer {
     override type: 'fill-extrusion';
 
+    override _unevaluatedLayout: Layout<LayoutProps>;
+    override layout: PossiblyEvaluated<LayoutProps>;
+
     override _transitionablePaint: Transitionable<PaintProps>;
     override _transitioningPaint: Transitioning<PaintProps>;
     override paint: PossiblyEvaluated<PaintProps>;
-    override layout: PossiblyEvaluated<LayoutProps>;
 
     constructor(layer: LayerSpecification, scope: string, lut: LUT | null, options?: ConfigOptions | null) {
         const properties = {
@@ -66,8 +68,7 @@ class FillExtrusionStyleLayer extends StyleLayer {
     override getProgramIds(): ProgramName[] {
         const patternProperty = this.paint.get('fill-extrusion-pattern');
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const image = patternProperty.constantOr((1 as any));
+        const image = patternProperty.constantOr(1);
         return [image ? 'fillExtrusionPattern' : 'fillExtrusion'];
     }
 
@@ -121,6 +122,7 @@ class FillExtrusionStyleLayer extends StyleLayer {
 
         const screenQuery = queryGeometry.queryGeometry;
         const projectedQueryGeometry = screenQuery.isPointQuery() ? screenQuery.screenBounds : screenQuery.screenGeometry;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         return checkIntersection(projectedBase, projectedTop, projectedQueryGeometry);
     }
 }
@@ -143,7 +145,7 @@ export function getIntersectionDistance(projectedQueryGeometry: Array<Point>, pr
         // Check whether points are coincident and use other points if they are.
         let i = 0;
         const a = projectedFace[i++];
-        let b;
+        let b: Point3D | undefined;
         while (!b || a.equals(b)) {
             b = projectedFace[i++];
             if (!b) return Infinity;
@@ -160,8 +162,10 @@ export function getIntersectionDistance(projectedQueryGeometry: Array<Point>, pr
             const ap = p.sub(a);
 
             const dotABAB = dot(ab, ab);
+
             const dotABAC = dot(ab, ac);
             const dotACAC = dot(ac, ac);
+
             const dotAPAB = dot(ap, ab);
             const dotAPAC = dot(ap, ac);
             const denom = dotABAB * dotACAC - dotABAC * dotABAC;
@@ -192,7 +196,7 @@ export function getIntersectionDistance(projectedQueryGeometry: Array<Point>, pr
     }
 }
 
-function checkIntersection(projectedBase: Array<Array<Point3D>>, projectedTop: Array<Array<Point3D>>, projectedQueryGeometry: Array<Point>) {
+export function checkIntersection(projectedBase: Array<Array<Point3D>>, projectedTop: Array<Array<Point3D>>, projectedQueryGeometry: Array<Point>) {
     let closestDistance = Infinity;
 
     if (polygonIntersectsMultiPolygon(projectedQueryGeometry, projectedTop)) {
@@ -217,7 +221,7 @@ function checkIntersection(projectedBase: Array<Array<Point3D>>, projectedTop: A
     return closestDistance === Infinity ? false : closestDistance;
 }
 
-function projectExtrusion(tr: Transform, geometry: Array<Array<Point>>, zBase: number, zTop: number, translation: Point, m: Float32Array, demSampler: DEMSampler | null | undefined, centroid: vec2, exaggeration: number, lat: number, tileID: CanonicalTileID) {
+export function projectExtrusion(tr: Transform, geometry: Array<Array<Point>>, zBase: number, zTop: number, translation: Point, m: Float32Array, demSampler: DEMSampler | null | undefined, centroid: vec2, exaggeration: number, lat: number, tileID: CanonicalTileID) {
     if (tr.projection.name === 'globe') {
         return projectExtrusionGlobe(tr, geometry, zBase, zTop, translation, m, demSampler, centroid, exaggeration, lat, tileID);
     } else {
@@ -288,8 +292,8 @@ function projectExtrusionGlobe(tr: Transform, geometry: Array<Array<Point>>, zBa
                 reproj.y + dir[1] * elevationScale * zTopPoint,
                 reproj.z + dir[2] * elevationScale * zTopPoint);
 
-            vec3.transformMat4(basePoint as unknown as vec3, basePoint as unknown as vec3, m);
-            vec3.transformMat4(topPoint as unknown as vec3, topPoint as unknown as vec3, m);
+            vec3.transformMat4(basePoint, basePoint, m);
+            vec3.transformMat4(topPoint, topPoint, m);
 
             ringBase.push(new Point3D(basePoint[0], basePoint[1], basePoint[2]));
             ringTop.push(new Point3D(topPoint[0], topPoint[1], topPoint[2]));

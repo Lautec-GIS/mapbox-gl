@@ -22,16 +22,17 @@ import FormatExpression from '../../style-spec/expression/definitions/format';
 import Literal from '../../style-spec/expression/definitions/literal';
 import ProgramConfiguration from '../../data/program_configuration';
 
-import type {FormattedSection} from '../../style-spec/expression/types/formatted';
-import type {FormattedSectionExpression} from '../../style-spec/expression/definitions/format';
-import type {CreateProgramParams} from '../../render/painter';
-import type {ConfigOptions, Properties,
+import type {
+    PropertyValue,
+    ConfigOptions, Properties,
     Transitionable,
     Transitioning,
     Layout,
-    PossiblyEvaluated,
-    PropertyValue
+    PossiblyEvaluated
 } from '../properties';
+import type {FormattedSection} from '../../style-spec/expression/types/formatted';
+import type {FormattedSectionExpression} from '../../style-spec/expression/definitions/format';
+import type {CreateProgramParams} from '../../render/painter';
 import type {BucketParameters} from '../../data/bucket';
 import type {LayoutProps, PaintProps} from './symbol_style_layer_properties';
 import type EvaluationParameters from '../evaluation_parameters';
@@ -42,6 +43,8 @@ import type {CanonicalTileID} from '../../source/tile_id';
 import type {LUT} from "../../util/lut";
 import type {ImageId} from '../../style-spec/expression/types/image_id';
 import type {ProgramName} from '../../render/program';
+import type SymbolAppearance from '../appearance';
+import type {AppearanceProps} from '../appearance_properties';
 
 let properties: {
     layout: Properties<LayoutProps>;
@@ -77,16 +80,29 @@ class SymbolStyleLayer extends StyleLayer {
     _brightnessMin: number;
     _brightnessMax: number;
 
-    hasInitialOcclusionOpacityProperties: boolean;
+    hasOcclusionOpacityProperties: boolean;
 
     constructor(layer: LayerSpecification, scope: string, lut: LUT | null, options?: ConfigOptions | null) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         super(layer, getProperties(), scope, lut, options, layer.layout ? layer.layout['icon-image-use-theme'] : null);
-        this._colorAdjustmentMatrix = mat4.identity([] as unknown as mat4);
-        this.hasInitialOcclusionOpacityProperties = (layer.paint !== undefined) && (('icon-occlusion-opacity' in layer.paint) || ('text-occlusion-opacity' in layer.paint));
+        this._colorAdjustmentMatrix = mat4.identity([]);
+        this.hasOcclusionOpacityProperties = (layer.paint !== undefined) && (('icon-occlusion-opacity' in layer.paint) || ('text-occlusion-opacity' in layer.paint));
+    }
+
+    override _handleSpecialPaintPropertyUpdate(name: string) {
+        if (name === 'icon-occlusion-opacity' || name === 'text-occlusion-opacity') {
+            this.hasOcclusionOpacityProperties = true;
+        }
     }
 
     override recalculate(parameters: EvaluationParameters, availableImages: ImageId[]) {
         super.recalculate(parameters, availableImages);
+
+        if (this.appearances) {
+            this.appearances.forEach(a => {
+                a.recalculate(parameters, availableImages, this.iconImageUseTheme);
+            });
+        }
 
         if (this.layout.get('icon-rotation-alignment') === 'auto') {
             if (this.layout.get('symbol-placement') !== 'point') {
@@ -120,6 +136,7 @@ class SymbolStyleLayer extends StyleLayer {
             for (const m of writingModes) {
                 if (deduped.indexOf(m) < 0) deduped.push(m);
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             this.layout._values['text-writing-mode'] = deduped;
         } else if (this.layout.get('symbol-placement') === 'point') {
             // default value for 'point' placement symbols
@@ -169,6 +186,25 @@ class SymbolStyleLayer extends StyleLayer {
         return value;
     }
 
+    getAppearanceValueAndResolveTokens<T extends keyof AppearanceProps>(
+        appearance: SymbolAppearance,
+        name: T,
+        feature: Feature,
+        canonical: CanonicalTileID,
+        availableImages: ImageId[],
+    ) {
+        const property = appearance.getProperty(name) as unknown as PossiblyEvaluatedPropertyValue<LayoutProps[T]>;
+        if (!property) return;
+
+        const value = property.evaluate(feature, {}, canonical, availableImages);
+        const unevaluated = appearance.getUnevaluatedProperties()._values[name];
+        if (!unevaluated.isDataDriven() && !isExpression(unevaluated.value) && value && typeof value === 'string') {
+            return resolveTokens(feature.properties, value);
+        }
+
+        return value;
+    }
+
     createBucket(parameters: BucketParameters<SymbolStyleLayer>): SymbolBucket {
         return new SymbolBucket(parameters);
     }
@@ -203,6 +239,7 @@ class SymbolStyleLayer extends StyleLayer {
             }
             // @ts-expect-error - TS2322 - Type 'PossiblyEvaluatedPropertyValue<PaintProps>' is not assignable to type 'never'.
             this.paint._values[overridable] = new PossiblyEvaluatedPropertyValue(overriden.property,
+                                                                                 // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                                                                                  expression,
                                                                                  overriden.parameters);
         }
@@ -217,7 +254,8 @@ class SymbolStyleLayer extends StyleLayer {
 
     static hasPaintOverride(layout: PossiblyEvaluated<LayoutProps>, propertyName: string): boolean {
         const textField = layout.get('text-field');
-        const property = getProperties().paint.properties[propertyName];
+
+        const property = getProperties().paint.properties[propertyName] as {overrides?: {hasOverride: (o: unknown) => boolean}};
         let hasOverrides = false;
 
         const checkSections = (sections: Array<FormattedSection> | Array<FormattedSectionExpression>) => {

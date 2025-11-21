@@ -35,6 +35,7 @@ import type {vec3} from 'gl-matrix';
 import type {VectorTileLayer} from '@mapbox/vector-tile';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
+import type {GlobalProperties} from "../../style-spec/expression";
 
 /**
  * Circles are represented by two triangles.
@@ -72,6 +73,7 @@ class CircleBucket<Layer extends CircleStyleLayer | HeatmapStyleLayer = CircleSt
     hasElevation: boolean;
 
     worldview: string | undefined;
+    hasAppearances: boolean | null;
 
     constructor(options: BucketParameters<Layer>) {
         this.zoom = options.zoom;
@@ -95,9 +97,13 @@ class CircleBucket<Layer extends CircleStyleLayer | HeatmapStyleLayer = CircleSt
         }
 
         this.worldview = options.worldview;
+        this.hasAppearances = null;
     }
 
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
+    }
+
+    updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
     }
 
     populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
@@ -114,10 +120,12 @@ class CircleBucket<Layer extends CircleStyleLayer | HeatmapStyleLayer = CircleSt
             const needGeometry = this.layers[0]._featureFilter.needGeometry;
             const evaluationFeature = toEvaluationFeature(feature, needGeometry);
 
-            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview}), evaluationFeature, canonical))
+            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview, activeFloors: options.activeFloors}), evaluationFeature, canonical))
                 continue;
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const sortKey = circleSortKey ?
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 circleSortKey.evaluate(evaluationFeature, {}, canonical) :
                 undefined;
 
@@ -129,6 +137,7 @@ class CircleBucket<Layer extends CircleStyleLayer | HeatmapStyleLayer = CircleSt
                 index,
                 geometry: needGeometry ? evaluationFeature.geometry : loadGeometry(feature, canonical, tileTransform),
                 patterns: {},
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 sortKey
             };
 
@@ -139,6 +148,7 @@ class CircleBucket<Layer extends CircleStyleLayer | HeatmapStyleLayer = CircleSt
         if (circleSortKey) {
             bucketFeatures.sort((a, b) => {
                 // a.sortKey is always a number when in use
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 return (a.sortKey as number) - (b.sortKey as number);
             });
         }
@@ -152,10 +162,14 @@ class CircleBucket<Layer extends CircleStyleLayer | HeatmapStyleLayer = CircleSt
         }
 
         for (const bucketFeature of bucketFeatures) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const {geometry, index, sourceLayerIndex} = bucketFeature;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             const feature = features[index].feature;
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.addFeature(bucketFeature, geometry, index, options.availableImages, canonical, globeProjection, options.brightness, options.elevationFeatures);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             options.featureIndex.insert(feature, geometry, index, sourceLayerIndex, this.index);
         }
 

@@ -5,8 +5,10 @@ import {supportsPropertyExpression} from '../style-spec/util/properties';
 import featureFilter from '../style-spec/feature_filter/index';
 import {makeFQID} from '../util/fqid';
 import {createExpression, type FeatureState} from '../style-spec/expression/index';
+import {isStateConstant} from '../style-spec/expression/is_constant';
 import latest from '../style-spec/reference/latest';
 import assert from 'assert';
+import SymbolAppearance from './appearance';
 
 import type {Bucket} from '../data/bucket';
 import type Point from '@mapbox/point-geometry';
@@ -19,11 +21,12 @@ import type {
     LayoutSpecification,
     PaintSpecification,
     FilterSpecification,
-    PropertyValueSpecification
+    PropertyValueSpecification,
+    AppearanceSpecification
 } from '../style-spec/types';
 import type {CustomLayerInterface} from './style_layer/custom_style_layer';
 import type {Map as MapboxMap} from '../ui/map';
-import type {TilespaceQueryGeometry} from './query_geometry';
+import type {QueryGeometry, TilespaceQueryGeometry} from './query_geometry';
 import type {DEMSampler} from '../terrain/elevation';
 import type {VectorTileFeature} from '@mapbox/vector-tile';
 import type {CreateProgramParams} from '../render/painter';
@@ -32,6 +35,8 @@ import type Painter from '../render/painter';
 import type {LUT} from '../util/lut';
 import type {ImageId} from '../style-spec/expression/types/image_id';
 import type {ProgramName} from '../render/program';
+import type {AppearanceProps} from './appearance_properties';
+import type {QueryResult} from '../source/query_features';
 
 const TRANSITION_SUFFIX = '-transition';
 
@@ -42,6 +47,11 @@ type LayerRenderingStats = {
 
 // Symbols are draped only on native and for certain cases only
 const drapedLayers = new Set(['fill', 'line', 'background', 'hillshade', 'raster']);
+
+type LayerExpressionDependencies = {
+    isIndoorDependent: boolean;
+    configDependencies: Set<string>;
+};
 
 class StyleLayer extends Evented {
     id: string;
@@ -57,8 +67,9 @@ class StyleLayer extends Evented {
     maxzoom: number | null | undefined;
     filter: FilterSpecification | undefined;
     visibility: 'visible' | 'none' | undefined;
-    configDependencies: Set<string>;
+    expressionDependencies: LayerExpressionDependencies;
     iconImageUseTheme: string | null | undefined;
+    appearances: Array<SymbolAppearance>;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _unevaluatedLayout: Layout<any>;
@@ -96,10 +107,14 @@ class StyleLayer extends Evented {
         this.lut = lut;
         this.options = options;
         this.iconImageUseTheme = iconImageUseTheme;
+        this.appearances = new Array<SymbolAppearance>();
 
         this._featureFilter = {filter: () => true, needGeometry: false, needFeature: false};
         this._filterCompiled = false;
-        this.configDependencies = new Set();
+        this.expressionDependencies = {
+            isIndoorDependent: false,
+            configDependencies: new Set()
+        };
 
         if (layer.type === 'custom') return;
 
@@ -112,33 +127,42 @@ class StyleLayer extends Evented {
             this.sourceLayer = layer['source-layer'];
             this.filter = layer.filter;
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const filterSpec = latest[`filter_${layer.type}`];
-
             if (filterSpec) assert(filterSpec);
-
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const compiledStaticFilter = createExpression(this.filter, filterSpec);
             if (compiledStaticFilter.result !== 'error') {
-                this.configDependencies = new Set([...this.configDependencies, ...compiledStaticFilter.value.configDependencies]);
+                this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...compiledStaticFilter.value.configDependencies]);
+                this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || compiledStaticFilter.value.isIndoorDependent;
             }
         }
 
         if (layer.slot) this.slot = layer.slot;
 
+        if (layer.appearances) {
+            this.setAppearances(layer.appearances);
+        }
+
         if (properties.layout) {
             this._unevaluatedLayout = new Layout(properties.layout, this.scope, options, this.iconImageUseTheme);
-            this.configDependencies = new Set([...this.configDependencies, ...this._unevaluatedLayout.configDependencies]);
+            this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...this._unevaluatedLayout.configDependencies]);
+            this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || this._unevaluatedLayout.isIndoorDependent();
         }
 
         if (properties.paint) {
             this._transitionablePaint = new Transitionable(properties.paint, this.scope, options);
 
             for (const property in layer.paint) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 this.setPaintProperty(property as keyof PaintSpecification, layer.paint[property]);
             }
             for (const property in layer.layout) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 this.setLayoutProperty(property as keyof LayoutSpecification, layer.layout[property]);
             }
-            this.configDependencies = new Set([...this.configDependencies, ...this._transitionablePaint.configDependencies]);
+            this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...this._transitionablePaint.configDependencies]);
+            this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || this._transitionablePaint.isIndoorDependent();
 
             this._transitioningPaint = this._transitionablePaint.untransitioned();
             this.paint = new PossiblyEvaluated(properties.paint);
@@ -172,15 +196,24 @@ class StyleLayer extends Evented {
         }
 
         const layout = this._unevaluatedLayout;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const specProps = layout._properties.properties;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (!specProps[name]) return; // skip unrecognized properties
 
         layout.setValue(name, value);
-        this.configDependencies = new Set([...this.configDependencies, ...layout.configDependencies]);
-
+        this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...layout.configDependencies]);
+        this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || layout.isIndoorDependent();
         if (name === 'visibility') {
             this.possiblyEvaluateVisibility();
         }
+    }
+
+    setAppearances(appearances: AppearanceSpecification[]) {
+        this.appearances = [];
+        appearances.forEach(a => {
+            this.appearances.push(new SymbolAppearance(a.condition, a.name, a.properties as AppearanceProps, this.scope, this.options, this.iconImageUseTheme));
+        });
     }
 
     possiblyEvaluateVisibility() {
@@ -200,20 +233,31 @@ class StyleLayer extends Evented {
         }
     }
 
+    isPaintProperty<T extends keyof PaintSpecification>(name: T): boolean {
+        const paint = this._transitionablePaint;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const specProps = paint._properties.properties;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        return !!specProps[name];
+    }
+
     setPaintProperty<T extends keyof PaintSpecification>(name: T, value: PaintSpecification[T]): boolean {
         const paint = this._transitionablePaint;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const specProps = paint._properties.properties;
 
         if (name.endsWith(TRANSITION_SUFFIX)) {
             const propName = name.slice(0, -TRANSITION_SUFFIX.length);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (specProps[propName]) { // skip unrecognized properties
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
                 paint.setTransition(propName, (value as any) || undefined);
             }
             return false;
 
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (!specProps[name]) return false; // skip unrecognized properties
 
         const transitionable = paint._values[name];
@@ -221,7 +265,8 @@ class StyleLayer extends Evented {
         const oldValue = transitionable.value;
 
         paint.setValue(name, value as PropertyValueSpecification<unknown>);
-        this.configDependencies = new Set([...this.configDependencies, ...paint.configDependencies]);
+        this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...paint.configDependencies]);
+        this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || paint.isIndoorDependent();
         this._handleSpecialPaintPropertyUpdate(name);
 
         const newValue = paint._values[name].value;
@@ -269,11 +314,11 @@ class StyleLayer extends Evented {
 
     recalculate(parameters: EvaluationParameters, availableImages: ImageId[]) {
         if (this._unevaluatedLayout) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
             (this as any).layout = this._unevaluatedLayout.possiblyEvaluate(parameters, undefined, availableImages, this.iconImageUseTheme);
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
         (this as any).paint = this._transitioningPaint.possiblyEvaluate(parameters, undefined, availableImages);
     }
 
@@ -293,6 +338,10 @@ class StyleLayer extends Evented {
             'layout': this._unevaluatedLayout && this._unevaluatedLayout.serialize(),
             'paint': this._transitionablePaint && this._transitionablePaint.serialize()
         } as LayerSpecification;
+
+        if (this.appearances.length !== 0) {
+            output['appearances'] = this.appearances.map(a => a.serialize());
+        }
 
         return filterObject(output, (value, key) => {
             return value !== undefined &&
@@ -353,9 +402,9 @@ class StyleLayer extends Evented {
     }
 
     isStateDependent(): boolean {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
         for (const property in (this as any).paint._values) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             const value = (this as any).paint.get(property);
             if (!(value instanceof PossiblyEvaluatedPropertyValue) || !supportsPropertyExpression(value.property.specification)) {
                 continue;
@@ -366,6 +415,14 @@ class StyleLayer extends Evented {
                 return true;
             }
         }
+
+        // Check if any appearance condition depends on feature state
+        for (const appearance of this.appearances) {
+            if (!isStateConstant(appearance.condition.expression)) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -401,6 +458,16 @@ class StyleLayer extends Evented {
             }
         }
     }
+
+    getAppearances() {
+        return this.appearances;
+    }
+
+    queryRenderedFeatures(
+        queryGeometry: QueryGeometry,
+        sourceCache: SourceCache,
+        transform: Transform
+    ) : QueryResult { return {}; }
 
     // @ts-expect-error - TS2355 - A function whose declared type is neither 'undefined', 'void', nor 'any' must return a value.
     queryRadius(_bucket: Bucket): number {}

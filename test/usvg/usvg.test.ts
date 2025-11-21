@@ -1,5 +1,4 @@
 import Pbf from 'pbf';
-// eslint-disable-next-line import/extensions
 import {server, page} from '@vitest/browser/context';
 import pixelmatch from 'pixelmatch';
 import {describe, test, expect, afterEach, afterAll, onTestFailed, onTestFinished} from 'vitest';
@@ -11,6 +10,7 @@ import {readArrayBuffer} from '../util/read_array_buffer';
 import {fixtures} from 'virtual:usvg-fixtures';
 
 async function getIconSet(iconsetPath) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const pbf = new Pbf(await readArrayBuffer(iconsetPath));
     const iconSet = readIconSet(pbf);
     return iconSet;
@@ -53,8 +53,11 @@ describe('uSVG', async () => {
         let html = `<h1>uSVG test-suite <span style="color: red;">${failed.length} failed</span> | <span style="color: green;">${passed.length} passed</span><span style="color: orange;"> | ${ignores.length} ignored</span></h1>`;
 
         for (const name of failed) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             const [f1, f2, ...fileName] = name.replace(/_scale_.*$/, '').split('_');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             const orig = `https://github.com/RazrFalcon/resvg-test-suite/blob/master/tests/${f1}/${f2}/${fileName.join('-')}.svg`;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             html += `<div><h2><a href="${orig}">${name}</a>: ${diffs[name]}</h2><img src="./${name}.png"></div>`;
         }
         html += `<div><h2>Failed (${failed.length})</h2><pre>${JSON.stringify(failed, null, 2)}</pre></div>`;
@@ -83,8 +86,7 @@ describe('uSVG', async () => {
                         }
                     });
 
-                    const transform = new DOMMatrix().scale(scale);
-                    const actualImageData = renderIcon(icon, {transform, params: {}});
+                    const actualImageData = renderIcon(icon, {sx: scale, sy: scale, params: {}});
 
                     // align canvas sizes with the image size
                     diffCanvas.width = actualCanvas.width = expectedCanvas.width = actualImageData.width;
@@ -95,6 +97,7 @@ describe('uSVG', async () => {
 
                     // Render expected icon
                     const expectedImage = new Image();
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     expectedImage.src = `data:image/png;base64,${fixtures[name]}`;
                     await new Promise((resolve) => {
                         expectedImage.onload = resolve;
@@ -109,6 +112,7 @@ describe('uSVG', async () => {
                     const diffImageData = diffContext.createImageData(diffCanvas.width, diffCanvas.height);
 
                     const threshold = 0.2;
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                     const diff = pixelmatch(
                         actualImageData.data,
                         expectedImageData.data,
@@ -122,6 +126,7 @@ describe('uSVG', async () => {
                     diffContext.putImageData(diffImageData, 0, 0);
                     await page.screenshot({element: document.body, path: `./vitest/${name}.png`});
 
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                     expect(diff).toBeLessThanOrEqual(allowed[icon.name]?.[scale] ?? defaultAllowedDiff);
                 });
             }

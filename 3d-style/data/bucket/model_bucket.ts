@@ -13,13 +13,13 @@ import {instanceAttributes} from '../model_attributes';
 import {regionsEquals, transformPointToTile, pointInFootprint, skipClipping} from '../../../3d-style/source/replacement_source';
 import {LayerTypeMask} from '../../../3d-style/util/conflation';
 import {isValidUrl} from '../../../src/style-spec/validate/validate_model';
-import {type FeatureState} from '../../../src/style-spec/expression/index';
+import {type FeatureState, type GlobalProperties} from '../../../src/style-spec/expression/index';
+import Point from '@mapbox/point-geometry';
 
 import type ModelStyleLayer from '../../style/style_layer/model_style_layer';
 import type {ReplacementSource, Region} from '../../../3d-style/source/replacement_source';
-import type Point from '@mapbox/point-geometry';
 import type {EvaluationFeature} from '../../../src/data/evaluation_feature';
-import type {mat4} from 'gl-matrix';
+import type {mat3, mat4} from 'gl-matrix';
 import type {CanonicalTileID, OverscaledTileID, UnwrappedTileID} from '../../../src/source/tile_id';
 import type {
     Bucket,
@@ -67,6 +67,8 @@ class PerModelAttributes {
 
     features: Array<ModelFeature>;
     idToFeaturesIndex: Partial<Record<string | number, number>>; // via this.features, enable lookup instancedDataArray based on feature ID.
+    maxScale: number = 1;
+    maxXYTranslationDistance: number = 0;
 
     constructor() {
         this.instancedDataArray = new InstanceVertexArray();
@@ -74,12 +76,71 @@ class PerModelAttributes {
         this.features = [];
         this.idToFeaturesIndex = {};
     }
+
+    colorForInstance(index: number): [number, number, number, number] {
+        const offset = index * 16;
+        const va = this.instancedDataArray.float32;
+
+        // Decompose: Math.round(100.0 * color.a) + color.b / 1.05;
+        let a = Math.floor(va[offset + 2]);
+        const b = (va[offset + 2] - a) * 1.05;
+        a /= 100.0;
+        // 0 & 1: tile coordinates stored in integer part of float, R and G color components,
+        // originally in range [0..1], scaled to range [0..0.952(arbitrary, just needs to be
+        // under 1)].
+        const r = (va[offset] % 1) * 1.05;
+        const g = (va[offset + 1] % 1) * 1.05;
+        return [r, g, b, a];
+    }
+
+    tileCoordinatesForInstance(index: number): Point {
+        const offset = index * 16;
+        const va = this.instancedDataArray.float32;
+        let x_ = va[offset + 0];
+        const wasHidden = x_ > EXTENT;
+        x_ = wasHidden ? x_ - EXTENT : x_;
+        // Position is stored in integer part of value, fractional part is used for color
+        const x = Math.trunc(x_);
+        const y = Math.trunc(va[offset + 1]);
+        return new Point(x, y);
+    }
+
+    translationForInstance(index: number): vec3 {
+        const offset = index * 16;
+        const va = this.instancedDataArray.float32;
+        return [va[offset + 4], va[offset + 5], va[offset + 6]];
+    }
+
+    rotationScaleForInstance(index: number): mat3 {
+        const offset = index * 16;
+        const va = this.instancedDataArray.float32;
+        return [va[offset + 7],
+            va[offset + 8],
+            va[offset + 9],
+            va[offset + 10],
+            va[offset + 11],
+            va[offset + 12],
+            va[offset + 13],
+            va[offset + 14],
+            va[offset + 15]];
+    }
+
+    transformForInstance(index: number): mat4 {
+        const offset = index * 16;
+        const va = this.instancedDataArray.float32;
+        return [
+            va[offset + 7], va[offset + 8], va[offset + 9], va[offset + 4],
+            va[offset + 10], va[offset + 11], va[offset + 12], va[offset + 5],
+            va[offset + 13], va[offset + 14], va[offset + 15], va[offset + 6],
+            0, 0, 0, 1.0];
+    }
 }
 
 class ModelBucket implements Bucket {
     zoom: number;
     index: number;
     canonical: CanonicalTileID;
+    overscaledZ: number;
     layers: Array<ModelStyleLayer>;
     layerIds: Array<string>;
     stateDependentLayers: Array<ModelStyleLayer>;
@@ -118,10 +179,12 @@ class ModelBucket implements Bucket {
     activeReplacements: Array<Region>;
     replacementUpdateTime: number;
     styleDefinedModelURLs: StyleModelMap;
+    hasAppearances: boolean | null;
 
     constructor(options: BucketParameters<ModelStyleLayer>) {
         this.zoom = options.zoom;
         this.canonical = options.canonical;
+        this.overscaledZ = this.canonical.z + Math.log2(options.overscaling);
         this.layers = options.layers;
         this.layerIds = this.layers.map(layer => layer.fqid);
         this.projection = options.projection;
@@ -138,8 +201,11 @@ class ModelBucket implements Bucket {
         this.maxScale = 0;
         this.maxHeight = 0;
         // reduce density, more on lower zooms and almost no reduction in overscale range.
-        // Heuristics is related to trees performance.
-        this.lookupDim = this.zoom > this.canonical.z ? 256 : this.zoom > 15 ? 75 : 100;
+        // Heuristics is related to trees performance. Disable density check after maxZoom + 2.
+        // For vector tiles this means:
+        // z15 and lower: lookup grid of size 75x75 per tile
+        // z16: 100x100, z17: 256x256, z18: no density reduction.
+        this.lookupDim = this.zoom > (this.canonical.z + 1) ? 0 : (this.zoom > this.canonical.z ? 256 : this.zoom > 15 ? 75 : 100);
         this.instanceCount = 0;
 
         this.terrainElevationMin = 0;
@@ -150,9 +216,13 @@ class ModelBucket implements Bucket {
         this.activeReplacements = [];
         this.replacementUpdateTime = 0;
         this.styleDefinedModelURLs = options.styleDefinedModelURLs;
+        this.hasAppearances = null;
     }
 
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
+    }
+
+    updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
     }
 
     populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
@@ -166,7 +236,7 @@ class ModelBucket implements Bucket {
                 (feature.properties && feature.properties.hasOwnProperty("id")) ? feature.properties["id"] : undefined;
             const evaluationFeature = toEvaluationFeature(feature, needGeometry);
 
-            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview}), evaluationFeature, canonical))
+            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview, activeFloors: options.activeFloors}), evaluationFeature, canonical))
                 continue;
 
             const bucketFeature: BucketFeature = {
@@ -186,10 +256,38 @@ class ModelBucket implements Bucket {
                 // to add some padding to envelope calculated for grid index lookup, in order to
                 // prevent false negatives in FeatureIndex's coarse check.
                 // Envelope padding is a half of featureIndex.grid cell size.
+
+                // Padding is just and estimated suitable for models only covering <= 1/16 of tile EXTENTS.
+                // Actual model bounds are not yet available at this stage. To compensate for larger models,
+                // 'maxFeatureQueryRadius()' is used to query largest model bounds
                 options.featureIndex.insert(feature, bucketFeature.geometry, index, sourceLayerIndex, this.index, this.instancesPerModel[modelId].instancedDataArray.length, EXTENT / 32);
             }
         }
         this.lookup = null;
+    }
+
+    evaluateQueryRenderedFeaturePadding() {
+        const modelManager = this.layers[0].modelManager;
+        const scope = this.layers[0].scope;
+
+        let maxQueryRadius = 0;
+
+        for (const modelId of this.modelUris) {
+            const model = modelManager.getModel(modelId, scope);
+            if (!model) {
+                continue;
+            }
+
+            // Use max scaling of any instance of this model to ensure full extent is covered
+            const modelInstances = this.instancesPerModel[modelId];
+            if (modelInstances) {
+                const radius = vec3.distance(model.aabb.max, model.aabb.min) * 0.5 * modelInstances.maxScale + modelInstances.maxXYTranslationDistance;
+                const radiusInTileUnits = Math.min(EXTENT, Math.max(radius / this.tileToMeter, EXTENT / 32));
+
+                maxQueryRadius = Math.max(radiusInTileUnits, maxQueryRadius);
+            }
+        }
+        return maxQueryRadius;
     }
 
     update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions) {
@@ -269,7 +367,7 @@ class ModelBucket implements Bucket {
                     const wasHidden = x_ > EXTENT;
                     x_ = wasHidden ? x_ - EXTENT : x_;
                     const x = Math.floor(x_);
-                    const y = va.float32[i16 + 1];
+                    const y = Math.floor(va.float32[i16 + 1]);
 
                     let hidden = false;
                     for (const region of this.activeReplacements) {
@@ -381,13 +479,15 @@ class ModelBucket implements Bucket {
                     continue; // Clip on tile borders to prevent duplicates
                 }
                 // reduce density
-                const tileToLookup = (this.lookupDim - 1.0) / EXTENT;
-                const lookupIndex = this.lookupDim * ((point.y * tileToLookup) | 0) + (point.x * tileToLookup) | 0;
-                if (this.lookup) {
-                    if (this.lookup[lookupIndex] !== 0) {
-                        continue;
+                if (this.lookupDim !== 0) {
+                    const tileToLookup = (this.lookupDim - 1.0) / EXTENT;
+                    const lookupIndex = this.lookupDim * ((point.y * tileToLookup) | 0) + (point.x * tileToLookup) | 0;
+                    if (this.lookup) {
+                        if (this.lookup[lookupIndex] !== 0) {
+                            continue;
+                        }
+                        this.lookup[lookupIndex] = 1;
                     }
-                    this.lookup[lookupIndex] = 1;
                 }
                 this.instanceCount++;
                 const i = instancedDataArray.length;
@@ -423,11 +523,19 @@ class ModelBucket implements Bucket {
 
         const translation = feature.translation = layer.paint.get('model-translation').evaluate(evaluationFeature, featureState, canonical);
 
-        const color = layer.paint.get('model-color').evaluate(evaluationFeature, featureState, canonical);
-
+        // When layer.paint.get('model-color') is constant, evaluate returns the object defined in the spec.
+        // If we don't create a new object here we would be updating that, causing problems afterwards
+        const color = Object.assign({}, layer.paint.get('model-color').evaluate(evaluationFeature, featureState, canonical));
         color.a = layer.paint.get('model-color-mix-intensity').evaluate(evaluationFeature, featureState, canonical);
-        const rotationScaleYZFlip = [] as unknown as mat4;
+
+        const rotationScaleYZFlip = [];
         if (this.maxVerticalOffset < translation[2]) this.maxVerticalOffset = translation[2];
+
+        // Track per model and per bucket maximum scaling as well as per instance translation
+        const translationDistanceXYSq = translation[0] * translation[0] + translation[1] * translation[1];
+        const translationDistanceXY = translationDistanceXYSq > 0 ? Math.sqrt(translationDistanceXYSq) : 0;
+        perModelVertexArray.maxScale = Math.max(Math.max(perModelVertexArray.maxScale, scale[0]), Math.max(scale[1], scale[2]));
+        perModelVertexArray.maxXYTranslationDistance = Math.max(perModelVertexArray.maxXYTranslationDistance, translationDistanceXY);
         this.maxScale = Math.max(Math.max(this.maxScale, scale[0]), Math.max(scale[1], scale[2]));
 
         rotationScaleYZFlipMatrix(rotationScaleYZFlip, rotation, scale);
@@ -455,27 +563,36 @@ class ModelBucket implements Bucket {
             // originally in range [0..1], scaled to range [0..0.952(arbitrary, just needs to be
             // under 1)].
             const pointY = va[offset + 1] | 0; // point.y stored in integer part
-            va[offset]      = (va[offset] | 0) + color.r / 1.05; // point.x stored in integer part
-            va[offset + 1]  = pointY + color.g / 1.05;
+            va[offset] = (va[offset] | 0) + color.r / 1.05; // point.x stored in integer part
+            va[offset + 1] = pointY + color.g / 1.05;
             // Element 2: packs color's alpha (as integer part) and blue component in fractional part.
-            va[offset + 2]  = vaOffset2;
+            va[offset + 2] = vaOffset2;
             // tileToMeter is taken at center of tile. Prevent recalculating it over again for
             // thousands of trees.
             // Element 3: tileUnitsToMeter conversion.
-            va[offset + 3]  = 1.0 / (canonical.z > constantTileToMeterAcrossTile ? this.tileToMeter : tileToMeter(canonical, pointY));
+            va[offset + 3] = 1.0 / (canonical.z > constantTileToMeterAcrossTile ? this.tileToMeter : tileToMeter(canonical, pointY));
             // Elements [4..6]: translation evaluated for the feature.
-            va[offset + 4]  = translation[0];
-            va[offset + 5]  = translation[1];
-            va[offset + 6]  = translation[2] + terrainElevationContribution;
+            va[offset + 4] = translation[0];
+            va[offset + 5] = translation[1];
+            va[offset + 6] = translation[2] + terrainElevationContribution;
             // Elements [7..16] Instance modelMatrix holds combined rotation and scale 3x3,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 7]  = rotationScaleYZFlip[0];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 8]  = rotationScaleYZFlip[1];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 9]  = rotationScaleYZFlip[2];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 10] = rotationScaleYZFlip[4];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 11] = rotationScaleYZFlip[5];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 12] = rotationScaleYZFlip[6];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 13] = rotationScaleYZFlip[8];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 14] = rotationScaleYZFlip[9];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             va[offset + 15] = rotationScaleYZFlip[10];
             perModelVertexArray.instancesEvaluatedElevation[instanceOffset] = translation[2];
         }

@@ -3,7 +3,6 @@ import {Evented, ErrorEvent, Event} from '../../src/util/evented';
 import {ResourceType} from '../../src/util/ajax';
 import loadTileJSON from '../../src/source/load_tilejson';
 import TileBounds from '../../src/source/tile_bounds';
-import {extend} from '../../src/util/util';
 import {postTurnstileEvent} from '../../src/util/mapbox';
 import {makeFQID} from '../../src/util/fqid';
 
@@ -111,7 +110,7 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
 
                 this.fire(new ErrorEvent(err));
             } else if (tileJSON) {
-                extend(this, tileJSON);
+                Object.assign(this, tileJSON);
                 if (tileJSON.bounds) this.tileBounds = new TileBounds(tileJSON.bounds, this.minzoom, this.maxzoom);
                 postTurnstileEvent(tileJSON.tiles, this.map._requestManager._customAccessToken);
 
@@ -161,6 +160,7 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
 
         if (!tile.actor || tile.state === 'expired') {
             tile.actor = this.dispatcher.getActor();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             tile.request = tile.actor.send('loadTile', params, done.bind(this), undefined, true);
         } else if (tile.state === 'loading') {
             // schedule tile reloading after it has been loaded
@@ -175,6 +175,7 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
                 tile.state = 'loaded';
                 return;
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             tile.request = tile.actor.send('reloadTile', params, done.bind(this));
         }
 
@@ -185,7 +186,9 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
                 return callback(err);
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (this.map._refreshExpiredTiles && data) tile.setExpiryData(data);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             tile.loadModelData(data, this.map.painter);
 
             tile.state = 'loaded';
@@ -194,7 +197,7 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
     }
 
     serialize(): ModelSourceSpecification {
-        return extend({}, this._options);
+        return Object.assign({}, this._options);
     }
 }
 

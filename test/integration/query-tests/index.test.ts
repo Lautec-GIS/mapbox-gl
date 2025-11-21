@@ -1,4 +1,4 @@
-// eslint-disable-next-line import/extensions
+// eslint-disable-next-line import-x/extensions
 import {server} from '@vitest/browser/context';
 import ignoresAll from '../../ignores/all.js';
 import ignoreWindowsChrome from '../../ignores/windows-chrome.js';
@@ -14,12 +14,13 @@ import {integrationTests} from 'virtual:integration-tests';
 import {getStatsHTML, setupHTML, updateHTML} from '../../util/html_generator';
 import {mapboxgl} from '../lib/mapboxgl.js';
 import {sendFragment} from '../lib/utils';
+import {transformRequest} from '../lib/transform-request.js';
 
 setupHTML();
 
 function getEnvironmentParams() {
     let timeout = 30000;
-    if (import.meta.env.VITE_CI) {
+    if (import.meta.env.VITE_CI === 'true') {
         let ignoresPlatformSpecific;
         const ua = navigator.userAgent;
         const browser = ua.includes('Firefox') ? 'firefox' :
@@ -116,7 +117,9 @@ const getTest = (queryTestName) => async () => {
             fadeDuration: options.fadeDuration || 0,
             localIdeographFontFamily: options.localIdeographFontFamily || false,
             crossSourceCollisions: typeof options.crossSourceCollisions === "undefined" ? true : options.crossSourceCollisions,
-            performanceMetricsCollection: false
+            performanceMetricsCollection: false,
+            transformRequest,
+            testMode: true
         });
 
         if (options.collisionDebug) {
@@ -157,9 +160,9 @@ const getTest = (queryTestName) => async () => {
 
         testMetaData.status = success ? 'passed' : 'failed';
 
-        if (!import.meta.env.VITE_CI && import.meta.env.VITE_UPDATE) {
+        if (import.meta.env.VITE_CI === 'false' && import.meta.env.VITE_UPDATE === 'true') {
             await server.commands.writeFile(`${testPath}/expected.json`, jsonDiff.replace('+ ', '').trim());
-        } else if (!import.meta.env.VITE_CI) {
+        } else if (import.meta.env.VITE_CI === 'false') {
             await server.commands.writeFile(`${testPath}/actual.png`, testMetaData.actual!.split(',')[1], {encoding: 'base64'});
             await server.commands.writeFile(`${testPath}/actual.json`, JSON.stringify(actual, undefined, 2));
         }

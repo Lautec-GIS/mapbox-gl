@@ -21,6 +21,7 @@ import type {ImageVariant} from '../style-spec/expression/types/image_variant';
 import type {ElevationFeature} from '../../3d-style/elevation/elevation_feature';
 import type {ImageId, StringifiedImageId} from '../style-spec/expression/types/image_id';
 import type {StyleModelMap} from '../style/style_mode';
+import type {GlobalProperties} from '../style-spec/expression';
 
 export type BucketParameters<Layer extends TypedStyleLayer> = {
     index: number;
@@ -37,6 +38,7 @@ export type BucketParameters<Layer extends TypedStyleLayer> = {
     tessellationStep: number | null | undefined;
     styleDefinedModelURLs: StyleModelMap;
     worldview: string | undefined;
+    localizable: boolean;
 };
 
 export type ImageDependenciesMap = Map<StringifiedImageId, Array<ImageVariant>>;
@@ -53,6 +55,7 @@ export type PopulateParameters = {
     brightness: number | null | undefined;
     scaleFactor: number;
     elevationFeatures: ElevationFeature[] | undefined;
+    activeFloors: Set<string> | undefined;
 };
 
 export type IndexedFeature = {
@@ -102,8 +105,10 @@ export interface Bucket {
     hasPattern: boolean;
     layers: TypedStyleLayer[];
     stateDependentLayers: Array<TypedStyleLayer>;
+    hasAppearances: boolean | null;
     readonly stateDependentLayerIds: Array<string>;
     readonly worldview: string | undefined;
+    evaluateQueryRenderedFeaturePadding?: () => number;
     prepare?: () => Promise<unknown>;
     populate: (
         features: Array<IndexedFeature>,
@@ -121,7 +126,7 @@ export interface Bucket {
         brightness?: number | null
     ) => void;
     isEmpty: () => boolean;
-    upload: (context: Context) => void;
+    upload: (context: Context, canonical?: CanonicalTileID, featureState?: FeatureStates, availableImages?: Array<ImageId>, globalProperties?: GlobalProperties) => void;
     uploadPending: () => boolean;
     /**
      * Release the WebGL resources associated with the buffers. Note that because
@@ -132,6 +137,7 @@ export interface Bucket {
      */
     destroy: () => void;
     updateFootprints: (id: UnwrappedTileID, footprints: Array<TileFootprint>) => void;
+    updateAppearances: (canonical?: CanonicalTileID, featureState?: FeatureStates, availableImages?: Array<ImageId>, globalProperties?: GlobalProperties) => void;
 }
 
 export function deserialize(input: Array<Bucket>, style: Style): Record<string, Bucket> {

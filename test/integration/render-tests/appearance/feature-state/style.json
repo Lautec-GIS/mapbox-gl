@@ -1,0 +1,105 @@
+{
+  "version": 8,
+  "metadata": {
+    "test": {
+      "allowed": 0.00049,
+      "pixelRatio": 2,
+      "height": 64,
+      "width": 64,
+      "operations": [
+            ["wait"],
+            ["setFeatureState", {
+                "source": "geojson",
+                "id": 2
+            }, {
+                "hover": true
+            }],
+            ["wait"]
+        ]
+    }
+  },
+  "sources": {
+    "geojson": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "id": 1,
+            "type": "Feature",
+            "properties": {
+              "image": "bank-12"
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -5,
+                0
+              ]
+            }
+          },
+          {
+            "id": 2,
+            "type": "Feature",
+            "properties": {
+              "image": "bank-12"
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                5,
+                0
+              ]
+            }
+          },
+          {
+            "id": 3,
+            "type": "Feature",
+            "properties": {
+              "image": "bank-12"
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                0,
+                5
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sprite": "local://sprites/sprite",
+  "layers": [
+    {
+      "id": "icon",
+      "type": "symbol",
+      "source": "geojson",
+      "layout": {
+        "icon-allow-overlap": true,
+        "icon-image": "bank-12",
+        "icon-size": 1,
+        "icon-rotate": 0,
+        "icon-offset": [0, 0]
+      },
+      "appearances": [
+        {
+          "name": "test",
+          "condition": ["==", ["boolean", ["feature-state", "hover"], false], true],
+          "properties": {
+            "icon-image": "bakery-12",
+            "icon-size": 2,
+            "icon-rotate": 90,
+            "icon-offset": [10, 10]
+          }
+        }
+      ],
+      "filter": [
+        ">=",
+        ["id"],
+        2
+      ]
+    }
+  ]
+}

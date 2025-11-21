@@ -42,6 +42,7 @@ import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
 import type {ElevationPolygons, ElevationPortalGraph} from '../../../3d-style/elevation/elevation_graph';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
+import type {GlobalProperties} from "../../style-spec/expression";
 import type {LUT} from '../../util/lut';
 
 class FillBufferData {
@@ -158,6 +159,7 @@ class FillBucket implements Bucket {
     sourceLayerIndex: number;
 
     worldview: string;
+    hasAppearances: boolean | null;
 
     constructor(options: BucketParameters<FillStyleLayer>) {
         this.zoom = options.zoom;
@@ -181,21 +183,25 @@ class FillBucket implements Bucket {
         this.sourceLayerIndex = options.sourceLayerIndex;
 
         this.worldview = options.worldview;
+        this.hasAppearances = null;
     }
 
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
     }
 
+    updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
+    }
+
     populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
         this.hasPattern = hasPattern('fill', this.layers, this.pixelRatio, options);
         const fillSortKey = this.layers[0].layout.get('fill-sort-key');
-        const bucketFeatures = [];
+        const bucketFeatures: BucketFeature[] = [];
 
         for (const {feature, id, index, sourceLayerIndex} of features) {
             const needGeometry = this.layers[0]._featureFilter.needGeometry;
             const evaluationFeature = toEvaluationFeature(feature, needGeometry);
 
-            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview}), evaluationFeature, canonical))
+            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview, activeFloors: options.activeFloors}), evaluationFeature, canonical))
                 continue;
 
             const sortKey = fillSortKey ?
@@ -219,8 +225,8 @@ class FillBucket implements Bucket {
 
         if (fillSortKey) {
             bucketFeatures.sort((a, b) => {
-                // a.sortKey is always a number when in use
-                return (a.sortKey as number) - (b.sortKey as number);
+                // a.sortKey is always a number when fillSortKey is defined
+                return a.sortKey - b.sortKey;
             });
         }
 
@@ -469,6 +475,7 @@ class FillBucket implements Bucket {
                 lineSegment.primitiveLength += ring.length;
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
             const indices: number[] = earcut(flattened, holeIndices);
             assert(indices.length % 3 === 0);
 

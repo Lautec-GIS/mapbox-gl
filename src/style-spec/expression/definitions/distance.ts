@@ -135,15 +135,15 @@ function latFromMercatorY(y: number): number {
     return 360 / Math.PI * Math.atan(Math.exp(y2 * Math.PI / 180)) - 90;
 }
 
-function getLngLatPoint(coord: Point, canonical: CanonicalTileID) {
+function getLngLatPoint(coord: Point, canonical: CanonicalTileID): [number, number] {
     const tilesAtZoom = Math.pow(2, canonical.z);
     const x = (coord.x / EXTENT + canonical.x) / tilesAtZoom;
     const y = (coord.y / EXTENT + canonical.y) / tilesAtZoom;
     return [lngFromMercatorX(x), latFromMercatorY(y)];
 }
 
-function getLngLatPoints(coordinates: Array<Point>, canonical: CanonicalTileID): number[][] {
-    const coords: number[][] = [];
+function getLngLatPoints(coordinates: Array<Point>, canonical: CanonicalTileID): Array<[number, number]> {
+    const coords: Array<[number, number]> = [];
     for (let i = 0; i < coordinates.length; ++i) {
         coords.push(getLngLatPoint(coordinates[i], canonical));
     }
@@ -275,8 +275,7 @@ function polygonToPolygonDistance(polygon1: Array<Array<[number, number]>>, poly
     return dist;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function updateQueue(distQueue: any, miniDist: number, ruler: CheapRuler, pointSet1: Array<[number, number]>, pointSet2: Array<[number, number]>, r1: IndexRange | null, r2: IndexRange | null) {
+function updateQueue(distQueue: TinyQueue<DistPair>, miniDist: number, ruler: CheapRuler, pointSet1: Array<[number, number]>, pointSet2: Array<[number, number]>, r1: IndexRange | null, r2: IndexRange | null) {
     if (r1 === null || r2 === null) return;
     const tempDist = bboxToBBoxDistance(getBBox(pointSet1, r1), getBBox(pointSet2, r2), ruler);
     // Insert new pair to the queue if the bbox distance is less than miniDist, the pair with biggest distance will be at the top
@@ -410,7 +409,7 @@ function polygonsToPolygonsDistance(polygons1: Array<Array<Array<[number, number
 }
 
 function pointsToGeometryDistance(originGeometry: Array<Array<Point>>, canonical: CanonicalTileID, geometry: DistanceGeometry) {
-    const lngLatPoints = [];
+    const lngLatPoints: Array<[number, number]> = [];
     for (const points of originGeometry) {
         for (const point of points) {
             lngLatPoints.push(getLngLatPoint(point, canonical));
@@ -433,9 +432,9 @@ function pointsToGeometryDistance(originGeometry: Array<Array<Point>>, canonical
 }
 
 function linesToGeometryDistance(originGeometry: Array<Array<Point>>, canonical: CanonicalTileID, geometry: DistanceGeometry) {
-    const lngLatLines = [];
+    const lngLatLines: Array<Array<[number, number]>> = [];
     for (const line of originGeometry) {
-        const lngLatLine = [];
+        const lngLatLine: Array<[number, number]> = [];
         for (const point of line) {
             lngLatLine.push(getLngLatPoint(point, canonical));
         }
@@ -471,9 +470,9 @@ function linesToGeometryDistance(originGeometry: Array<Array<Point>>, canonical:
 }
 
 function polygonsToGeometryDistance(originGeometry: Array<Array<Point>>, canonical: CanonicalTileID, geometry: DistanceGeometry) {
-    const lngLatPolygons = [];
+    const lngLatPolygons: Array<Array<Array<[number, number]>>> = [];
     for (const polygon of classifyRings(originGeometry, 0)) {
-        const lngLatPolygon = [];
+        const lngLatPolygon: Array<Array<[number, number]>> = [];
         for (let i = 0; i < polygon.length; ++i) {
             lngLatPolygon.push(getLngLatPoints(polygon[i], canonical));
         }

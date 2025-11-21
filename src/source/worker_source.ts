@@ -23,6 +23,7 @@ import type {RasterizedImageMap} from '../render/image_manager';
 import type {ImageId} from '../style-spec/expression/types/image_id';
 import type {StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
 import type {StyleModelMap} from '../style/style_mode';
+import type {IndoorTileOptions} from '../style/indoor_data.js';
 
 /**
  * The parameters passed to the {@link MapWorker#getWorkerSource}.
@@ -72,6 +73,7 @@ export type WorkerSourceVectorTileRequest = WorkerSourceTileRequest & {
     tessellationStep?: number // test purpose only;
     worldview?: string | null;
     localizableLayerIds?: Set<string>;
+    indoor?: IndoorTileOptions | null;
 };
 
 /**
@@ -116,6 +118,7 @@ export type WorkerSourceVectorTileResult = {
     rawTileData?: ArrayBuffer;
     resourceTiming?: Array<PerformanceResourceTiming>;
     brightness: number;
+    responseHeaders?: Map<string, string>;
     // Only used for benchmarking:
     glyphMap?: GlyphMap;
     iconMap?: StyleImageMap<StringifiedImageVariant>;

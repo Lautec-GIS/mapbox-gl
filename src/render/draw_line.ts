@@ -61,7 +61,9 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
 
     if (opacity.constantOr(1) === 0 || width.constantOr(1) === 0) return;
 
-    const emissiveStrength = layer.paint.get('line-emissive-strength');
+    const constantEmissiveStrength = layer.paint.get('line-emissive-strength').isConstant();
+    assert(painter.emissiveMode !== 'constant' || constantEmissiveStrength);
+    const emissiveStrengthForDrapedLayers = layer.paint.get('line-emissive-strength').constantOr(0.0);
     const occlusionOpacity = layer.paint.get('line-occlusion-opacity');
     const elevationReference = layer.layout.get('line-elevation-reference');
     const unitInMeters = layer.layout.get('line-width-unit') === 'meters';
@@ -78,24 +80,25 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
     const hasCrossSlope = crossSlope !== undefined;
     const crossSlopeHorizontal = crossSlope < 1.0;
 
-    const colorMode = painter.colorModeForDrapableLayerRenderPass(emissiveStrength);
+    const colorMode = painter.colorModeForDrapableLayerRenderPass(constantEmissiveStrength ? emissiveStrengthForDrapedLayers : null);
     const isDraping = painter.terrain && painter.terrain.renderingToTexture;
     const pixelRatio = isDraping ? 1.0 : browser.devicePixelRatio;
 
     const dasharrayProperty = layer.paint.get('line-dasharray');
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const dasharray = dasharrayProperty.constantOr((1 as any));
+    const dasharray = dasharrayProperty.constantOr(1);
     const capProperty = layer.layout.get('line-cap');
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const constantDash = dasharrayProperty.constantOr(null);
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const constantCap = capProperty.constantOr(null);
     const patternProperty = layer.paint.get('line-pattern');
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const image = patternProperty.constantOr((1 as any));
+    const image = patternProperty.constantOr(1);
     const patternTransition = layer.paint.get('line-pattern-cross-fade');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const constantPattern = patternProperty.constantOr(null);
 
     const lineOpacity = layer.paint.get('line-opacity').constantOr(1.0);
@@ -113,7 +116,8 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
         useStencilMaskRenderPass = false;
     }
 
-    let lineOpacityForOcclusion; // line opacity uniform gets amend by line occlusion opacity
+    // line opacity uniform gets amended by line occlusion opacity
+    let lineOpacityForOcclusion: {value: number} | undefined;
     if (occlusionOpacity !== 0 && painter.depthOcclusion) {
         const value = layer.paint._values["line-opacity"];
 
@@ -127,6 +131,14 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
 
     if (width.value.kind !== 'constant' && width.value.isLineProgressConstant === false) {
         definesValues.push("VARIABLE_LINE_WIDTH");
+    }
+
+    if (isDraping) {
+        if (painter.emissiveMode === 'dual-source-blending' && !constantEmissiveStrength) {
+            definesValues.push('DUAL_SOURCE_BLENDING');
+        } else if (painter.emissiveMode === 'mrt-fallback') {
+            definesValues.push('USE_MRT1');
+        }
     }
 
     const renderTiles = (coords: OverscaledTileID[], baseDefines: DynamicDefinesType[], depthMode: DepthMode, stencilMode3D: StencilMode, elevated: boolean, firstPass: boolean) => {
@@ -158,6 +170,7 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
 
             let transitionableConstantPattern = false;
             if (constantPattern && tile.imageAtlas) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 const pattern = ResolvedImage.from(constantPattern);
                 const primaryPatternImage = pattern.getPrimary().scaleSelf(pixelRatio).toString();
                 const primaryPosTo = tile.imageAtlas.patternPositions.get(primaryPatternImage);
@@ -177,6 +190,7 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
             const program = painter.getOrCreateProgram(programId, {config: programConfiguration, defines, overrideFog: affectedByFog});
 
             if (!image && constantDash && constantCap && tile.lineAtlas) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 const posTo = tile.lineAtlas.getDash(constantDash, constantCap);
                 if (posTo) programConfiguration.setConstantPatternPositions(posTo);
             }
@@ -268,7 +282,6 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
 
             const renderLine = (stencilMode: StencilMode) => {
                 if (lineOpacityForOcclusion != null) {
-
                     lineOpacityForOcclusion.value = lineOpacity * occlusionOpacity;
                 }
                 program.draw(painter, gl.TRIANGLES, depthMode,

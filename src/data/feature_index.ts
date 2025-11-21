@@ -7,7 +7,7 @@ import DictionaryCoder from '../util/dictionary_coder';
 import {VectorTile} from '@mapbox/vector-tile';
 import Protobuf from 'pbf';
 import Feature from '../util/vectortile_to_geojson';
-import {arraysIntersect, mapObject, extend, warnOnce} from '../util/util';
+import {arraysIntersect, mapObject, warnOnce} from '../util/util';
 import {register} from '../util/web_worker_transfer';
 import {polygonIntersectsBox} from '../util/intersection_tests';
 import {PossiblyEvaluated} from '../style/properties';
@@ -16,7 +16,6 @@ import {DEMSampler} from '../terrain/elevation';
 import Tiled3dModelBucket from '../../3d-style/data/bucket/tiled_3d_model_bucket';
 import {loadMatchingModelFeature} from '../../3d-style/style/style_layer/model_style_layer';
 import {createExpression} from '../style-spec/expression/index';
-import EvaluationContext from '../style-spec/expression/evaluation_context';
 
 import type {OverscaledTileID} from '../source/tile_id';
 import type Point from '@mapbox/point-geometry';
@@ -41,6 +40,7 @@ type QueryParameters = {
     tileTransform: TileTransform;
     availableImages: ImageId[];
     worldview: string | undefined;
+    queryRadius?: number;
 };
 
 type FeatureIndices = FeatureIndexStruct | {
@@ -76,6 +76,7 @@ class FeatureIndex {
         this.x = tileID.canonical.x;
         this.y = tileID.canonical.y;
         this.z = tileID.canonical.z;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
         this.grid = new Grid(EXTENT, 16, 0);
         this.featureIndexArray = new FeatureIndexArray();
         this.promoteId = promoteId;
@@ -136,9 +137,12 @@ class FeatureIndex {
         this.loadVTLayers();
         this.serializedLayersCache.clear();
 
+        const queryRadius = params.queryRadius ? params.queryRadius : 0;
+
         const bounds = tilespaceGeometry.bufferedTilespaceBounds;
         const queryPredicate = (bx1: number, by1: number, bx2: number, by2: number) => {
-            return polygonIntersectsBox(tilespaceGeometry.bufferedTilespaceGeometry, bx1, by1, bx2, by2);
+            const isects = polygonIntersectsBox(tilespaceGeometry.bufferedTilespaceGeometry, bx1 - queryRadius, by1 - queryRadius, bx2 + queryRadius, by2 + queryRadius);
+            return isects;
         };
 
         const matching = this.grid.query(bounds.min.x, bounds.min.y, bounds.max.x, bounds.max.y, queryPredicate);
@@ -171,6 +175,7 @@ class FeatureIndex {
                     featureGeometry = loadGeometry(feature, this.tileID.canonical, tileTransform);
                 }
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 return styleLayer.queryIntersectsFeature(tilespaceGeometry, feature, featureState, featureGeometry, this.z, transform, pixelPosMatrix, elevationHelper, layoutVertexArrayOffset);
             };
 
@@ -242,7 +247,7 @@ class FeatureIndex {
             geojsonFeature.source = serializedLayer.source;
             geojsonFeature.sourceLayer = serializedLayer['source-layer'];
 
-            geojsonFeature.layer = extend({}, serializedLayer);
+            geojsonFeature.layer = Object.assign({}, serializedLayer);
             geojsonFeature.layer.paint = evaluateProperties(serializedLayer.paint, styleLayer.paint, feature, featureState, availableImages);
             geojsonFeature.layer.layout = evaluateProperties(serializedLayer.layout, styleLayer.layout, feature, featureState, availableImages);
 
@@ -314,9 +319,11 @@ class FeatureIndex {
 
             let featureState: FeatureState = {};
             if (feature.id !== undefined) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 featureState = query.sourceCache.getFeatureState(styleLayer.sourceLayer, feature.id);
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const geojsonFeature = new Feature({} as unknown as VectorTileFeature, z, x, y, feature.id);
             geojsonFeature.tile = this.tileID.canonical;
             geojsonFeature.state = featureState;
@@ -334,7 +341,7 @@ class FeatureIndex {
             geojsonFeature.source = serializedLayer.source;
             geojsonFeature.sourceLayer = serializedLayer['source-layer'];
 
-            geojsonFeature.layer = extend({}, serializedLayer);
+            geojsonFeature.layer = Object.assign({}, serializedLayer);
 
             // Iterate over all targets to check if the feature should be included and add feature variants if necessary
             let shouldInclude = false;
@@ -372,6 +379,7 @@ class FeatureIndex {
             const transformedProperties = {};
             for (const name in target.properties) {
                 const expression = target.properties[name];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const value = expression.evaluate(
                     {zoom: this.z},
                     feature._vectorTileFeature,
@@ -379,6 +387,7 @@ class FeatureIndex {
                     feature.tile,
                     availableImages
                 );
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 if (value != null) transformedProperties[name] = value;
             }
             feature.properties = transformedProperties;
@@ -480,11 +489,6 @@ class FeatureIndex {
                             warnOnce(`Failed to create expression for promoteId: ${error}`);
                             return undefined;
                         }
-                    }
-                    // _evaluator is explicitly omitted from serialization here https://github.com/mapbox/mapbox-gl-js-internal/blob/internal/src/util/web_worker_transfer.ts#L112
-                    // and promoteIdExpression is first created in worker thread and will later be used in main thread, so a reinitialize will be needed.
-                    if (!this.promoteIdExpression._evaluator) {
-                        this.promoteIdExpression._evaluator = new EvaluationContext();
                     }
                     id = this.promoteIdExpression.evaluate({zoom: 0}, feature) as string | number;
                 } else {

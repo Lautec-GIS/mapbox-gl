@@ -13,7 +13,6 @@ import Style from '../../../src/style/style';
 import SourceCache from '../../../src/source/source_cache';
 import StyleLayer from '../../../src/style/style_layer';
 import Transform from '../../../src/geo/transform';
-import {extend} from '../../../src/util/util';
 import {Event} from '../../../src/util/evented';
 import styleSpec from '../../../src/style-spec/reference/latest';
 import {
@@ -25,9 +24,10 @@ import Tile from '../../../src/source/tile';
 import {OverscaledTileID} from '../../../src/source/tile_id';
 import {ImageId} from '../../../src/style-spec/expression/types/image_id';
 import {StubMap} from './utils';
+import {makeFQID} from '../../../src/util/fqid';
 
 function createStyleJSON(properties) {
-    return extend({
+    return Object.assign({
         "version": 8,
         "sources": {},
         "layers": []
@@ -66,9 +66,12 @@ describe('Style', () => {
         expect(Style.registerForPluginStateChange).toHaveBeenCalledTimes(1);
 
         setRTLTextPlugin("/plugin.js",);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(style.dispatcher.broadcast.mock.calls[0][0]).toEqual("syncRTLPluginState");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(style.dispatcher.broadcast.mock.calls[0][1]).toEqual({
             pluginStatus: 'deferred',
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             pluginURL: expect.stringContaining("/plugin.js")
         });
         // window.clearFakeWorkerPresence();
@@ -97,6 +100,7 @@ describe('Style', () => {
                     resolve();
                 }
             });
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             new Style(createStyleJSON());
         });
     });
@@ -115,7 +119,9 @@ describe('Style#loadURL', () => {
         style.loadURL('/style.json');
 
         expect(spy).toHaveBeenCalledTimes(1);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].target).toEqual(style);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].dataType).toEqual('style');
     });
 
@@ -148,6 +154,7 @@ describe('Style#loadURL', () => {
 
         const {error} = await waitFor(style, "error");
         expect(error).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(error.message).toMatch(/version/);
 
     });
@@ -190,16 +197,20 @@ describe('Style#loadJSON', () => {
         const spy = vi.fn();
 
         style.on('dataloading', spy);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
 
         expect(spy).toHaveBeenCalledTimes(1);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].target).toEqual(style);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].dataType).toEqual('style');
     });
 
     test('fires "data" (asynchronously)', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
 
         const e = await waitFor(style, "data");
@@ -210,16 +221,19 @@ describe('Style#loadJSON', () => {
     test('validates the style', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({version: 'invalid'}));
         const {error} = await waitFor(style, "error");
         expect(error).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(error.message).toMatch(/version/);
     });
 
     test('creates sources', async () => {
         const style = new Style(new StubMap());
 
-        style.loadJSON(extend(createStyleJSON(), {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(Object.assign(createStyleJSON(), {
             "sources": {
                 "mapbox": {
                     "type": "vector",
@@ -256,6 +270,7 @@ describe('Style#loadJSON', () => {
 
     test('emits an error on non-existant vector source layer', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             sources: {
                 '-source-id-': {type: "vector", tiles: []}
@@ -277,10 +292,14 @@ describe('Style#loadJSON', () => {
         });
         style.update({});
         const event = await waitFor(style, "error");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const err = event.error;
         expect(err).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         expect(err.toString().indexOf('-source-layer-') !== -1).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         expect(err.toString().indexOf('-source-id-') !== -1).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         expect(err.toString().indexOf('-layer-id-') !== -1).toBeTruthy();
     });
 
@@ -288,6 +307,7 @@ describe('Style#loadJSON', () => {
         const style = new Style(new StubMap());
 
         await new Promise(resolve => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(createStyleJSON({
                 layers: [{
                     id: 'background',
@@ -312,6 +332,7 @@ describe('Style#loadJSON', () => {
 describe('Style#_remove', () => {
     test('clears tiles', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             sources: {'source-id': createGeoJSONSource()}
         }));
@@ -325,6 +346,7 @@ describe('Style#_remove', () => {
 
     test('deregisters plugin listener', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         vi.spyOn(style.dispatcher, 'broadcast');
 
@@ -363,6 +385,7 @@ test('Style#update', () => {
 
         style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             expect(value.layers.map((layer) => { return layer.id; })).toEqual(['first', 'third']);
             expect(value.removedIds).toEqual(['second']);
         };
@@ -374,17 +397,20 @@ test('Style#update', () => {
 describe('Style#setState', () => {
     test('throw before loaded', () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         expect(() => style.setState(createStyleJSON())).toThrowError(/load/i);
     });
 
     test('do nothing if there are no changes', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         [
             'addLayer',
             'removeLayer',
             'setPaintProperty',
             'setLayoutProperty',
+            'setLayerProperty',
             'setFilter',
             'addSource',
             'removeSource',
@@ -393,6 +419,7 @@ describe('Style#setState', () => {
             'setFlatLight'
         ].forEach((method) => vi.spyOn(style, method).mockImplementation(() => expect.unreachable(`${method} called`)));
         await waitFor(style, "style.load");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         const didChange = style.setState(createStyleJSON());
         expect(didChange).toBeFalsy();
     });
@@ -404,25 +431,31 @@ describe('Style#setState', () => {
             }))
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initial = createStyleJSON();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         initial.sources.mySource = {
             type: 'raster',
             url: '/tilejson.json'
         };
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initial);
 
         await waitFor(style, "style.load");
 
         vi.spyOn(style, 'removeSource').mockImplementation(() => expect.unreachable('removeSource called'));
         vi.spyOn(style, 'addSource').mockImplementation(() => expect.unreachable('addSource called'));
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(initial);
 
         await waitFor(style, 'data');
     });
 
     test('return true if there is a change', async () => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialState = createStyleJSON();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextState = createStyleJSON({
             sources: {
                 foo: {
@@ -433,14 +466,17 @@ describe('Style#setState', () => {
         });
 
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialState);
         await waitFor(style, "style.load");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         const didChange = style.setState(nextState);
         expect(didChange).toBeTruthy();
         expect(style.stylesheet).toStrictEqual(nextState);
     });
 
     test('sets GeoJSON source data if different', async () => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialState = createStyleJSON({
             "sources": {"source-id": createGeoJSONSource()}
         });
@@ -458,6 +494,7 @@ describe('Style#setState', () => {
             ]
         };
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextState = createStyleJSON({
             "sources": {
                 "source-id": {
@@ -468,12 +505,14 @@ describe('Style#setState', () => {
         });
 
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialState);
 
         await waitFor(style, "style.load");
         const geoJSONSource = style.getSource('source-id');
         vi.spyOn(style, 'setGeoJSONSourceData');
         vi.spyOn(geoJSONSource, 'setData');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         const didChange = style.setState(nextState);
 
         expect(style.setGeoJSONSourceData).toHaveBeenCalledWith('source-id', geoJSONSourceData);
@@ -491,6 +530,7 @@ describe('Style#addSource', () => {
 
     test('throw if missing source type', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
 
         const source = createSource();
@@ -502,6 +542,7 @@ describe('Style#addSource', () => {
 
     test('fires "data" event', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         const source = createSource();
 
@@ -515,6 +556,7 @@ describe('Style#addSource', () => {
 
     test('throws on duplicates', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         const source = createSource();
         await waitFor(style, "style.load");
@@ -526,6 +568,7 @@ describe('Style#addSource', () => {
 
     test('emits on invalid source', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         await new Promise(resolve => {
             style.on('style.load', () => {
@@ -546,6 +589,7 @@ describe('Style#addSource', () => {
 
     test('sets up source event forwarding', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [{
                 id: 'background',
@@ -580,6 +624,7 @@ describe('Style#removeSource', () => {
 
     test('fires "data" event', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         const source = createSource();
         await new Promise(resolve => {
@@ -594,6 +639,7 @@ describe('Style#removeSource', () => {
 
     test('clears tiles', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             sources: {'source-id': createGeoJSONSource()}
         }));
@@ -607,6 +653,7 @@ describe('Style#removeSource', () => {
 
     test('throws on non-existence', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         await waitFor(style, "style.load");
         expect(() => {
@@ -616,6 +663,7 @@ describe('Style#removeSource', () => {
 
     async function createStyle() {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             'sources': {
                 'mapbox-source': createGeoJSONSource()
@@ -655,6 +703,7 @@ describe('Style#removeSource', () => {
 
     test('tears down source event forwarding', () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         let source = createSource();
 
@@ -665,11 +714,14 @@ describe('Style#removeSource', () => {
             style.removeSource('source-id');
 
             // Suppress error reporting
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             source.on('error', () => {});
 
             style.on('data', () => { expect.unreachable(); });
             style.on('error', () => { expect.unreachable(); });
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             source.fire(new Event('data'));
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             source.fire(new Event('error'));
         });
     });
@@ -685,6 +737,7 @@ describe('Style#setGeoJSONSourceData', () => {
 
     test('throws on non-existence', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         await waitFor(style, "style.load");
         expect(() => style.setGeoJSONSourceData('source-id', geoJSON)).toThrowError(/There is no source with this ID/);
@@ -699,6 +752,7 @@ describe('Style#addLayer', () => {
 
     test('sets up layer event forwarding', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
 
         await new Promise(resolve => {
@@ -720,6 +774,7 @@ describe('Style#addLayer', () => {
 
     test('throws on non-existant vector source layer', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             sources: {
                 // At least one source must be added to trigger the load event
@@ -738,16 +793,21 @@ describe('Style#addLayer', () => {
             'source-layer': '-source-layer-'
         });
         const event = await waitFor(style, "error");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const err = event.error;
 
         expect(err).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         expect(err.toString().indexOf('-source-layer-') !== -1).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         expect(err.toString().indexOf('-source-id-') !== -1).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         expect(err.toString().indexOf('-layer-id-') !== -1).toBeTruthy();
     });
 
     test('emits error on invalid layer', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         await new Promise(resolve => {
             style.on('style.load', () => {
@@ -768,6 +828,7 @@ describe('Style#addLayer', () => {
 
     test('#4040 does not mutate source property when provided inline', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         await waitFor(style, "style.load");
         const source = {
@@ -784,7 +845,8 @@ describe('Style#addLayer', () => {
 
     test('reloads source', async () => {
         const style = new Style(new StubMap());
-        style.loadJSON(extend(createStyleJSON(), {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(Object.assign(createStyleJSON(), {
             "sources": {
                 "mapbox": {
                     "type": "vector",
@@ -816,7 +878,8 @@ describe('Style#addLayer', () => {
         '#3895 reloads source (instead of clearing) if adding this layer with the same type, immediately after removing it',
         async () => {
             const style = new Style(new StubMap());
-            style.loadJSON(extend(createStyleJSON(), {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            style.loadJSON(Object.assign(createStyleJSON(), {
                 "sources": {
                     "mapbox": {
                         "type": "vector",
@@ -856,7 +919,8 @@ describe('Style#addLayer', () => {
         'clears source (instead of reloading) if adding this layer with a different type, immediately after removing it',
         async () => {
             const style = new Style(new StubMap());
-            style.loadJSON(extend(createStyleJSON(), {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            style.loadJSON(Object.assign(createStyleJSON(), {
                 "sources": {
                     "mapbox": {
                         "type": "vector",
@@ -893,6 +957,7 @@ describe('Style#addLayer', () => {
 
     test('fires "data" event', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         const layer = {id: 'background', type: 'background'};
 
@@ -908,6 +973,7 @@ describe('Style#addLayer', () => {
 
     test('emits error on duplicates', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         const layer = {id: 'background', type: 'background'};
 
@@ -925,6 +991,7 @@ describe('Style#addLayer', () => {
 
     test('adds to the end by default', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [{
                 id: 'a',
@@ -943,6 +1010,7 @@ describe('Style#addLayer', () => {
 
     test('adds before the given layer', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [{
                 id: 'a',
@@ -961,6 +1029,7 @@ describe('Style#addLayer', () => {
 
     test('fire error if before layer does not exist', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [{
                 id: 'a',
@@ -985,7 +1054,8 @@ describe('Style#addLayer', () => {
 
     test('fires an error on non-existant source layer', async () => {
         const style = new Style(new StubMap());
-        style.loadJSON(extend(createStyleJSON(), {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(Object.assign(createStyleJSON(), {
             sources: {
                 dummy: {
                     type: 'geojson',
@@ -1020,6 +1090,7 @@ describe('Style#removeLayer', () => {
 
     test('fires "data" event', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         const layer = {id: 'background', type: 'background'};
 
@@ -1036,6 +1107,7 @@ describe('Style#removeLayer', () => {
 
     test('tears down layer event forwarding', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [{
                 id: 'background',
@@ -1064,6 +1136,7 @@ describe('Style#removeLayer', () => {
 
     test('fires an error on non-existence', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
 
         await waitFor(style, "style.load");
@@ -1079,6 +1152,7 @@ describe('Style#removeLayer', () => {
 
     test('removes from the order', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [{
                 id: 'a',
@@ -1096,6 +1170,7 @@ describe('Style#removeLayer', () => {
 
     test('does not remove dereffed layers', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [{
                 id: 'a',
@@ -1121,6 +1196,7 @@ describe('Style#moveLayer', () => {
 
     test('fires "data" event', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         const layer = {id: 'background', type: 'background'};
 
@@ -1137,6 +1213,7 @@ describe('Style#moveLayer', () => {
 
     test('fires an error on non-existence', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
 
         await new Promise(resolve => {
@@ -1152,6 +1229,7 @@ describe('Style#moveLayer', () => {
 
     test('changes the order', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [
                 {id: 'a', type: 'background'},
@@ -1167,6 +1245,7 @@ describe('Style#moveLayer', () => {
 
     test('moves to existing location', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             layers: [
                 {id: 'a', type: 'background'},
@@ -1186,7 +1265,8 @@ describe('Style#setPaintProperty', () => {
         '#4738 postpones source reload until layers have been broadcast to workers',
         async () => {
             const style = new Style(new StubMap());
-            style.loadJSON(extend(createStyleJSON(), {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            style.loadJSON(Object.assign(createStyleJSON(), {
                 "sources": {
                     "geojson": {
                         "type": "geojson",
@@ -1222,10 +1302,12 @@ describe('Style#setPaintProperty', () => {
                             resolve();
                         });
 
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                         source.setData({"type": "FeatureCollection", "features": []});
                         style.setPaintProperty('circle', 'circle-color', {type: 'identity', property: 'foo'});
                     }
 
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     if (begun && e.sourceDataType === 'content') {
                         // setData() worker-side work is complete; simulate an
                         // animation frame a few ms later, so that this test can
@@ -1314,6 +1396,7 @@ describe('Style#getPaintProperty', () => {
         expect(style._changes.isDirty()).toBeFalsy();
 
         const value = style.getPaintProperty('background', 'background-color');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         value.stops[0][0] = 1;
         style.setPaintProperty('background', 'background-color', value);
         expect(style._changes.isDirty()).toBeTruthy();
@@ -1392,6 +1475,205 @@ describe('Style#setLayoutProperty', () => {
     });
 });
 
+describe('Style#setLayerProperty', () => {
+    test('#5802 clones the input', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {
+                "geojson": {
+                    "type": "geojson",
+                    "data": {
+                        "type": "FeatureCollection",
+                        "features": []
+                    }
+                }
+            },
+            "layers": [
+                {
+                    "id": "line",
+                    "type": "line",
+                    "source": "geojson"
+                }
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        const value = {stops: [[0, 'butt'], [10, 'round']]};
+        style.setLayerProperty('line', 'line-cap', value);
+        expect(style.getLayoutProperty('line', 'line-cap')).not.toBe(value);
+        expect(style._changes.isDirty()).toBeTruthy();
+
+        style.update({});
+        expect(style._changes.isDirty()).toBeFalsy();
+
+        value.stops[0][0] = 1;
+        style.setLayerProperty('line', 'line-cap', value);
+        expect(style._changes.isDirty()).toBeTruthy();
+    });
+
+    test('respects validate option', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {
+                "geojson": {
+                    "type": "geojson",
+                    "data": {
+                        "type": "FeatureCollection",
+                        "features": []
+                    }
+                }
+            },
+            "layers": [
+                {
+                    "id": "line",
+                    "type": "line",
+                    "source": "geojson"
+                }
+            ]
+        });
+
+        await waitFor(style, "style.load");
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        style.setLayerProperty('line', 'line-cap', 'invalidcap', {validate: false});
+        expect(console.error).not.toHaveBeenCalled();
+        expect(style._changes.isDirty()).toBeTruthy();
+        style.update({});
+
+        style.setLayerProperty('line', 'line-cap', 'differentinvalidcap');
+        expect(console.error).toHaveBeenCalledTimes(1);
+    });
+
+    test(
+        '#4738 postpones source reload until layers have been broadcast to workers',
+        async () => {
+            const style = new Style(new StubMap());
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            style.loadJSON(Object.assign(createStyleJSON(), {
+                "sources": {
+                    "geojson": {
+                        "type": "geojson",
+                        "data": {"type": "FeatureCollection", "features": []}
+                    }
+                },
+                "layers": [
+                    {
+                        "id": "circle",
+                        "type": "circle",
+                        "source": "geojson"
+                    }
+                ]
+            }));
+
+            const tr = new Transform();
+            tr.resize(512, 512);
+
+            await waitFor(style, "style.load");
+            style.update({zoom: tr.zoom, fadeDuration: 0});
+            const sourceCache = style.getOwnSourceCache('geojson');
+            const source = style.getSource('geojson');
+
+            let begun = false;
+            let styleUpdateCalled = false;
+
+            await new Promise(resolve => {
+                source.on('data', (e) => setTimeout(() => {
+                    if (!begun && sourceCache.loaded()) {
+                        begun = true;
+                        vi.spyOn(sourceCache, 'reload').mockImplementation(() => {
+                            expect(styleUpdateCalled).toBeTruthy(); // loadTile called before layer data broadcast
+                            resolve();
+                        });
+
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+                        source.setData({"type": "FeatureCollection", "features": []});
+                        style.setLayerProperty('circle', 'circle-color', {type: 'identity', property: 'foo'});
+                    }
+
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    if (begun && e.sourceDataType === 'content') {
+                        // setData() worker-side work is complete; simulate an
+                        // animation frame a few ms later, so that this test can
+                        // confirm that SourceCache#reload() isn't called until
+                        // after the next Style#update()
+                        setTimeout(() => {
+                            styleUpdateCalled = true;
+                            style.update({});
+                        }, 50);
+                    }
+                }), 0);
+            });
+        });
+
+    test('#5802 clones the input', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": [
+                {
+                    "id": "background",
+                    "type": "background"
+                }
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        const value = {stops: [[0, 'red'], [10, 'blue']]};
+        style.setLayerProperty('background', 'background-color', value);
+        expect(style.getPaintProperty('background', 'background-color')).not.toBe(value);
+        expect(style._changes.isDirty()).toBeTruthy();
+
+        style.update({});
+        expect(style._changes.isDirty()).toBeFalsy();
+
+        value.stops[0][0] = 1;
+        style.setLayerProperty('background', 'background-color', value);
+        expect(style._changes.isDirty()).toBeTruthy();
+    });
+
+    test('appearances', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": [
+                {
+                    "id": "background",
+                    "type": "background"
+                }
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        const value = [
+            {
+                "condition": ["==", ["feature-state", "availability"], "partial"],
+                "properties": {
+                    "icon-image": ["image", "charging-station", {"params": {"fill": "orange"}}],
+                    "icon-size": 1.1
+                }
+            },
+            {
+                "name": "No availability",
+                "condition": ["==", ["feature-state", "availability"], "none"],
+                "properties": {
+                    "icon-image": ["image", "charging-station", {"params": {"fill": "red"}}],
+                    "icon-size": 1
+                }
+            }
+        ];
+        style.setLayerProperty('background', 'appearances', value);
+        expect(style._layers['background'].appearances.length).not.toBe(0);
+        expect(style._changes.isDirty()).toBeTruthy();
+
+        style.update({});
+        expect(style._changes.isDirty()).toBeFalsy();
+    });
+});
+
 describe('Style#getLayoutProperty', () => {
     test('#5802 clones the output', async () => {
         const style = new Style(new StubMap());
@@ -1421,6 +1703,7 @@ describe('Style#getLayoutProperty', () => {
         expect(style._changes.isDirty()).toBeFalsy();
 
         const value = style.getLayoutProperty('line', 'line-cap');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         value.stops[0][0] = 1;
         style.setLayoutProperty('line', 'line-cap', value);
         expect(style._changes.isDirty()).toBeTruthy();
@@ -1453,7 +1736,9 @@ describe('Style#setFilter', () => {
         await waitFor(style, "style.load");
         style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(value.layers[0].id).toEqual('symbol');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(value.layers[0].filter).toEqual(['==', 'id', 1]);
         };
 
@@ -1486,7 +1771,9 @@ describe('Style#setFilter', () => {
 
         style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(value.layers[0].id).toEqual('symbol');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(value.layers[0].filter).toEqual(['==', 'id', 2]);
         };
         filter[2] = 2;
@@ -1542,7 +1829,9 @@ describe('Style#setFilter', () => {
         await waitFor(style, "style.load");
         style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(value.layers[0].id).toEqual('symbol');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(value.layers[0].filter).toEqual('notafilter');
         };
 
@@ -1580,6 +1869,7 @@ describe('Style#setLayerZoomRange', () => {
         await waitFor(style, "style.load");
         style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             expect(value.map((layer) => { return layer.id; })).toEqual(['symbol']);
         };
 
@@ -1684,6 +1974,7 @@ test('Style#hasLayer, Style#has*Layers()', () => {
 
 test('Style defers expensive methods', async () => {
     const style = new Style(new StubMap());
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(createStyleJSON({
         "sources": {
             "streets": createGeoJSONSource(),
@@ -1712,6 +2003,7 @@ test('Style defers expensive methods', async () => {
 
     style.update({});
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(style.fire.mock.calls[0][0].type).toEqual('data');
 
     // called per source
@@ -1733,8 +2025,10 @@ describe('Style#query*Features', () => {
 
     beforeEach(() => {
         transform = new Transform();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         transform.resize(100, 100);
         style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         style.loadJSON({
             "version": 8,
             "sources": {
@@ -1750,17 +2044,22 @@ describe('Style#query*Features', () => {
         onError = vi.fn();
 
         return new Promise((resolve) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             style.on('error', onError).on('style.load', () => resolve());
         });
     });
 
     test('querySourceFeatures emits an error on incorrect filter', () => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         expect(style.querySourceFeatures([10, 100], {filter: 7}, transform)).toEqual([]);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(onError.mock.calls[0][0].error.message).toMatch(/querySourceFeatures\.filter/);
     });
 
     test('queryRenderedFeatures emits an error on incorrect filter', () => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         expect(style.queryRenderedFeatures([0, 0], {filter: 7}, transform)).toEqual([]);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(onError.mock.calls[0][0].error.message).toMatch(/queryRenderedFeatures\.filter/);
     });
 
@@ -1768,10 +2067,12 @@ describe('Style#query*Features', () => {
         let errors = 0;
         vi.spyOn(style, 'fire').mockImplementation((event) => {
             if (event.error) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 console.log(event.error.message);
                 errors++;
             }
         });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         style.queryRenderedFeatures([0, 0], {filter: "invalidFilter", validate: false}, transform);
         expect(errors).toEqual(0);
     });
@@ -1781,24 +2082,29 @@ describe('Style#query*Features', () => {
         vi.spyOn(style, 'fire').mockImplementation((event) => {
             if (event.error) errors++;
         });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         style.querySourceFeatures('foo', {filter: "invalidFilter", validate: false}, transform);
         expect(errors).toEqual(0);
     });
 
     test('queryRenderedFeatures does not break on custom layers', () => {
         style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         style.loadJSON({
             "version": 8,
             "sources": {},
             "layers": []
         });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         style.on('style.load', () => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             style.addLayer({
                 "id": "custom",
                 "type": "custom",
                 render() {}
             });
             expect(() => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 style.queryRenderedFeatures([0, 0], {}, transform);
             }).not.toThrowError();
         });
@@ -1923,6 +2229,7 @@ describe('Style#setTerrain', () => {
 
     test('raises error during creation terrain without source', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
 
         await waitFor(style, "style.load");
@@ -1942,6 +2249,7 @@ describe('Style#setTerrain', () => {
     test('updates terrain properties', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
         await waitFor(style, "style.load");
 
@@ -2036,12 +2344,19 @@ describe('Style#setFog', () => {
 });
 
 describe('Style#getFog', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const defaultHighColor = styleSpec.fog["high-color"].default;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const defaultStarIntensity = styleSpec.fog["star-intensity"].default;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const defaultSpaceColor = styleSpec.fog["space-color"].default;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const defaultRange = styleSpec.fog["range"].default;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const defaultColor = styleSpec.fog["color"].default;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const defaultHorizonBlend = styleSpec.fog["horizon-blend"].default;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const defaultVerticalRange = styleSpec.fog["vertical-range"].default;
 
     test('rolls up inline source into style', async () => {
@@ -2060,9 +2375,13 @@ describe('Style#getFog', () => {
             "range": [0, 1],
             "color": "white",
             "horizon-blend": 0,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "high-color": defaultHighColor,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "star-intensity": defaultStarIntensity,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "space-color": defaultSpaceColor,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "vertical-range": defaultVerticalRange
         });
     });
@@ -2079,12 +2398,19 @@ describe('Style#getFog', () => {
         await waitFor(style, "style.load");
         expect(style.getFog()).toBeTruthy();
         expect(style.getFog()).toEqual({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "range": defaultRange,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "color": defaultColor,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "horizon-blend": defaultHorizonBlend,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "high-color": defaultHighColor,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "star-intensity": defaultStarIntensity,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "space-color": defaultSpaceColor,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             "vertical-range": defaultVerticalRange
         });
     });
@@ -2189,6 +2515,7 @@ describe('Style#setColorTheme', () => {
 
 test('Style#addImage', async () => {
     const style = new Style(new StubMap());
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(createStyleJSON());
     await waitFor(style, 'style.load');
 
@@ -2223,6 +2550,7 @@ test('Style#addImage', async () => {
     expect(errorSpy).toHaveBeenLastCalledWith(
         expect.objectContaining({
             type: 'error',
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error: expect.objectContaining({message: 'An image with the name "image" already exists.'})
         })
     );
@@ -2230,6 +2558,7 @@ test('Style#addImage', async () => {
 
 test('Style#addImages', async () => {
     const style = new Style(new StubMap());
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(createStyleJSON());
     await waitFor(style, 'style.load');
 
@@ -2241,6 +2570,7 @@ test('Style#addImages', async () => {
     const imageId2 = ImageId.from('image2');
     styleImageMap.set(imageId1, {});
     styleImageMap.set(imageId2, {});
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.addImages(styleImageMap);
 
     expect(style._changes.isDirty()).toEqual(true);
@@ -2262,6 +2592,7 @@ test('Style#addImages', async () => {
 
 test('Style#updateImage', async () => {
     const style = new Style(new StubMap());
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(createStyleJSON());
     await waitFor(style, 'style.load');
 
@@ -2300,6 +2631,7 @@ test('Style#updateImage', async () => {
 
 test('Style#removeImage', async () => {
     const style = new Style(new StubMap());
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(createStyleJSON());
     await waitFor(style, 'style.load');
 
@@ -2331,6 +2663,7 @@ test('Style#removeImage', async () => {
 test('Style#_updateTilesForChangedImages', async () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(createStyleJSON({sources: {geojson: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}}}));
 
     await waitFor(style, 'style.load');
@@ -2372,4 +2705,95 @@ test('Style#_updateTilesForChangedImages', async () => {
     expect(style._updateTilesForChangedImages).toHaveBeenCalledTimes(2);
     expect(sourceCache.reloadTilesForDependencies).toHaveBeenCalledTimes(1);
     expect(sourceCache.reloadTilesForDependencies).toHaveBeenCalledWith(['icons', 'patterns'], [imageIdStr]);
+});
+
+test('Occlusion ordering', async () => {
+    const style = new Style(new StubMap());
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const initialStyle = createStyleJSON({
+        sources: {
+            composite: {type: 'vector', tiles: []},
+            'mapbox-dem': {
+                type: 'raster-dem',
+                tiles: ['http://example.com/{z}/{x}/{y}.png'],
+                tileSize: 256,
+                maxzoom: 14
+            }
+        },
+        layers: [
+            {id: 'land-1', type: 'background'},
+            {id: 'symbol-occlusion-1', type: 'symbol', source: 'composite', 'source-layer': 'poi', paint: {"icon-occlusion-opacity": 1.0}},
+            {id: 'symbol', type: 'symbol', source: 'composite', 'source-layer': 'poi'},
+            {id: '3d-building-1', type: 'fill-extrusion', source: 'composite', 'source-layer': 'building'},
+            {id: 'symbol-occlusion-2', type: 'symbol', source: 'composite', 'source-layer': 'poi', paint: {"icon-occlusion-opacity": 1.0}},
+            {id: '3d-building-2', type: 'fill-extrusion', source: 'composite', 'source-layer': 'building'},
+            {id: 'land-2', type: 'background'},
+            {id: 'symbol-occlusion-3', type: 'symbol', source: 'composite', 'source-layer': 'poi', paint: {"icon-occlusion-opacity": 1.0}},
+            {id: 'land-3', type: 'background'},
+        ]
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    style.loadJSON(initialStyle);
+
+    await waitFor(style, "style.load");
+
+    expect(style.order).toEqual([
+        makeFQID('land-1'),
+        makeFQID('symbol'),
+        makeFQID('3d-building-1'),
+        makeFQID('3d-building-2'),
+        makeFQID('symbol-occlusion-1'),
+        makeFQID('symbol-occlusion-2'),
+        makeFQID('land-2'),
+        makeFQID('symbol-occlusion-3'),
+        makeFQID('land-3'),
+    ]);
+});
+
+test('Occlusion ordering & draped layers', async () => {
+    const style = new Style(new StubMap());
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const initialStyle = createStyleJSON({
+        terrain: {source: 'mapbox-dem', exaggeration: 1.5},
+        sources: {
+            composite: {type: 'vector', tiles: []},
+            'mapbox-dem': {
+                type: 'raster-dem',
+                tiles: ['http://example.com/{z}/{x}/{y}.png'],
+                tileSize: 256,
+                maxzoom: 14
+            }
+        },
+        layers: [
+            {id: 'land-1', type: 'background'},
+            {id: 'symbol-occlusion-1', type: 'symbol', source: 'composite', 'source-layer': 'poi', paint: {"icon-occlusion-opacity": 1.0}},
+            {id: 'symbol', type: 'symbol', source: 'composite', 'source-layer': 'poi'},
+            {id: '3d-building-1', type: 'fill-extrusion', source: 'composite', 'source-layer': 'building'},
+            {id: 'symbol-occlusion-2', type: 'symbol', source: 'composite', 'source-layer': 'poi', paint: {"icon-occlusion-opacity": 1.0}},
+            {id: '3d-building-2', type: 'fill-extrusion', source: 'composite', 'source-layer': 'building'},
+            {id: 'land-2', type: 'background'},
+            {id: 'symbol-occlusion-3', type: 'symbol', source: 'composite', 'source-layer': 'poi', paint: {"icon-occlusion-opacity": 1.0}},
+            {id: 'land-3', type: 'background'},
+        ]
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    style.loadJSON(initialStyle);
+
+    await waitFor(style, "style.load");
+
+    expect(style.order).toEqual([
+        makeFQID('land-1'),
+        makeFQID('land-2'),
+        makeFQID('land-3'),
+        makeFQID('symbol'),
+        makeFQID('3d-building-1'),
+        makeFQID('3d-building-2'),
+        makeFQID('symbol-occlusion-1'),
+        makeFQID('symbol-occlusion-2'),
+        makeFQID('symbol-occlusion-3'),
+    ]);
 });

@@ -125,6 +125,7 @@
     },
     "indoor": {
       "type": "indoor",
+      "private": true,
       "experimental": true,
       "doc": "Controls the behaviour of indoor features."
     },
@@ -845,7 +846,6 @@
         "length": 4,
         "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`."
       },
-      "experimental": true,
       "doc": "An array of additional discrete geographic regions where tiles are available. When used alongside the `bounds` property, these regions act as an additional filter - Mapbox GL will only request tiles that are both within the `bounds` and any of the regions defined in `extra_bounds`. When used independently (without `bounds`), Mapbox GL will request tiles that fall within any of the regions in `extra_bounds`. This allows for more fine-grained control over tile requests, particularly when dealing with sparse data coverage."
     },
     "scheme": {
@@ -877,7 +877,7 @@
     },
     "promoteId": {
       "type": "promoteId",
-      "doc": "A property to use as a feature id (for feature state). Either a property name, or an object of the form `{<sourceLayer>: <propertyName>}`. If specified as a string for a vector tile source, the same property is used across all its source layers. If specified as an object only specified source layers will have id overriden, others will fallback to original feature id"
+      "doc": "A property to use as a feature id (for feature state). It can be a property name, or an expression to evaluate as the ID, or an object of the form `{<sourceLayer>: <propertyName/expression>}`. The expression can only be feature dependent if it is used. If specified as a string for a vector tile source, the same property is used across all its source layers. If specified as an object only specified source layers will have id overriden, others will fallback to original feature id"
     },
     "volatile": {
       "type": "boolean",
@@ -935,7 +935,6 @@
         "length": 4,
         "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`."
       },
-      "experimental": true,
       "doc": "An array of additional discrete geographic regions where tiles are available. When used alongside the `bounds` property, these regions act as an additional filter - Mapbox GL will only request tiles that are both within the `bounds` and any of the regions defined in `extra_bounds`. When used independently (without `bounds`), Mapbox GL will request tiles that fall within any of the regions in `extra_bounds`. This allows for more fine-grained control over tile requests, particularly when dealing with sparse data coverage."
     },
     "minzoom": {
@@ -1027,7 +1026,6 @@
         "length": 4,
         "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`."
       },
-      "experimental": true,
       "doc": "An array of additional discrete geographic regions where tiles are available. When used alongside the `bounds` property, these regions act as an additional filter - Mapbox GL will only request tiles that are both within the `bounds` and any of the regions defined in `extra_bounds`. When used independently (without `bounds`), Mapbox GL will request tiles that fall within any of the regions in `extra_bounds`. This allows for more fine-grained control over tile requests, particularly when dealing with sparse data coverage."
     },
     "minzoom": {
@@ -1120,7 +1118,6 @@
         "length": 4,
         "doc": "An array containing the longitude and latitude of the southwest and northeast corners of the source's bounding box in the following order: `[sw.lng, sw.lat, ne.lng, ne.lat]`."
       },
-      "experimental": true,
       "doc": "An array of additional discrete geographic regions where tiles are available. When used alongside the `bounds` property, these regions act as an additional filter - Mapbox GL will only request tiles that are both within the `bounds` and any of the regions defined in `extra_bounds`. When used independently (without `bounds`), Mapbox GL will request tiles that fall within any of the regions in `extra_bounds`. This allows for more fine-grained control over tile requests, particularly when dealing with sparse data coverage."
     },
     "minzoom": {
@@ -1243,7 +1240,7 @@
     },
     "promoteId": {
       "type": "promoteId",
-      "doc": "A property to use as a feature id (for feature state). Either a property name, or an object of the form `{<sourceLayer>: <propertyName>}`."
+      "doc": "A property to use as a feature id (for feature state). Either a property name, an expression to evaluate as the ID, or an object of the form `{<sourceLayer>: <propertyName/expression>}`. The expression can only be feature dependent if it is used."
     },
     "dynamic": {
       "type": "boolean",
@@ -1315,6 +1312,108 @@
       }
     }
   },
+  "modelNodeOverride": {
+       "orientation": {
+         "type": "array",
+         "value": "number",
+         "length": 3,
+         "default": [0, 0, 0],
+         "period": 360,
+         "units": "degrees",
+         "doc": "Override the orientation of the model node in euler angles [x, y, z]."
+       }
+  },
+  "modelNodeOverrides": {
+    "*": {
+       "type": "modelNodeOverride",
+       "doc": "An object defining model node properties to override. Object key is the node name as defined in the model."
+    }
+  },
+  "modelMaterialOverride": {
+    "model-color": {
+      "type": "color",
+      "doc": "Override the tint color of the material."
+    },
+    "model-color-mix-intensity": {
+      "type": "number",
+      "doc": "Override the intensity of model-color (on a scale from 0 to 1) in color mix with original 3D model's colors."
+    },
+    "model-opacity": {
+      "type": "number",
+      "doc": "Override the opacity of the material."
+    },
+    "model-emissive-strength": {
+      "type": "number",
+      "units": "intensity",
+      "doc": "Override strength of the emission of material."
+    }
+  },
+  "modelMaterialOverrides": {
+    "*": {
+       "type": "modelMaterialOverride",
+        "doc": "An object defining material properties to override. Object key is the material name as defined in the model."
+    }
+  },
+  "modelSourceModel": {
+      "uri": {
+        "type": "string",
+        "required": true,
+        "doc": "A URL to a model resource. Supported protocols are `http:`, `https:`, and `mapbox://<Model ID>`."
+      },
+      "position": {
+        "type": "array",
+        "value": "number",
+        "length": 2,
+        "required": false,
+        "default": [0,0],
+        "minimum": [-180, -90],
+        "maximum": [180, 90],
+        "doc": "Position of the model in longitude and latitude [lng, lat]."
+      },
+      "orientation": {
+        "type": "array",
+        "value": "number",
+        "length": 3,
+        "required": false,
+        "default": [0,0,0],
+        "period": 360,
+        "units": "degrees",
+        "doc": "Orientation of the model in euler angles [x, y, z]."
+      },
+      "nodeOverrides": {
+        "type": "modelNodeOverrides",
+        "required": false,
+        "doc": "A collection of node overrides."
+      },
+      "materialOverrides": {
+        "type": "modelMaterialOverrides",
+        "required": false,
+        "doc": "A collection of material overrides."
+      },
+      "nodeOverrideNames": {
+        "type": "array",
+        "value": "string",
+        "doc" : "An array of one or more model node names whose transform will be overridden from model layer paint properties.",
+        "required": false
+      },
+      "materialOverrideNames": {
+        "type": "array",
+        "value": "string",
+        "doc" : "An array of one or more model material names whose properties will be overridden from model layer paint properties.",
+        "required": false
+      },
+      "featureProperties": {
+        "type": "*",
+        "doc": "An object defining custom properties of the model. Properties are accessible as feature properties in expressions.",
+        "required": false
+      }
+  },
+  "modelSourceModels": {
+    "*": {
+       "type": "modelSourceModel",
+       "doc": "A 3D model and its properties."
+    }
+  },
   "source_model" : {
     "type": {
       "required": true,
@@ -1342,7 +1441,11 @@
     "tiles": {
       "type": "array",
       "value": "string",
-      "doc": "An array of one or more tile source URLs, as in the TileJSON spec."
+      "doc": "An array of one or more tile source URLs, as in the TileJSON spec. Requires `batched-model` source type."
+    },
+    "models": {
+      "type": "modelSourceModels",
+      "doc": "Defines properties of 3D models in collection. Requires `model` source type."
     }
   },
   "layer": {
@@ -1439,6 +1542,9 @@
         "building": {
           "doc": "A procedural 3D building.",
           "sdk-support": {
+            "js": "3.16.0",
+            "android": "11.16.0",
+            "ios": "11.16.0"
           },
           "experimental": true,
           "private": true
@@ -1476,7 +1582,6 @@
         },
         "model": {
           "doc": "A 3D model",
-          "experimental": true,
           "sdk-support": {
             "basic functionality": {
               "js": "3.0.0",
@@ -1580,18 +1685,31 @@
       "type": "array",
       "value": "appearance",
       "supported-layer-types": ["symbol"],
-      "private": true,
-      "doc": "Conditional styling applied to layer features based on dynamic conditions. If multiple conditions are true, only the first matching appearance will be applied. Only properties marked with 'Can be used in appearances' are supported."
+      "experimental": true,
+      "doc": "Conditional styling applied to symbol layer features based on dynamic conditions. If multiple conditions are true, only the first matching appearance will be applied. Only properties marked with 'Works with appearances' are supported."
     }
   },
   "appearance": {
     "condition": {
-      "type": "expression",
-      "doc": "A boolean expression that determines when this appearance should be applied."
+      "type": "boolean",
+      "doc": "A boolean expression that determines when this appearance should be applied.",
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "pitch",
+          "feature",
+          "feature-state",
+          "measure-light",
+          "distance-from-center"
+        ]
+      },
+      "property-type": "data-driven"
     },
     "name": {
       "type": "string",
-      "doc": "Optional name for this appearance. Non-empty names should be unique within a layer."
+      "doc": "Optional name for this appearance. Non-empty names should be unique within a layer.",
+      "property-type": "constant"
     },
     "properties": {
       "type": "*",
@@ -2122,6 +2240,9 @@
       "doc": "Whether this layer is displayed.",
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "expression": {
@@ -2137,8 +2258,14 @@
       "private": true,
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         },
         "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "expression": {
@@ -2158,8 +2285,46 @@
       "experimental": true,
       "property-type": "data-driven",
       "sdk-support": {
-        "basic functionality": {},
-        "data-driven styling": {}
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        },
+        "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
+      },
+      "expression": {
+        "interpolated": false,
+        "parameters": [
+          "feature"
+        ]
+      },
+      "requires": [
+        "building-facade"
+      ]
+    },
+    "building-facade-unit-width": {
+      "type": "number",
+      "minimum": 1.0,
+      "maximum": 20.0,
+      "default": 3.1,
+      "doc": "Width of a floor. Think of this as measure how wide each unit should be. This effectively determines the number of units per each floor. Note that this does not affect the ground level facades (i.e. number of windows).",
+      "experimental": true,
+      "property-type": "data-driven",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        },
+        "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
       },
       "expression": {
         "interpolated": false,
@@ -2178,12 +2343,20 @@
       "minimum": 0.1,
       "maximum": 1.0,
       "default": [0.9, 0.9],
-      "doc": "Given as fractions, specifies the percentage of floor area covered by windows when building-facade is enabled",
+      "doc": "Given as fractions, specifies the percentage of unit area covered by windows when building-facade is enabled. Note that the area of a unit is ultimately determined by `building-facade-unit-width` and `building-facade-floors`.",
       "experimental": true,
       "property-type": "data-driven",
       "sdk-support": {
-        "basic functionality": {},
-        "data-driven styling": {}
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        },
+        "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
       },
       "expression": {
         "interpolated": false,
@@ -2226,8 +2399,14 @@
       "private": true,
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         },
         "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "expression": {
@@ -2249,8 +2428,14 @@
       "private": true,
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         },
         "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "expression": {
@@ -2272,14 +2457,114 @@
       "private": true,
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         },
         "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "expression": {
         "interpolated": false
       },
       "property-type": "data-driven"
+    },
+    "building-flood-light-wall-radius": {
+      "property-type": "data-driven",
+      "type": "number",
+      "experimental": true,
+      "units": "meters",
+      "default": 0,
+      "minimum": 0,
+      "doc": "The extent of the flood light effect on the walls of the buildings in meters.",
+      "requires": [
+        "lights"
+      ],
+      "transition": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "feature",
+          "feature-state"
+        ]
+      },
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        },
+        "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
+      }
+    },
+    "building-flood-light-ground-radius": {
+      "property-type": "data-driven",
+      "type": "number",
+      "experimental": true,
+      "units": "meters",
+      "default": 0,
+      "doc": "The extent of the flood light effect on the ground beneath the buildings in meters.",
+      "requires": [
+        "lights"
+      ],
+      "transition": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "feature",
+          "feature-state"
+        ]
+      },
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        },
+        "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
+      }
+    },
+    "building-flip-roof-orientation": {
+      "property-type": "data-driven",
+      "type": "boolean",
+      "experimental": true,
+      "units": "meters",
+      "default": false,
+      "doc": "Flips the orientation of the roofs for the buildings. This only affects simple geometries. Namely buildings whose footprints form a quadrilateral. By default (false), the roof ridge takes the direction of the longer edge of the quadrilateral.",
+      "transition": true,
+      "requires": [
+        "building-roof-shape"
+      ],
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "feature",
+          "feature-state"
+        ]
+      },
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        },
+        "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
+      }
     }
   },
   "layout_line": {
@@ -2762,6 +3047,11 @@
           "ios": "11.9.0"
         }
       },
+      "requires": [
+        {
+          "symbol-z-elevate": true
+        }
+      ],
       "expression": {
         "interpolated": false,
         "parameters": [
@@ -2914,9 +3204,9 @@
         0.8,
         2
       ],
-      "doc": "Defines the minimum and maximum scaling factors for icon related properties like `icon-size`, `icon-halo-width`, `icon-halo-blur`",
-      "minimum": 0.1,
-      "maximum": 10,
+      "doc": "Limits the possible scaling range for `icon-size`, `icon-halo-width`, `icon-halo-blur` properties to be within [min-scale, max-scale]",
+      "minimum": [0.1, 0.1],
+      "maximum": [10, 10],
       "experimental": true,
       "private": true,
       "expression": {
@@ -3401,6 +3691,7 @@
       "requires": [
         "text-field"
       ],
+      "appearance": true,
       "sdk-support": {
         "basic functionality": {
           "js": "0.10.0",
@@ -3430,9 +3721,9 @@
         0.8,
         2
       ],
-      "doc": "Defines the minimum and maximum scaling factors for text related properties like `text-size`, `text-max-width`, `text-halo-width`, `font-size`",
-      "minimum": 0.1,
-      "maximum": 10,
+      "doc": "Limits the possible scaling range for `text-size`, `text-halo-width`, `text-halo-blur` properties to be within [min-scale, max-scale]",
+      "minimum": [0.1, 0.1],
+      "maximum": [10, 10],
       "experimental": true,
       "private": true,
       "expression": {
@@ -3798,6 +4089,7 @@
       "requires": [
         "text-field"
       ],
+      "appearance": true,
       "sdk-support": {
         "basic functionality": {
           "js": "0.10.0",
@@ -3929,6 +4221,7 @@
           "!": "text-radial-offset"
         }
       ],
+      "appearance": true,
       "sdk-support": {
         "basic functionality": {
           "js": "0.10.0",
@@ -5523,6 +5816,19 @@
           }
         }
       },
+      "is-active-floor": {
+        "doc": "Experimental. Returns `true` if the input floor id belongs to one of the active indoor floors, `false` otherwise. In case of array of strings, returns `true` if any of the input floor ids belongs to one of the active indoor floors, `false` otherwise. Only supported in filters.",
+        "group": "Indoor",
+        "experimental": true,
+        "private": true,
+        "sdk-support": {
+          "basic functionality": {
+            "js": "3.16.0",
+            "android": "11.16.0",
+            "ios": "11.16.0"
+          }
+        }
+      },
       "random": {
         "doc": "Returns a random value in the specified range (first two input numbers) based on a supplied seed (third input). The seed can be an expression or a constant number or string value.",
         "group": "Math",
@@ -6351,26 +6657,31 @@
       }
     }
   },
-  "indoor": {
-    "floorplanFeaturesetId": {
+  "indoor_source": {
+    "sourceId": {
       "type": "string",
-      "doc": "An ID of a featureset to be used to query indoor floorplans.",
+      "doc": "Source ID of a source to be used to retrieve indoor data.",
       "experimental": true,
+      "private": true,
       "transition": false,
-      "property-type": "data-constant",
-      "expression": {
-        "interpolated": false
-      }
+      "property-type": "data-constant"
     },
-    "buildingFeaturesetId": {
-      "type": "string",
-      "doc": "An ID of a featureset to be used to add interactivity for building selection.",
+    "sourceLayers": {
+      "type": "array",
+      "value": "string",
+      "doc": "An array of source layers to be used to retrieve indoor data.",
       "experimental": true,
+      "private": true,
       "transition": false,
-      "property-type": "data-constant",
-      "expression": {
-        "interpolated": false
-      }
+      "property-type": "data-constant"
+    }
+  },
+  "indoor": {
+    "*": {
+      "type": "indoor_source",
+      "private": true,
+      "experimental": true,
+      "doc": "Specification of an indoor source - sourceId and sourceLayer required for vector source, for GeoJSON sourceLayers should be omitted."
     }
   },
   "light": {
@@ -8202,6 +8513,9 @@
       "private": true,
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "expression": {
@@ -8229,6 +8543,9 @@
       "doc": "Controls the intensity of ambient occlusion when shading concave angles between walls and roof crevices and windows.",
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       }
     },
@@ -8250,6 +8567,9 @@
       "doc": "Controls the intensity of shading near ground",
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       }
     },
@@ -8270,6 +8590,9 @@
       "doc": "The extent of the ambient occlusion effect on the ground beneath the procedural buildings in meters.",
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       }
     },
@@ -8291,6 +8614,9 @@
       },
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       }
     },
@@ -8311,6 +8637,9 @@
       },
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       }
     },
@@ -8322,7 +8651,10 @@
       "experimental": true,
       "private": true,
       "sdk-support": {
-          "basic functionality": {
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "property-type": "data-constant"
@@ -8337,8 +8669,14 @@
       "transition": false,
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         },
         "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "expression": {
@@ -8362,8 +8700,14 @@
       "private": true,
       "sdk-support": {
         "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         },
         "data-driven styling": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
         }
       },
       "expression": {
@@ -8385,7 +8729,11 @@
       "experimental": true,
       "property-type": "data-constant",
       "sdk-support": {
-        "basic functionality": {}
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
       },
       "expression": {
         "interpolated": true,
@@ -8406,9 +8754,92 @@
         "interpolated": false
       },
       "sdk-support": {
-          "basic functionality": {}
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
       },
       "property-type": "data-constant"
+    },
+    "building-flood-light-color": {
+      "property-type": "data-constant",
+      "type": "color",
+      "experimental": true,
+      "default": "#ffffff",
+      "doc": "The color of the flood light effect on the walls of the buildings.",
+      "requires": [
+        "lights"
+      ],
+      "use-theme": true,
+      "transition": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "measure-light"
+        ]
+      },
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
+      }
+    },
+    "building-flood-light-intensity": {
+      "property-type": "data-constant",
+      "type": "number",
+      "experimental": true,
+      "default": 0.0,
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "doc": "The intensity of the flood light color.",
+      "requires": [
+        "lights"
+      ],
+      "transition": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom",
+          "measure-light"
+        ]
+      },
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
+      }
+    },
+    "building-flood-light-ground-attenuation": {
+      "property-type": "data-constant",
+      "type": "number",
+      "experimental": true,
+      "default": 0.69,
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "doc": "Provides a control to futher fine-tune the look of the flood light on the ground beneath the buildings. Lower values give the effect a more solid look while higher values make it smoother.",
+      "requires": [
+        "lights"
+      ],
+      "transition": true,
+      "expression": {
+        "interpolated": true,
+        "parameters": [
+          "zoom"
+        ]
+      },
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.16.0",
+          "android": "11.16.0",
+          "ios": "11.16.0"
+        }
+      }
     }
   },
   "paint_line": {
@@ -8890,6 +9321,11 @@
           "js": "3.0.0",
           "android": "11.0.0",
           "ios": "11.0.0"
+        },
+        "data-driven styling": {
+          "js": "3.17.0",
+          "android": "11.17.0",
+          "ios": "11.17.0"
         }
       },
       "expression": {
@@ -8899,7 +9335,7 @@
           "measure-light"
         ]
       },
-      "property-type": "data-constant"
+      "property-type": "data-driven"
     },
     "line-border-width": {
       "type": "number",
@@ -10170,6 +10606,11 @@
           "ios": "11.7.0"
         }
       },
+      "requires": [
+        {
+          "symbol-z-elevate": true
+        }
+      ],
       "expression": {
         "interpolated": true,
         "parameters": [
@@ -10879,7 +11320,8 @@
       "expression": {
         "interpolated": true,
         "parameters": [
-          "zoom"
+          "zoom",
+          "measure-light"
         ]
       },
       "property-type": "data-constant"
@@ -11534,6 +11976,34 @@
           "js": "3.5.0"
         }
       }
+    },
+    "model-elevation-reference": {
+      "type": "enum",
+      "doc": "Selects the base of the model. Some modes might require precomputed elevation data in the tileset.",
+      "values": {
+        "sea": {
+          "doc": "Elevated rendering is enabled. Use this mode to elevate models relative to the sea level."
+        },
+        "ground": {
+          "doc": "Elevated rendering is enabled. Use this mode to elevate models relative to the ground's height below them."
+        },
+        "hd-road-markup": {
+          "doc": "Elevated rendering is enabled. Use this mode to describe additive and stackable features that should exist only on top of road polygons."
+        }
+      },
+      "default": "ground",
+      "transition": false,
+      "expression": {
+        "interpolated": false
+      },
+      "property-type": "data-constant",
+      "sdk-support": {
+        "basic functionality": {
+          "js": "3.17.0",
+          "android": "11.10.0",
+          "ios": "11.10.0"
+        }
+      }
     }
   },
   "transition": {
@@ -11573,7 +12043,7 @@
   "promoteId": {
     "*": {
       "type": "*",
-      "doc": "A feature property name to use as the ID, or an expression to evaluate as the ID for feature state."
+      "doc": "A feature property name to use as the ID, or an expression to evaluate as the ID for feature state. The expression can only be feature dependent if it is used."
     }
   },
   "$doc": {

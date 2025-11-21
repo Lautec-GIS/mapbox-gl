@@ -1,6 +1,4 @@
-
 /* eslint-disable camelcase */
-
 import esbuild from 'rollup-plugin-esbuild';
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
@@ -13,10 +11,20 @@ import {createFilter} from '@rollup/pluginutils';
 import browserslistToEsbuild from 'browserslist-to-esbuild';
 import minifyStyleSpec from './rollup_plugin_minify_style_spec.js';
 
-// Common set of plugins/transformations shared across different rollup
-// builds (main mapboxgl bundle, style-spec package, benchmarks bundle)
-
-export const plugins = ({mode, minified, production, test, bench, keepClassNames}) => [
+/**
+ * Common set of plugins/transformations shared across different rollup
+ * builds (umd and esm mapboxgl bundles, style-spec package, benchmarks bundle)
+ *
+ * @param {Object} options
+ * @param {string | 'dev' | 'bench' | 'production'} [options.mode] - build mode
+ * @param {string | 'esm' | 'umd'} [options.format] - output format
+ * @param {boolean} [options.minified] - whether to minify the output
+ * @param {boolean} [options.production] - whether this is a production build
+ * @param {boolean} [options.test] - whether this is a test build
+ * @param {boolean} [options.bench] - whether this is a benchmark build
+ * @param {boolean} [options.keepClassNames] - whether to keep class names during minification
+ */
+export const plugins = ({mode, format, minified, production, test, bench, keepClassNames}) => [
     minifyStyleSpec(),
     esbuild({
         target: browserslistToEsbuild(),
@@ -24,16 +32,17 @@ export const plugins = ({mode, minified, production, test, bench, keepClassNames
         sourceMap: true,
         define: {
             'import.meta.env': JSON.stringify({mode}),
-        },
+        }
     }),
     json({
         exclude: 'src/style-spec/reference/v8.json'
     }),
     (production && !bench) ? strip({
         sourceMap: true,
-        functions: ['PerformanceUtils.*', 'WorkerPerformanceUtils.*', 'Debug.*'],
+        functions: ['PerformanceUtils.*', 'WorkerPerformanceUtils.*', 'Debug.*', 'DevTools.*'],
         include: ['**/*.ts']
     }) : false,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
     production || bench ? unassert({include: ['*.js', '**/*.js', '*.ts', '**/*.ts']}) : false,
     test ? replace({
         preventAssignment: true,
@@ -65,6 +74,7 @@ export const plugins = ({mode, minified, production, test, bench, keepClassNames
 
 // Using this instead of rollup-plugin-string to add minification
 function glsl(include, minify) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const filter = createFilter(include);
     return {
         name: 'glsl',
@@ -73,11 +83,17 @@ function glsl(include, minify) {
 
             // barebones GLSL minification
             if (minify) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 code = code.trim() // strip whitespace at the start/end
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     .replace(/\s*\/\/[^\n]*\n/g, '\n') // strip double-slash comments
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     .replace(/\n+/g, '\n') // collapse multi line breaks
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     .replace(/\n\s+/g, '\n') // strip indentation
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     .replace(/\s?([+-\/*=,])\s?/g, '$1') // strip whitespace around operators
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     .replace(/([;,\{\}])\n(?=[^#])/g, '$1'); // strip more line breaks
             }
 

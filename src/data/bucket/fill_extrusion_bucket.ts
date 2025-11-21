@@ -7,7 +7,7 @@ import {
     PosArray,
     FillExtrusionWallArray,
 } from '../array_types';
-import {members as layoutAttributes, fillExtrusionGroundAttributes, centroidAttributes, fillExtrusionAttributesExt, hiddenByLandmarkAttributes, wallAttributes} from './fill_extrusion_attributes';
+import {members as layoutAttributes, fillExtrusionGroundAttributes, fillExtrusionGroundRadiusAttributes, centroidAttributes, fillExtrusionAttributesExt, hiddenByLandmarkAttributes, wallAttributes} from './fill_extrusion_attributes';
 import SegmentVector from '../segment';
 import {ProgramConfigurationSet} from '../program_configuration';
 import {TriangleIndexArray} from '../index_array_type';
@@ -35,9 +35,10 @@ import {dropBufferConnectionLines, createLineWallGeometry} from '../../geo/line_
 import {PerformanceUtils} from '../../util/performance';
 
 import type {Elevation} from '../../terrain/elevation';
+import type {FillExtrusionGroundRadiusLayoutArray} from '../array_types';
 import type {Frustum} from '../../util/primitives';
 import type {Region, ReplacementSource} from '../../../3d-style/source/replacement_source';
-import type {Feature} from "../../style-spec/expression";
+import type {Feature, GlobalProperties} from "../../style-spec/expression";
 import type {ClippedPolygon} from '../../util/polygon_clipping';
 import type {vec3} from 'gl-matrix';
 import type {CanonicalTileID, OverscaledTileID, UnwrappedTileID} from '../../source/tile_id';
@@ -378,6 +379,9 @@ export class GroundEffect {
     indexArray: TriangleIndexArray;
     indexBuffer: IndexBuffer;
 
+    groundRadiusArray: FillExtrusionGroundRadiusLayoutArray = null;
+    groundRadiusBuffer: VertexBuffer = null;
+
     _segments: SegmentVector;
 
     _segmentToGroundQuads: {
@@ -429,7 +433,7 @@ export class GroundEffect {
                 this._segmentToGroundQuads[sid] = [];
                 this._segmentToRegionTriCounts[sid] = [0, 0, 0, 0, 0];
             }
-            let prevFactor;
+            let prevFactor: number;
             {
                 const pa = polyline[n - 1];
                 const pb = polyline[0];
@@ -461,6 +465,7 @@ export class GroundEffect {
                 const idx = segment.vertexLength;
 
                 addGroundVertex(this.vertexArray, pa, pb, 1, 1, a0);
+
                 addGroundVertex(this.vertexArray, pa, pb, 1, 0, a0);
                 addGroundVertex(this.vertexArray, pa, pb, 0, 1, a1);
                 addGroundVertex(this.vertexArray, pa, pb, 0, 0, a1);
@@ -556,6 +561,9 @@ export class GroundEffect {
         if (!this.hasData()) return;
         this.vertexBuffer = context.createVertexBuffer(this.vertexArray, fillExtrusionGroundAttributes.members);
         this.indexBuffer = context.createIndexBuffer(this.indexArray);
+        if (this.groundRadiusArray != null) {
+            this.groundRadiusBuffer = context.createVertexBuffer(this.groundRadiusArray, fillExtrusionGroundRadiusAttributes.members);
+        }
     }
 
     uploadPaintProperties(context: Context) {
@@ -590,7 +598,6 @@ export class GroundEffect {
         if (!this.hasData() || !this._needsHiddenByLandmarkUpdate) {
             return;
         }
-        const m = PerformanceUtils.beginMeasure('GroundEffect:uploadHiddenByLandmark');
         if (!this.hiddenByLandmarkVertexBuffer && this.hiddenByLandmarkVertexArray.length > 0) {
             // Create centroids vertex buffer
             this.hiddenByLandmarkVertexBuffer = context.createVertexBuffer(this.hiddenByLandmarkVertexArray, hiddenByLandmarkAttributes.members, true);
@@ -598,7 +605,6 @@ export class GroundEffect {
             this.hiddenByLandmarkVertexBuffer.updateData(this.hiddenByLandmarkVertexArray);
         }
         this._needsHiddenByLandmarkUpdate = false;
-        PerformanceUtils.endMeasure(m);
     }
 
     destroy() {
@@ -607,6 +613,9 @@ export class GroundEffect {
         this.indexBuffer.destroy();
         if (this.hiddenByLandmarkVertexBuffer) {
             this.hiddenByLandmarkVertexBuffer.destroy();
+        }
+        if (this.groundRadiusBuffer) {
+            this.groundRadiusBuffer.destroy();
         }
         if (this._segments) this._segments.destroy();
         this.programConfigurations.destroy();
@@ -700,6 +709,7 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
     polygonSegments: Array<PolygonSegment>;
 
     worldview: string;
+    hasAppearances: boolean | null;
 
     constructor(options: BucketParameters<FillExtrusionStyleLayer>) {
         this.zoom = options.zoom;
@@ -736,9 +746,13 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
         this.polygonSegments = [];
 
         this.worldview = options.worldview;
+        this.hasAppearances = null;
     }
 
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
+    }
+
+    updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
     }
 
     populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
@@ -757,7 +771,7 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
             const needGeometry = this.layers[0]._featureFilter.needGeometry;
             const evaluationFeature = toEvaluationFeature(feature, needGeometry);
 
-            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview}), evaluationFeature, canonical))
+            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview, activeFloors: options.activeFloors}), evaluationFeature, canonical))
                 continue;
             const bucketFeature: BucketFeature = {
                 id,
@@ -851,7 +865,6 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
         if (!this.needsCentroidUpdate) {
             return;
         }
-        const m = PerformanceUtils.beginMeasure('FillExtrusionBucket:uploadCentroid');
         if (!this.centroidVertexBuffer && this.centroidVertexArray.length > 0) {
             // Create centroids vertex buffer
             this.centroidVertexBuffer = context.createVertexBuffer(this.centroidVertexArray, centroidAttributes.members, true);
@@ -859,7 +872,6 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
             this.centroidVertexBuffer.updateData(this.centroidVertexArray);
         }
         this.needsCentroidUpdate = false;
-        PerformanceUtils.endMeasure(m);
     }
 
     destroy() {
@@ -922,7 +934,7 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
             wallGeometry = createLineWallGeometry(geometry[0]);
             geometry = [wallGeometry.geometry];
         }
-        const isPointOnInnerWall = (index, polygon) => {
+        const isPointOnInnerWall = (index: number, polygon: Array<Point>) => {
             return index < ((polygon.length - 1) / 2.0) || index === polygon.length - 1;
         };
 
@@ -1009,7 +1021,8 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
                     const groundPolyline: Array<Point> = [];
 
                     // The following vectors are used to avoid duplicate normal calculations when going over the vertices.
-                    let na, nb;
+                    let na: Point;
+                    let nb: Point;
                     {
                         const p0 = ring[0];
                         const p1 = ring[1];
@@ -1072,23 +1085,33 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
                     }
                 }
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
                 const indices = this.wallMode ? wallGeometry.indices : earcut(flattened, holeIndices);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 assert(indices.length % 3 === 0);
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 for (let j = 0; j < indices.length; j += 3) {
                     this.footprintIndices.emplaceBack(
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                         fpSegment.vertexOffset + indices[j + 0],
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                         fpSegment.vertexOffset + indices[j + 1],
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                         fpSegment.vertexOffset + indices[j + 2]);
 
                     // clockwise winding order.
                     this.indexArray.emplaceBack(
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                         topIndex + indices[j],
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                         topIndex + indices[j + 2],
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                         topIndex + indices[j + 1]);
                     segment.primitiveLength++;
                 }
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 fpSegment.indexCount += indices.length;
                 fpSegment.vertexCount += this.footprintVertices.length - fpSegment.vertexOffset;
             }
@@ -1102,10 +1125,11 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
                 // Geometry used by ground flood light and AO.
                 const groundPolyline: Array<Point> = [];
 
-                let kFirst;
+                let kFirst: number | undefined;
 
                 // The following vectors are used to avoid duplicate normal calculations when going over the vertices.
-                let na, nb;
+                let na: Point;
+                let nb: Point;
                 {
                     const p0 = ring[0];
                     const p1 = ring[1];
@@ -1466,7 +1490,9 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
             fracMin[1] = subSegment.min.y / EXTENT;
             fracMax[0] = subSegment.max.x / EXTENT;
             fracMax[1] = subSegment.max.y / EXTENT;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const aabbMin = mix(tileMin, tileMax, fracMin);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const aabbMax = mix(tileMin, tileMax, fracMax);
             const aabb = new Aabb([aabbMin[0], aabbMin[1], minZ], [aabbMax[0], aabbMax[1], maxZ]);
             if (aabb.intersectsPrecise(frustum) === 0) {
@@ -1578,6 +1604,7 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
     }
 
     updateReplacement(coord: OverscaledTileID, source: ReplacementSource, layerIndex: number) {
+        const perfStartTime = PerformanceUtils.now();
         // Replacement has to be re-checked if the source has been updated since last time
         if (source.updateTime === this.replacementUpdateTime) {
             return;
@@ -1591,8 +1618,6 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
         }
 
         this.activeReplacements = newReplacements;
-
-        const m = PerformanceUtils.beginMeasure('FillExtrusionBucket:updateReplacement');
 
         if (this.centroidVertexArray.length === 0) {
             this.createCentroidsBuffer();
@@ -1612,10 +1637,17 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
             // would be reported overlapping due to limited precision (16 bit) of tile units.
             const padding = Math.max(1.0, Math.pow(2.0, region.footprintTileId.canonical.z - coord.canonical.z));
 
-            if (region.footprint.buildingId) {
-                const regionFootprintBuildingId = region.footprint.buildingId;
+            if (region.footprint.buildingIds) {
                 for (const centroid of this.centroidData) {
-                    if (centroid.buildingId === regionFootprintBuildingId) {
+                    if (centroid.flags & HIDDEN_BY_REPLACEMENT) {
+                        continue;
+                    }
+                    if (region.min.x > centroid.max.x || centroid.min.x > region.max.x) {
+                        continue;
+                    } else if (region.min.y > centroid.max.y || centroid.min.y > region.max.y) {
+                        continue;
+                    }
+                    if (region.footprint.buildingIds.has(centroid.buildingId)) {
                         centroid.flags |= HIDDEN_BY_REPLACEMENT;
                     }
                 }
@@ -1667,9 +1699,9 @@ class FillExtrusionBucket implements BucketWithGroundEffect {
             this.writeCentroidToBuffer(centroid);
         }
 
-        PerformanceUtils.endMeasure(m);
-
         this.borderDoneWithNeighborZ = [-1, -1, -1, -1];
+
+        PerformanceUtils.measureWithDetails(PerformanceUtils.GROUP_COMMON, "FillExtrusionBucket.updateReplacement", "FillExtrusion", perfStartTime);
     }
 
     footprintContainsPoint(x: number, y: number, centroid: PartData): boolean {

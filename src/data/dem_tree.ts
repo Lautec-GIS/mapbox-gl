@@ -199,8 +199,8 @@ export default class DemMinMaxQuadTree {
         d: vec3,
         exaggeration: number = 1,
     ): number | null | undefined {
-        const min: vec3 = [minx, miny, -aabbSkirtPadding];
-        const max: vec3 = [maxx, maxy, this.maximums[0] * exaggeration];
+        const min: [number, number, number] = [minx, miny, -aabbSkirtPadding];
+        const max: [number, number, number] = [maxx, maxy, this.maximums[0] * exaggeration];
         return aabbRayIntersect(min, max, p, d);
     }
 
@@ -220,10 +220,10 @@ export default class DemMinMaxQuadTree {
         if (t == null)
             return null;
 
-        const tHits = [];
-        const sortedHits = [];
-        const boundsMin = [] as unknown as vec3;
-        const boundsMax = [] as unknown as vec3;
+        const tHits: number[] = [];
+        const sortedHits: number[] = [];
+        const boundsMin: number[] = [];
+        const boundsMax: number[] = [];
 
         const stack = [{
             idx: 0,
@@ -239,7 +239,7 @@ export default class DemMinMaxQuadTree {
 
             if (this.leaves[idx]) {
                 // Create 2 triangles to approximate the surface plane for more precise tests
-                decodeBounds(nodex, nodey, depth, rootMinx, rootMiny, rootMaxx, rootMaxy, boundsMin as number[], boundsMax as number[]);
+                decodeBounds(nodex, nodey, depth, rootMinx, rootMiny, rootMaxx, rootMaxy, boundsMin, boundsMax);
 
                 const scale = 1 << depth;
                 const minxUv = (nodex + 0) / scale;
@@ -254,14 +254,20 @@ export default class DemMinMaxQuadTree {
                 const dz = sampleElevation(minxUv, maxyUv, this.dem) * exaggeration;
 
                 const t0 = triangleRayIntersect(
+
                     boundsMin[0], boundsMin[1], az,     // A
+
                     boundsMax[0], boundsMin[1], bz,     // B
+
                     boundsMax[0], boundsMax[1], cz,     // C
                     p, d);
 
                 const t1 = triangleRayIntersect(
+
                     boundsMax[0], boundsMax[1], cz,
+
                     boundsMin[0], boundsMax[1], dz,
+
                     boundsMin[0], boundsMin[1], az,
                     p, d);
 
@@ -272,8 +278,10 @@ export default class DemMinMaxQuadTree {
                 // The ray might go below the two surface triangles but hit one of the sides.
                 // This covers the case of skirt geometry between two dem tiles of different zoom level
                 if (tMin === Number.MAX_VALUE) {
-                    const hitPos = vec3.scaleAndAdd([] as unknown as vec3, p, d, t);
+                    const hitPos = vec3.scaleAndAdd([], p, d, t);
+
                     const fracx = frac(hitPos[0], boundsMin[0], boundsMax[0]);
+
                     const fracy = frac(hitPos[1], boundsMin[1], boundsMax[1]);
 
                     if (bilinearLerp(az, bz, dz, cz, fracx, fracy) >= hitPos[2])
@@ -294,7 +302,7 @@ export default class DemMinMaxQuadTree {
                 const childNodeY = (nodey << 1) + this._siblingOffset[i][1];
 
                 // Decode node aabb from the morton code
-                decodeBounds(childNodeX, childNodeY, depth + 1, rootMinx, rootMiny, rootMaxx, rootMaxy, boundsMin as number[], boundsMax as number[]);
+                decodeBounds(childNodeX, childNodeY, depth + 1, rootMinx, rootMiny, rootMaxx, rootMaxy, boundsMin, boundsMax);
 
                 boundsMin[2] = -aabbSkirtPadding;
                 boundsMax[2] = this.maximums[this.childOffsets[idx] + i] * exaggeration;
@@ -444,11 +452,16 @@ export function buildDemMipmap(dem: DEMData): Array<MipLevel> {
         const y = Math.floor(idx / blockCount);
         const x = idx % blockCount;
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         blockSamples(x, y, blockSize, false, blockBounds);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         const e0 = sampleElevation(blockBounds[0], blockBounds[1], dem);    // minx, miny
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         const e1 = sampleElevation(blockBounds[2], blockBounds[1], dem);    // maxx, miny
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         const e2 = sampleElevation(blockBounds[2], blockBounds[3], dem);    // maxx, maxy
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         const e3 = sampleElevation(blockBounds[0], blockBounds[3], dem);    // minx, maxy
 
         mip.minimums.push(Math.min(e0, e1, e2, e3));
@@ -470,16 +483,25 @@ export function buildDemMipmap(dem: DEMData): Array<MipLevel> {
 
             // Sample elevation of all 4 children mip texels. 4 leaf nodes can be concatenated into a single
             // leaf if the total elevation difference is below the threshold value
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             blockSamples(x, y, 2, true, blockBounds);
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const e0 = prevMip.getElevation(blockBounds[0], blockBounds[1]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const e1 = prevMip.getElevation(blockBounds[2], blockBounds[1]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const e2 = prevMip.getElevation(blockBounds[2], blockBounds[3]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const e3 = prevMip.getElevation(blockBounds[0], blockBounds[3]);
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const l0 = prevMip.isLeaf(blockBounds[0], blockBounds[1]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const l1 = prevMip.isLeaf(blockBounds[2], blockBounds[1]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const l2 = prevMip.isLeaf(blockBounds[2], blockBounds[3]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const l3 = prevMip.isLeaf(blockBounds[0], blockBounds[3]);
 
             const minElevation = Math.min(e0.min, e1.min, e2.min, e3.min);

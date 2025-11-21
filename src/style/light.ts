@@ -1,5 +1,4 @@
 import styleSpec from '../style-spec/reference/latest';
-import {extend} from '../util/util';
 import {Evented} from '../util/evented';
 import {
     validateStyle,
@@ -13,6 +12,7 @@ import {
     PositionProperty
 } from './properties';
 
+import type {Validator} from './validate_style';
 import type Color from '../style-spec/util/color';
 import type EvaluationParameters from './evaluation_parameters';
 import type {StyleSetterOptions} from '../style/style';
@@ -20,6 +20,7 @@ import type {TransitionParameters,
     Transitioning,
     PossiblyEvaluated} from './properties';
 import type {LightSpecification} from '../style-spec/types';
+import type {StylePropertySpecification} from '../style-spec/style-spec';
 
 type Props = {
     ["anchor"]: DataConstantProperty<'map' | 'viewport'>;
@@ -28,12 +29,14 @@ type Props = {
     ["intensity"]: DataConstantProperty<number>;
 };
 
+const lightReference = styleSpec.light as Record<string, StylePropertySpecification>;
+
 let properties: Properties<Props>;
 const getProperties = (): Properties<Props> => properties || (properties = new Properties({
-    "anchor": new DataConstantProperty(styleSpec.light.anchor),
-    "position": new PositionProperty(styleSpec.light.position),
-    "color": new DataConstantProperty(styleSpec.light.color),
-    "intensity": new DataConstantProperty(styleSpec.light.intensity),
+    "anchor": new DataConstantProperty(lightReference.anchor),
+    "position": new PositionProperty(lightReference.position),
+    "color": new DataConstantProperty(lightReference.color),
+    "intensity": new DataConstantProperty(lightReference.intensity),
 }));
 
 /*
@@ -61,7 +64,6 @@ class Light extends Evented {
         if (this._validate(validateLight, light, options)) {
             return;
         }
-        // @ts-expect-error - TS2345 - Argument of type 'LightSpecification' is not assignable to parameter of type 'PropertyValueSpecifications<Props>'.
         this._transitionable.setTransitionOrValue(light);
         this.id = id;
     }
@@ -79,8 +81,7 @@ class Light extends Evented {
     }
 
     _validate(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        validate: any,
+        validate: Validator,
         value: unknown,
         options?: {
             validate?: boolean;
@@ -90,7 +91,8 @@ class Light extends Evented {
             return false;
         }
 
-        return emitValidationErrors(this, validate.call(validateStyle, extend({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        return emitValidationErrors(this, validate.call(validateStyle, Object.assign({
             value,
             // Workaround for https://github.com/mapbox/mapbox-gl-js/issues/2407
             style: {glyphs: true, sprite: true},

@@ -28,6 +28,7 @@ import type ValidationError from '../error/validation_error';
 import type {StyleReference} from '../reference/latest';
 import type {StyleSpecification} from '../types';
 import type {FunctionValidatorOptions} from './validate_function';
+import type {StylePropertySpecification} from '../style-spec';
 import type {ExpressionValidatorOptions} from './validate_expression';
 
 const VALIDATORS: Record<string, (...args: unknown[]) => ValidationError[]> = {
@@ -72,14 +73,7 @@ export type ValidatorOptions = {
     /**
      * Current spec being evaluated. Tracks value.
      */
-    valueSpec?: {
-        type?: string;
-        expression?: {
-            interpolated?: boolean;
-            parameters?: Array<'zoom' | 'feature'>;
-        };
-        'property-type'?: 'data-driven';
-    };
+    valueSpec?: Partial<StylePropertySpecification>;
 
     /**
      * Current full spec being evaluated.
@@ -122,6 +116,7 @@ export default function validate(options: ValidatorOptions, arrayAsExpression: b
     }
 
     const errors = validateObject(Object.assign({}, options, {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         valueSpec: valueSpec.type ? styleSpec[valueSpec.type] : valueSpec
     }));
 

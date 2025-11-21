@@ -1,5 +1,4 @@
 import {Event, ErrorEvent, Evented} from '../util/evented';
-import {extend} from '../util/util';
 import EXTENT from '../style-spec/data/extent';
 import {ResourceType} from '../util/ajax';
 import browser from '../util/browser';
@@ -135,7 +134,7 @@ class GeoJSONSource extends Evented<SourceEvents> implements ISource {
         this.setEventedParent(eventedParent);
 
         this._data = options.data;
-        this._options = extend({}, options);
+        this._options = Object.assign({}, options);
 
         this._collectResourceTiming = options.collectResourceTiming;
 
@@ -151,7 +150,7 @@ class GeoJSONSource extends Evented<SourceEvents> implements ISource {
         // so that it can load/parse/index the geojson data
         // extending with `options.workerOptions` helps to make it easy for
         // third-party sources to hack/reuse GeoJSONSource.
-        this.workerOptions = extend({
+        this.workerOptions = Object.assign({
             source: this.id,
             scope: this.scope,
             cluster: options.cluster || false,
@@ -259,6 +258,7 @@ class GeoJSONSource extends Evented<SourceEvents> implements ISource {
             const featuresById = new Map();
             for (const feature of this._data.features) featuresById.set(feature.id, feature);
             for (const feature of data.features) featuresById.set(feature.id, feature);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             this._data.features = [...featuresById.values()];
         } else {
             this._data = data;
@@ -388,7 +388,7 @@ class GeoJSONSource extends Evented<SourceEvents> implements ISource {
         this.fire(new Event('dataloading', {dataType: 'source'}));
 
         this._loaded = false;
-        const options: LoadGeoJSONRequest = extend({append}, this.workerOptions);
+        const options: LoadGeoJSONRequest = Object.assign({append}, this.workerOptions);
 
         options.scope = this.scope;
         const data = this._data;
@@ -464,7 +464,8 @@ class GeoJSONSource extends Evented<SourceEvents> implements ISource {
             extraShadowCaster: tile.isExtraShadowCaster,
             scaleFactor: this.map.getScaleFactor(),
             partial,
-            worldview: this.map.getWorldview()
+            worldview: this.map.getWorldview(),
+            indoor: this.map.indoor ? this.map.indoor.getIndoorTileOptions(this.id, this.scope) : null
         };
 
         tile.request = this.actor.send(message, params, (err, data: WorkerSourceVectorTileResult) => {
@@ -511,7 +512,7 @@ class GeoJSONSource extends Evented<SourceEvents> implements ISource {
     }
 
     serialize(): GeoJSONSourceSpecification {
-        return extend({}, this._options, {
+        return Object.assign({}, this._options, {
             type: this.type,
             data: this._data
         });

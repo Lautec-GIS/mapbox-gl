@@ -4,7 +4,6 @@ import LineBucket from '../../data/bucket/line_bucket';
 import {polygonIntersectsBufferedMultiLine} from '../../util/intersection_tests';
 import {getMaximumPaintValue, translateDistance, translate} from '../query_utils';
 import {getLayoutProperties, getPaintProperties} from './line_style_layer_properties';
-import {extend} from '../../util/util';
 import EvaluationParameters from '../evaluation_parameters';
 import {PossiblyEvaluated, DataDrivenProperty} from '../properties';
 import ProgramConfiguration from '../../data/program_configuration';
@@ -66,7 +65,7 @@ class LineFloorwidthProperty extends DataDrivenProperty<number> {
         feature: Feature,
         featureState: FeatureState,
     ): number {
-        globals = extend({}, globals, {zoom: Math.floor(globals.zoom)});
+        globals = Object.assign({}, globals, {zoom: Math.floor(globals.zoom)});
         return super.evaluate(value, globals, feature, featureState);
     }
 }
@@ -114,7 +113,7 @@ class LineStyleLayer extends StyleLayer {
 
     override _handleSpecialPaintPropertyUpdate(name: string) {
         if (name === 'line-gradient') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
             const expression: ZoomConstantExpression<'source'> = ((this._transitionablePaint._values['line-gradient'].value.expression) as any);
             this.stepInterpolant = expression._styleExpression && expression._styleExpression.expression instanceof Step;
             this.gradientVersion = (this.gradientVersion + 1) % Number.MAX_SAFE_INTEGER;
@@ -129,10 +128,14 @@ class LineStyleLayer extends StyleLayer {
         return this._transitionablePaint._values['line-width'].value.expression;
     }
 
+    emissiveStrengthExpression(): StylePropertyExpression {
+        return this._transitionablePaint._values['line-emissive-strength'].value.expression;
+    }
+
     override recalculate(parameters: EvaluationParameters, availableImages: ImageId[]) {
         super.recalculate(parameters, availableImages);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this.paint._values as any)['line-floorwidth'] = getLineFloorwidthProperty().possiblyEvaluate(this._transitioningPaint._values['line-width'].value, parameters);
+
+        (this.paint._values as Record<string, unknown>)['line-floorwidth'] = getLineFloorwidthProperty().possiblyEvaluate(this._transitioningPaint._values['line-width'].value, parameters);
     }
 
     createBucket(parameters: BucketParameters<LineStyleLayer>): LineBucket {
@@ -142,8 +145,7 @@ class LineStyleLayer extends StyleLayer {
     override getProgramIds(): ProgramName[] {
         const patternProperty = this.paint.get('line-pattern');
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const image = patternProperty.constantOr((1 as any));
+        const image = patternProperty.constantOr(1);
         const programId = image ? 'linePattern' : 'line';
         return [programId];
     }
@@ -187,6 +189,7 @@ class LineStyleLayer extends StyleLayer {
             this.paint.get('line-gap-width').evaluate(feature, featureState));
         const lineOffset = this.paint.get('line-offset').evaluate(feature, featureState);
         if (lineOffset) {
+
             geometry = offsetLine(geometry, lineOffset * queryGeometry.pixelToTileUnitsFactor);
         }
 
@@ -216,12 +219,12 @@ function getLineWidth(lineWidth: number, lineGapWidth: number) {
     }
 }
 
-function offsetLine(rings: Array<Array<Point>>, offset: number) {
-    const newRings = [];
+function offsetLine(rings: Array<Array<Point>>, offset: number): Array<Array<Point>> {
+    const newRings: Array<Array<Point>> = [];
     const zero = new Point(0, 0);
     for (let k = 0; k < rings.length; k++) {
         const ring = rings[k];
-        const newRing = [];
+        const newRing: Array<Point> = [];
         for (let i = 0; i < ring.length; i++) {
             const a = ring[i - 1];
             const b = ring[i];
@@ -237,6 +240,5 @@ function offsetLine(rings: Array<Array<Point>>, offset: number) {
         }
         newRings.push(newRing);
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return newRings;
 }

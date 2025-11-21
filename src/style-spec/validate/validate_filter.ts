@@ -3,7 +3,6 @@ import validateExpression from './validate_expression';
 import validateEnum from './validate_enum';
 import {getType, isString, isNumber, isBoolean} from '../util/get_type';
 import {unbundle, deepUnbundle} from '../util/unbundle_jsonlint';
-import extend from '../util/extend';
 import {isExpressionFilter} from '../feature_filter/index';
 
 import type {StyleReference} from '../reference/latest';
@@ -26,8 +25,9 @@ export default function validateFilter(options: FilterValidatorOptions): Validat
         // We default to a layerType of `fill` because that points to a non-dynamic filter definition within the style-spec.
         const layerType = options.layerType || 'fill';
 
-        return validateExpression(extend({}, options, {
-            expressionContext: 'filter',
+        return validateExpression(Object.assign({}, options, {
+            expressionContext: 'filter' as const,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             valueSpec: options.styleSpec[`filter_${layerType}`]
         }));
     } else {
@@ -51,28 +51,11 @@ function validateNonExpressionFilter(options: FilterValidatorOptions): Validatio
     let errors: ValidationError[] = validateEnum({
         key: `${key}[0]`,
         value: value[0],
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         valueSpec: styleSpec.filter_operator
     });
 
-    switch (unbundle(value[0])) {
-    case '<':
-    case '<=':
-    case '>':
-    // @ts-expect-error - falls through
-    case '>=':
-        if (value.length >= 2 && unbundle(value[1]) === '$type') {
-            errors.push(new ValidationError(key, value, `"$type" cannot be use with operator "${value[0]}"`));
-        }
-        /* falls through */
-    case '==':
-    // @ts-expect-error - falls through
-    case '!=':
-        if (value.length !== 3) {
-            errors.push(new ValidationError(key, value, `filter array for operator "${value[0]}" must have 3 elements`));
-        }
-        /* falls through */
-    case 'in':
-    case '!in':
+    const validate = () => {
         if (value.length >= 2) {
             if (!isString(value[1])) {
                 errors.push(new ValidationError(`${key}[1]`, value[1], `string expected, ${getType(value[1])} found`));
@@ -83,12 +66,40 @@ function validateNonExpressionFilter(options: FilterValidatorOptions): Validatio
                 errors = errors.concat(validateEnum({
                     key: `${key}[${i}]`,
                     value: value[i],
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     valueSpec: styleSpec.geometry_type
                 }));
             } else if (!isString(value[i]) && !isNumber(value[i]) && !isBoolean(value[i])) {
                 errors.push(new ValidationError(`${key}[${i}]`, value[i], `string, number, or boolean expected, ${getType(value[i])} found.`));
             }
         }
+    };
+
+    switch (unbundle(value[0])) {
+    case '<':
+    case '<=':
+    case '>':
+    case '>=':
+        if (value.length >= 2 && unbundle(value[1]) === '$type') {
+            errors.push(new ValidationError(key, value, `"$type" cannot be use with operator "${value[0]}"`));
+        }
+        if (value.length !== 3) {
+            errors.push(new ValidationError(key, value, `filter array for operator "${value[0]}" must have 3 elements`));
+        }
+        validate();
+        break;
+
+    case '==':
+    case '!=':
+        if (value.length !== 3) {
+            errors.push(new ValidationError(key, value, `filter array for operator "${value[0]}" must have 3 elements`));
+        }
+        validate();
+        break;
+
+    case 'in':
+    case '!in':
+        validate();
         break;
 
     case 'any':

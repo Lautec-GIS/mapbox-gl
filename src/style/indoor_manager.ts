@@ -1,164 +1,162 @@
 import {bindAll} from '../util/util';
-import {Event, Evented, ErrorEvent} from '../util/evented';
-import {type IndoorData, IndoorDataQuery} from './indoor_data_query';
-import IndoorFloorSelectionState from './indoor_floor_selection_state';
+import {Event, Evented} from '../util/evented';
+import LngLat from '../geo/lng_lat';
 
-import type {Map} from '../ui/map';
-import type {SchemaSpecification} from '../style-spec/types';
+import type {IndoorBuilding, IndoorData, IndoorEvents, IndoorState, IndoorTileOptions} from './indoor_data';
 import type Style from './style';
-
-type IndoorEvents = {
-    'indoorupdate': {
-        selectedFloorId: string;
-        floors: Array<{
-            id: string;
-            name: string;
-            shortName: string;
-            levelOrder: number;
-        }>;
-    };
-};
-
-const indoorSchemaExtension: SchemaSpecification = {
-    "mbx-indoor-level-selected": {
-        "default": ["literal", []]
-    },
-};
-
-export function expandSchemaWithIndoor(schema?: SchemaSpecification): SchemaSpecification {
-    schema = schema ? schema : {};
-    return Object.assign(schema, indoorSchemaExtension);
-}
+import type {LngLatBounds} from '../geo/lng_lat';
 
 export default class IndoorManager extends Evented<IndoorEvents> {
-    _map: Map;
-    _floorSelectionState: IndoorFloorSelectionState | null;
-    _scope: string | null;
-    _indoorDataQuery: IndoorDataQuery | null;
+    _style: Style;
+    _selectedFloorId: string | null;
+    _closestBuildingId: string | null;
+    _buildings: Record<string, IndoorBuilding> | null;
 
-    constructor(map: Map) {
+    _activeFloors: Set<string> | null;
+    _indoorState: IndoorState | null;
+    _activeFloorsVisible: boolean;
+
+    constructor(style: Style) {
         super();
-
-        bindAll([
-            '_onLoad',
-            '_onMove',
-        ], this);
-
-        this._map = map;
-        this._floorSelectionState = new IndoorFloorSelectionState();
-        this._queryIndoor();
-        this._map.on('load', this._onLoad);
-        this._map.on('move', this._onMove);
+        this._style = style;
+        this._buildings = {};
+        this._activeFloors = new Set();
+        this._activeFloorsVisible = true;
+        this._indoorState = {selectedFloorId: null, lastActiveFloors: null, activeFloorsVisible: true};
+        bindAll(['_updateUI'], this);
     }
 
     destroy() {
-        this._map.off('load', this._onLoad);
-        this._map.off('move', this._onMove);
-        this._map = null;
-        this._floorSelectionState = null;
+        this._buildings = {};
+        this._activeFloors = new Set();
+        this._indoorState = null;
     }
 
-    // Prepare IndoorManager on the map load.
-    // If the style contains any fragment with "indoor" property
-    // the manager gets automatically enabled and it starts querying features.
-    _onLoad() {
-        this._map.style.forEachFragmentStyle((style: Style) => {
-            // Find a style with an indoor property
-            if (style.stylesheet.indoor) {
-                if (!this._indoorDataQuery) {
-                    this._scope = style.scope;
-                    this._indoorDataQuery = new IndoorDataQuery(this._scope);
-                } else {
-                    this.fire(new ErrorEvent(new Error('Multiple indoor map styles detected, simultaneous usage is not allowed currently.')));
+    selectFloor(floorId: string | null) {
+        if (floorId === this._selectedFloorId && this._activeFloorsVisible) {
+            return;
+        }
+
+        this._selectedFloorId = floorId;
+        this._activeFloorsVisible = true;
+        this._updateActiveFloors();
+    }
+
+    setActiveFloorsVisibility(activeFloorsVisible: boolean) {
+        this._activeFloorsVisible = activeFloorsVisible;
+        this._updateActiveFloors();
+        this._updateIndoorSelector();
+    }
+
+    /// Fan in data sent from different tiles and sources and merge it into the one state
+    /// Both buildings and active floors updates are additive-only
+    setIndoorData(indoorData: IndoorData) {
+        for (const [id, building] of Object.entries(indoorData.buildings)) {
+            if (this._buildings[id]) {
+                for (const floorId of building.floorIds) {
+                    if (this._buildings[id].floors[floorId]) {
+                        continue;
+                    }
+                    this._buildings[id].floors[floorId] = building.floors[floorId];
                 }
+            } else {
+                this._buildings[id] = building;
             }
-        });
+        }
 
-        this._map._addIndoorControl();
-        this._queryIndoor();
+        for (const floorId of indoorData.activeFloors) {
+            this._activeFloors.add(floorId);
+        }
+
+        // Next step: Add debouncing to prevent excessive selector updates, though not visible
+        this._updateIndoorSelector();
     }
 
-    _onMove() {
-        this._queryIndoor();
+    getIndoorTileOptions(sourceId: string, scope: string): IndoorTileOptions | null {
+        const sourceLayers = this._style.getIndoorSourceLayers(sourceId, scope);
+        if (!sourceLayers || !this._indoorState) {
+            return null;
+        }
+
+        return {
+            sourceLayers,
+            indoorState: this._indoorState
+        };
     }
 
-    _queryIndoor() {
-        if (!this._indoorDataQuery || !this._map.isStyleLoaded()) {
-            return;
-        }
-
-        const minimumIndoorZoom = 16.0;
-        if (this._map.transform.zoom < minimumIndoorZoom) {
-            this._clearIndoorData();
-            return;
-        }
-
-        const indoorData: IndoorData | null = this._indoorDataQuery.execute(this._map);
-        if (!indoorData || indoorData.floors.length === 0) {
-            this._clearIndoorData();
-            return;
-        }
-
-        if (this._floorSelectionState.getActiveFloors().length === 0) {
-            this._selectFloors(indoorData);
-        }
-
-        // If the building has changed, update the indoor selector and selectedBuildingId
-        if (this._floorSelectionState.hasBuildingChanged(indoorData)) {
-            this._selectFloors(indoorData);
+    _updateUI(zoom: number, mapCenter: LngLat, mapBounds: LngLatBounds) {
+        const closestBuildingId = findClosestBuildingId(this._buildings, mapCenter, mapBounds, zoom);
+        if (closestBuildingId !== this._closestBuildingId) {
+            this._closestBuildingId = closestBuildingId;
             this._updateIndoorSelector();
         }
     }
 
-    _selectFloors(indoorData: IndoorData) {
-        if (indoorData.building) {
-            this._floorSelectionState.setIndoorData(indoorData);
-            this._updateUI();
-        } else {
-            if (this._floorSelectionState.getActiveFloors().length > 0) {
-                return;
-            }
-
-            this._clearIndoorData();
-        }
-    }
-
-    _clearIndoorData() {
-        this._floorSelectionState.reset();
-        this._updateIndoorSelector();
-        this._map.setConfigProperty(this._scope, "mbx-indoor-level-selected", ["literal", []]);
-    };
-
     _updateIndoorSelector() {
-        const currentBuildingSelection = this._floorSelectionState.getCurrentBuildingSelection();
-        const floors = currentBuildingSelection.floors.map((floor) => ({
-            id: floor.properties.id as string,
-            name: floor.properties.name as string,
-            shortName: floor.properties.z_index as string,
-            levelOrder: floor.properties.z_index as number
-        }));
+        const buildings = this._buildings;
+        const closestBuildingId = this._closestBuildingId;
+        const closestBuilding = (closestBuildingId && buildings) ? buildings[closestBuildingId] : undefined;
 
-        this.fire(new Event('indoorupdate', {
-            selectedFloorId: currentBuildingSelection.selectedFloorId,
+        if (!closestBuilding) {
+            this.fire(new Event('selector-update', {
+                selectedFloorId: null,
+                activeFloorsVisible: this._activeFloorsVisible,
+                floors: []
+            }));
+            return;
+        }
+
+        let buildingActiveFloorId: string | null = null;
+        for (const floorId of closestBuilding.floorIds) {
+            if (this._activeFloors && this._activeFloors.has(floorId)) {
+                buildingActiveFloorId = floorId;
+                break;
+            }
+        }
+
+        const floors = Array.from(closestBuilding.floorIds).map((floorId) => ({
+            id: floorId,
+            name: closestBuilding.floors[floorId].name,
+            zIndex: closestBuilding.floors[floorId].zIndex,
+        })).sort((a, b) => b.zIndex - a.zIndex);
+
+        this.fire(new Event('selector-update', {
+            selectedFloorId: buildingActiveFloorId,
+            activeFloorsVisible: this._activeFloorsVisible,
             floors
         }));
     }
 
-    _updateUI() {
-        this._updateIndoorConfig();
-        this._updateIndoorSelector();
+    // Update previous state and pass it to tiles
+    // Resolve active floors to construct new set based on data from tiles
+    // Tiles will resolve individual subsets of activeFloors and send it in setIndoorData
+    _updateActiveFloors() {
+        const lastActiveFloors = this._activeFloors;
+        this._activeFloors = new Set();
+        this._indoorState = {selectedFloorId: this._selectedFloorId, lastActiveFloors, activeFloorsVisible: this._activeFloorsVisible};
+        this._style.updateIndoorDependentLayers();
+    }
+}
+
+function findClosestBuildingId(buildings: Record<string, IndoorBuilding>, mapCenter: LngLat, mapBounds: LngLatBounds, zoom: number): string | null {
+    const indoorMinimumZoom: number = 16.0;
+    let closestBuildingId: string | null = null;
+    let minDistance = Number.MAX_SAFE_INTEGER;
+
+    if (zoom < indoorMinimumZoom) {
+        return null;
     }
 
-    // eslint-disable-next-line no-warning-comments
-    // TODO: Replace use of config with the style expressions
-    _updateIndoorConfig() {
-        const activeFloors = this._floorSelectionState.getActiveFloors().map(floor => floor.properties.id as string) || [];
-        this._map.setConfigProperty(this._scope, "mbx-indoor-level-selected", ["literal", activeFloors]);
+    for (const [id, building] of Object.entries(buildings)) {
+        const buildingCenter = building.center;
+        if (buildingCenter) {
+            const distance = mapCenter.distanceTo(LngLat.convert(buildingCenter));
+            if (distance < minDistance && mapBounds.contains(buildingCenter)) {
+                minDistance = distance;
+                closestBuildingId = id;
+            }
+        }
     }
 
-    // Selects a level of based on a provided ID.
-    selectFloor(floorId: string | null) {
-        this._floorSelectionState.setFloorId(floorId);
-        this._updateIndoorConfig();
-    }
+    return closestBuildingId;
 }

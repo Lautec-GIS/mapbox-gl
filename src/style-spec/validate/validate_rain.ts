@@ -4,6 +4,7 @@ import {getType, isObject} from '../util/get_type';
 
 import type {StyleReference} from '../reference/latest';
 import type {StyleSpecification} from '../types';
+import type {StylePropertySpecification} from '../style-spec';
 
 type RainValidatorOptions = {
     key: string;
@@ -16,7 +17,7 @@ export default function validateRain(options: RainValidatorOptions): ValidationE
     const rain = options.value;
     const style = options.style;
     const styleSpec = options.styleSpec;
-    const rainSpec = styleSpec.rain;
+    const rainSpec = styleSpec.rain as Record<PropertyKey, StylePropertySpecification>;
 
     if (rain === undefined) {
         return [];
@@ -34,6 +35,7 @@ export default function validateRain(options: RainValidatorOptions): ValidationE
             errors = errors.concat(validate({
                 key,
                 value: rain[key],
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 valueSpec: styleSpec.transition,
                 style,
                 styleSpec
@@ -42,6 +44,7 @@ export default function validateRain(options: RainValidatorOptions): ValidationE
             errors = errors.concat(validate({
                 key,
                 value: rain[key],
+
                 valueSpec: rainSpec[key],
                 style,
                 styleSpec

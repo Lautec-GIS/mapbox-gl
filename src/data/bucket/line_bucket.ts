@@ -54,6 +54,7 @@ import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {PossiblyEvaluatedValue} from '../../style/properties';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
+import type {GlobalProperties} from "../../style-spec/expression";
 
 // NOTE ON EXTRUDE SCALE:
 // scale the extrusion vector so that the normal length is this value.
@@ -174,6 +175,7 @@ class LineBucket implements Bucket {
     heightRange: Range | undefined;
 
     worldview: string;
+    hasAppearances: boolean | null;
 
     constructor(options: BucketParameters<LineStyleLayer>) {
         this.zoom = options.zoom;
@@ -208,9 +210,13 @@ class LineBucket implements Bucket {
         this.tessellationStep = options.tessellationStep ? options.tessellationStep : (EXTENT / 64);
 
         this.worldview = options.worldview;
+        this.hasAppearances = null;
     }
 
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
+    }
+
+    updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
     }
 
     populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
@@ -237,13 +243,13 @@ class LineBucket implements Bucket {
         const crossSlope = this.layers[0].layout.get('line-cross-slope');
         this.hasCrossSlope = this.elevationType === 'offset' && crossSlope !== undefined;
 
-        const bucketFeatures = [];
+        const bucketFeatures: BucketFeature[] = [];
 
         for (const {feature, id, index, sourceLayerIndex} of features) {
             const needGeometry = this.layers[0]._featureFilter.needGeometry;
             const evaluationFeature = toEvaluationFeature(feature, needGeometry);
 
-            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview}), evaluationFeature, canonical))
+            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview, activeFloors: options.activeFloors}), evaluationFeature, canonical))
                 continue;
 
             const sortKey = lineSortKey ?
@@ -266,8 +272,8 @@ class LineBucket implements Bucket {
 
         if (lineSortKey) {
             bucketFeatures.sort((a, b) => {
-                // a.sortKey is always a number when in use
-                return (a.sortKey as number) - (b.sortKey as number);
+                // a.sortKey is always a number when lineSortKey is defined
+                return a.sortKey - b.sortKey;
             });
         }
 
@@ -338,6 +344,7 @@ class LineBucket implements Bucket {
                 if (!dashArray) continue;
 
             } else {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 dashArray = dashPropertyValue.evaluate({zoom}, feature);
             }
 
@@ -345,12 +352,15 @@ class LineBucket implements Bucket {
                 cap = capPropertyValue.value;
 
             } else {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 cap = capPropertyValue.evaluate({zoom}, feature);
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             lineAtlas.addDash(dashArray, cap);
 
             // save positions for paint array
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             feature.patterns[layer.id] = [lineAtlas.getKey(dashArray, cap)];
         }
 
@@ -362,7 +372,7 @@ class LineBucket implements Bucket {
 
     addFeatures(options: PopulateParameters, canonical: CanonicalTileID, imagePositions: SpritePositions, availableImages: ImageId[], _: TileTransform, brightness?: number | null) {
         for (const feature of this.patternFeatures) {
-            this.addFeature(feature, feature.geometry, feature.index, canonical, imagePositions, availableImages, brightness);
+            this.addFeature(feature, feature.geometry, feature.index, canonical, imagePositions, availableImages, brightness, options.elevationFeatures);
         }
     }
 
@@ -1028,7 +1038,7 @@ class LineBucket implements Bucket {
         if (this.zOffsetValue.kind === 'constant') {
             return {zOffset: this.zOffsetValue.value, variableWidth};
         }
-        const zOffset = this.zOffsetValue.evaluate(this.evaluationGlobals, this.lineFeature) || 0.0;
+        const zOffset: number = this.zOffsetValue.evaluate(this.evaluationGlobals, this.lineFeature) || 0.0;
         return {zOffset, variableWidth};
     }
 

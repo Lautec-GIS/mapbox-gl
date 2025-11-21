@@ -5,8 +5,7 @@
       "spriteFormat": "raster",
       "width": 128,
       "height": 128,
-      "scaleFactor": 2,
-      "collisionDebug": true
+      "scaleFactor": 2
     }
   },
   "sources": {
@@ -51,6 +50,13 @@
   },
   "sprite": "local://sprites/sprite",
   "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "white"
+      }
+    },
     {
       "id": "symbol-x2",
       "type": "symbol",

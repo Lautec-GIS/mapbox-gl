@@ -16,14 +16,15 @@ import {base64DecToArr} from '../../src/util/util';
 import TriangleGridIndex from '../../src/util/triangle_grid_index';
 import {HEIGHTMAP_DIM} from '../data/model';
 
-import type {vec2, vec4} from 'gl-matrix';
+import type {vec2} from 'gl-matrix';
 import type {Class} from '../../src/types/class';
 import type {Footprint} from '../util/conflation';
+import type {StructArray} from '../../src/util/struct_array';
 import type {TextureImage} from '../../src/render/texture';
+import type {GLTF, GLTFNode, GLTFAccessor, GLTFPrimitive} from '../util/loaders';
 import type {Mesh, ModelNode, Material, MaterialDescription, ModelTexture, Sampler, AreaLight, PbrMetallicRoughness} from '../data/model';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function convertTextures(gltf: any, images: Array<TextureImage>): Array<ModelTexture> {
+function convertTextures(gltf: GLTF, images: Array<TextureImage>): Array<ModelTexture> {
     const textures: ModelTexture[] = [];
     const gl = WebGL2RenderingContext;
     if (gltf.json.textures) {
@@ -45,7 +46,7 @@ function convertTextures(gltf: any, images: Array<TextureImage>): Array<ModelTex
     return textures;
 }
 
-function convertMaterial(materialDesc: MaterialDescription, textures: Array<ModelTexture>): Material {
+function convertMaterial(materialDesc: Partial<MaterialDescription>, textures: Array<ModelTexture>): Material {
     const {
         emissiveFactor = [0, 0, 0],
         alphaMode = 'OPAQUE',
@@ -53,7 +54,8 @@ function convertMaterial(materialDesc: MaterialDescription, textures: Array<Mode
         normalTexture,
         occlusionTexture,
         emissiveTexture,
-        doubleSided
+        doubleSided,
+        name
     } = materialDesc;
 
     const {
@@ -73,9 +75,9 @@ function convertMaterial(materialDesc: MaterialDescription, textures: Array<Mode
     }
 
     return {
+        name,
         pbrMetallicRoughness: {
-            // @ts-expect-error - TS2556 - A spread argument must either have a tuple type or be passed to a rest parameter.
-            baseColorFactor: new Color(...baseColorFactor),
+            baseColorFactor: new Color(...baseColorFactor as [number, number, number, number]),
             metallicFactor,
             roughnessFactor,
             baseColorTexture: baseColorTexture ? textures[baseColorTexture.index] : undefined,
@@ -92,9 +94,8 @@ function convertMaterial(materialDesc: MaterialDescription, textures: Array<Mode
     };
 }
 
-function computeCentroid(indexArray: ArrayBufferView, vertexArray: ArrayBufferView): vec3 {
-    const out: vec3 = [0.0, 0.0, 0.0];
-    // @ts-expect-error - TS2339 - Property 'length' does not exist on type 'ArrayBufferView'.
+function computeCentroid(indexArray: Uint32Array | Float32Array, vertexArray: ArrayBufferView): vec3 {
+    const out: [number, number, number] = [0.0, 0.0, 0.0];
     const indexSize = indexArray.length;
     if (indexSize > 0) {
         for (let i = 0; i < indexSize; i++) {
@@ -125,44 +126,48 @@ function getNormalizedScale(arrayType: Class<ArrayBufferView>) {
     }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getBufferData(gltf: any, accessor: any) {
+function getBufferData(gltf: GLTF, accessor: GLTFAccessor): Uint32Array | Float32Array {
     const bufferView = gltf.json.bufferViews[accessor.bufferView];
     const buffer = gltf.buffers[bufferView.buffer];
     const offset = (accessor.byteOffset || 0) + (bufferView.byteOffset || 0);
-    const ArrayType = GLTF_TO_ARRAY_TYPE[accessor.componentType];
-    // @ts-expect-error - TS2339 - Property 'BYTES_PER_ELEMENT' does not exist on type 'Class<ArrayBufferView>'.
+    const ArrayType = GLTF_TO_ARRAY_TYPE[accessor.componentType] as Uint32ArrayConstructor | Float32ArrayConstructor;
     const itemBytes = GLTF_COMPONENTS[accessor.type] * ArrayType.BYTES_PER_ELEMENT;
-    // @ts-expect-error - TS2339 - Property 'BYTES_PER_ELEMENT' does not exist on type 'Class<ArrayBufferView>'.
-    const stride = (bufferView.byteStride && bufferView.byteStride !== itemBytes) ? bufferView.byteStride / ArrayType.BYTES_PER_ELEMENT : GLTF_COMPONENTS[accessor.type];
+
+    const stride: number = (bufferView.byteStride && bufferView.byteStride !== itemBytes) ?
+        bufferView.byteStride / ArrayType.BYTES_PER_ELEMENT :
+        GLTF_COMPONENTS[accessor.type];
+
     const bufferData = new ArrayType(buffer, offset, accessor.count * stride);
     return bufferData;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function setArrayData(gltf: any, accessor: any, array: any, buffer: ArrayBufferView) {
+function setArrayData(gltf: GLTF, accessor: GLTFAccessor, array: StructArray, buffer: ArrayBufferView) {
     const ArrayType = GLTF_TO_ARRAY_TYPE[accessor.componentType];
     const norm = getNormalizedScale(ArrayType);
+
     const bufferView = gltf.json.bufferViews[accessor.bufferView];
-    // @ts-expect-error - TS2339 - Property 'BYTES_PER_ELEMENT' does not exist on type 'Class<ArrayBufferView>'.
+
     const numElements = bufferView.byteStride ? bufferView.byteStride / ArrayType.BYTES_PER_ELEMENT : GLTF_COMPONENTS[accessor.type];
+
     const float32Array = (array).float32;
+
     const components = float32Array.length / array.capacity;
+
     for (let i = 0, count = 0;  i < accessor.count * numElements; i += numElements, count += components) {
         for (let j = 0; j < components; j++) {
             float32Array[count + j] = buffer[i + j] * norm;
         }
     }
+
     array._trim();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function convertPrimitive(primitive: any, gltf: any, textures: Array<ModelTexture>): Mesh {
+function convertPrimitive(primitive: GLTFPrimitive, gltf: GLTF, textures: Array<ModelTexture>): Mesh {
     const indicesIdx = primitive.indices;
+
     const attributeMap = primitive.attributes;
 
-    // @ts-expect-error - TS2740 - Type '{}' is missing the following properties from type 'Mesh': indexArray, indexBuffer, vertexArray, vertexBuffer, and 14 more.
-    const mesh: Mesh = {};
+    const mesh: Mesh = {} as Mesh;
 
     // eslint-disable-next-line no-warning-comments
     // TODO: Investigate a better way to pass arrays to StructArrays and avoid the double componentType indices
@@ -170,6 +175,7 @@ function convertPrimitive(primitive: any, gltf: any, textures: Array<ModelTextur
     // eslint-disable-next-line no-warning-comments
     // TODO: There might be no need to copy element by element to mesh.indexArray.
     const indexAccessor = gltf.json.accessors[indicesIdx];
+
     const numTriangles = indexAccessor.count / 3;
     mesh.indexArray.reserve(numTriangles);
     const indexArrayBuffer = getBufferData(gltf, indexAccessor);
@@ -181,8 +187,10 @@ function convertPrimitive(primitive: any, gltf: any, textures: Array<ModelTextur
     mesh.vertexArray = new ModelLayoutArray();
 
     const positionAccessor = gltf.json.accessors[attributeMap.POSITION];
+
     mesh.vertexArray.reserve(positionAccessor.count);
     const vertexArrayBuffer = getBufferData(gltf, positionAccessor);
+
     for (let i = 0; i < positionAccessor.count; i++) {
         mesh.vertexArray.emplaceBack(vertexArrayBuffer[i * 3], vertexArrayBuffer[i * 3 + 1], vertexArrayBuffer[i * 3 + 2]);
     }
@@ -194,9 +202,11 @@ function convertPrimitive(primitive: any, gltf: any, textures: Array<ModelTextur
     // colors
     if (attributeMap.COLOR_0 !== undefined) {
         const colorAccessor = gltf.json.accessors[attributeMap.COLOR_0];
+
         const numElements = GLTF_COMPONENTS[colorAccessor.type];
         const colorArrayBuffer = getBufferData(gltf, colorAccessor);
         mesh.colorArray = numElements === 3 ? new Color3fLayoutArray() : new Color4fLayoutArray();
+
         mesh.colorArray.resize(colorAccessor.count);
         setArrayData(gltf, colorAccessor, mesh.colorArray, colorArrayBuffer);
     }
@@ -204,7 +214,9 @@ function convertPrimitive(primitive: any, gltf: any, textures: Array<ModelTextur
     // normals
     if (attributeMap.NORMAL !== undefined) {
         mesh.normalArray = new NormalLayoutArray();
+
         const normalAccessor = gltf.json.accessors[attributeMap.NORMAL];
+
         mesh.normalArray.resize(normalAccessor.count);
         const normalArrayBuffer = getBufferData(gltf, normalAccessor);
         setArrayData(gltf, normalAccessor, mesh.normalArray, normalArrayBuffer);
@@ -213,7 +225,9 @@ function convertPrimitive(primitive: any, gltf: any, textures: Array<ModelTextur
     // texcoord
     if (attributeMap.TEXCOORD_0 !== undefined && textures.length > 0) {
         mesh.texcoordArray = new TexcoordLayoutArray();
+
         const texcoordAccessor = gltf.json.accessors[attributeMap.TEXCOORD_0];
+
         mesh.texcoordArray.resize(texcoordAccessor.count);
         const texcoordArrayBuffer = getBufferData(gltf, texcoordAccessor);
         setArrayData(gltf, texcoordAccessor, mesh.texcoordArray, texcoordArrayBuffer);
@@ -222,6 +236,7 @@ function convertPrimitive(primitive: any, gltf: any, textures: Array<ModelTextur
     // V2 tiles
     if (attributeMap._FEATURE_ID_RGBA4444 !== undefined) {
         const featureAccesor = gltf.json.accessors[attributeMap._FEATURE_ID_RGBA4444];
+
         if (gltf.json.extensionsUsed && gltf.json.extensionsUsed.includes('EXT_meshopt_compression')) {
             mesh.featureData = getBufferData(gltf, featureAccesor);
         }
@@ -235,17 +250,21 @@ function convertPrimitive(primitive: any, gltf: any, textures: Array<ModelTextur
 
     // Material
     const materialIdx = primitive.material;
-    const materialDesc = materialIdx !== undefined ? gltf.json.materials[materialIdx] : {defined: false};
+    const materialDesc: Partial<MaterialDescription> = materialIdx !== undefined ?
+        gltf.json.materials[materialIdx] :
+        {defined: false};
+
     mesh.material = convertMaterial(materialDesc, textures);
 
     return mesh;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function convertMeshes(gltf: any, textures: Array<ModelTexture>): Array<Array<Mesh>> {
+function convertMeshes(gltf: GLTF, textures: Array<ModelTexture>): Array<Array<Mesh>> {
     const meshes: Mesh[][] = [];
+
     for (const meshDesc of gltf.json.meshes) {
         const primitives: Mesh[] = [];
+
         for (const primitive of meshDesc.primitives) {
             primitives.push(convertPrimitive(primitive, gltf, textures));
         }
@@ -254,11 +273,12 @@ function convertMeshes(gltf: any, textures: Array<ModelTexture>): Array<Array<Me
     return meshes;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function convertNode(nodeDesc: any, gltf: any, meshes: Array<Array<Mesh>>): ModelNode {
-    const {matrix, rotation, translation, scale, mesh, extras, children} = nodeDesc;
+function convertNode(nodeDesc: GLTFNode, gltf: GLTF, meshes: Array<Array<Mesh>>): ModelNode {
+    const {matrix, rotation, translation, scale, mesh, extras, children, name} = nodeDesc;
     const node = {} as ModelNode;
-    node.matrix = matrix || mat4.fromRotationTranslationScale([] as unknown as mat4, rotation || [0, 0, 0, 1], translation || [0, 0, 0], scale || [1, 1, 1]);
+    node.name = name;
+    node.localMatrix = matrix || mat4.fromRotationTranslationScale([], rotation || [0, 0, 0, 1], translation || [0, 0, 0], scale || [1, 1, 1]);
+    node.globalMatrix = mat4.clone(node.localMatrix);
     if (mesh !== undefined) {
         node.meshes = meshes[mesh];
         const anchor: vec2 = node.anchor = [0, 0];
@@ -270,14 +290,20 @@ function convertNode(nodeDesc: any, gltf: any, meshes: Array<Array<Mesh>>): Mode
         anchor[0] = Math.floor(anchor[0] / node.meshes.length / 2);
         anchor[1] = Math.floor(anchor[1] / node.meshes.length / 2);
     }
+
     if (extras) {
         if (extras.id) {
-            node.id = extras.id;
+            node.id = extras.id as string;
         }
+
         if (extras.lights) {
-            node.lights = decodeLights(extras.lights);
+            node.lights = decodeLights(extras.lights as string);
+        }
+        if (extras['MAPBOX_geometry_bloom']) {
+            node.isGeometryBloom = extras['MAPBOX_geometry_bloom'] as boolean;
         }
     }
+
     if (children) {
         const converted: ModelNode[] = [];
         for (const childNodeIdx of children) {
@@ -314,13 +340,12 @@ function convertFootprint(mesh: FootprintMesh): Footprint | null | undefined {
     };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseLegacyFootprintMesh(gltfNode: any): FootprintMesh | null | undefined {
+function parseLegacyFootprintMesh(gltfNode: GLTFNode): FootprintMesh | null | undefined {
     if (!gltfNode.extras || !gltfNode.extras.ground) {
         return null;
     }
 
-    const groundContainer = gltfNode.extras.ground;
+    const groundContainer = gltfNode.extras.ground as number[][][];
     if (!groundContainer || !Array.isArray(groundContainer) || groundContainer.length === 0) {
         return null;
     }
@@ -373,7 +398,8 @@ function parseLegacyFootprintMesh(gltfNode: any): FootprintMesh | null | undefin
 
     // Triangulate the footprint and compute grid acceleration structure for
     // more performant intersection queries.
-    const indices = earcut(vertices.flatMap(v => [v.x, v.y]), []);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+    const indices: number[] = earcut(vertices.flatMap(v => [v.x, v.y]), []);
 
     if (indices.length === 0) {
         return null;
@@ -388,7 +414,7 @@ function parseNodeFootprintMesh(meshes: Array<Mesh>, matrix: mat4): FootprintMes
 
     let baseVertex = 0;
 
-    const tempVertex = [] as unknown as vec3;
+    const tempVertex: number[] = [];
     for (const mesh of meshes) {
         baseVertex = vertices.length;
 
@@ -425,8 +451,7 @@ function parseNodeFootprintMesh(meshes: Array<Mesh>, matrix: mat4): FootprintMes
     return {vertices, indices};
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function convertFootprints(convertedNodes: Array<ModelNode>, sceneNodes: any, modelNodes: any) {
+function convertFootprints(convertedNodes: ModelNode[], sceneNodes: number[], modelNodes: GLTFNode[]) {
     // modelNodes == a list of nodes in the gltf file
     // sceneNodes == an index array pointing to modelNodes being parsed
     assert(convertedNodes.length === sceneNodes.length);
@@ -448,8 +473,8 @@ function convertFootprints(convertedNodes: Array<ModelNode>, sceneNodes: any, mo
             continue;
         }
 
-        const fpVersion = gltfNode.extras["mapbox:footprint:version"];
-        const fpId = gltfNode.extras["mapbox:footprint:id"];
+        const fpVersion = gltfNode.extras["mapbox:footprint:version"] as string;
+        const fpId = gltfNode.extras["mapbox:footprint:id"] as string;
 
         if (fpVersion || fpId) {
             footprintNodeIndices.add(i);
@@ -469,6 +494,7 @@ function convertFootprints(convertedNodes: Array<ModelNode>, sceneNodes: any, mo
         }
 
         const node = convertedNodes[i];
+
         const gltfNode = modelNodes[sceneNodes[i]];
 
         if (!gltfNode.extras) {
@@ -479,7 +505,7 @@ function convertFootprints(convertedNodes: Array<ModelNode>, sceneNodes: any, mo
         let fpMesh: FootprintMesh | null | undefined = null;
 
         if (node.id in nodeFootprintLookup) {
-            fpMesh = parseNodeFootprintMesh(convertedNodes[nodeFootprintLookup[node.id]].meshes, node.matrix);
+            fpMesh = parseNodeFootprintMesh(convertedNodes[nodeFootprintLookup[node.id]].meshes, node.localMatrix);
         }
 
         if (!fpMesh) {
@@ -501,25 +527,27 @@ function convertFootprints(convertedNodes: Array<ModelNode>, sceneNodes: any, mo
     }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export default function convertModel(gltf: any): Array<ModelNode> {
+export default function convertModel(gltf: GLTF): Array<ModelNode> {
     const textures = convertTextures(gltf, gltf.images);
     const meshes = convertMeshes(gltf, textures);
 
-    // select the correct node hierarchy
     const {scenes, scene, nodes} = gltf.json;
-    const gltfNodes = scenes ? scenes[scene || 0].nodes : nodes;
+
+    // select the correct node hierarchy
+    const sceneNodes = scenes ?
+        scenes[scene || 0].nodes :
+        [...nodes.keys()];
 
     const resultNodes: ModelNode[] = [];
-    for (const nodeIdx of gltfNodes) {
+    for (const nodeIdx of sceneNodes) {
         resultNodes.push(convertNode(nodes[nodeIdx], gltf, meshes));
     }
-    convertFootprints(resultNodes, gltfNodes, gltf.json.nodes);
+
+    convertFootprints(resultNodes, sceneNodes, gltf.json.nodes);
     return resultNodes;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function process3DTile(gltf: any, zScale: number): Array<ModelNode> {
+export function process3DTile(gltf: GLTF, zScale: number): Array<ModelNode> {
     const nodes = convertModel(gltf);
     for (const node of nodes) {
         for (const mesh of node.meshes) {
@@ -590,14 +618,14 @@ export function calculateLightsMesh(lights: Array<AreaLight>, zScale: number, in
         // door posts. Later, additional vertices at depth distance from door could be reconsidered.
         // 0.01f to prevent intersection with door post.
         const width = light.width - 2 * light.depth * zScale * (horizontalSpread + 0.01);
-        const v1 = vec3.scaleAndAdd([] as unknown as vec3, light.pos, tangent as [number, number, number], width / 2);
-        const v2 = vec3.scaleAndAdd([] as unknown as vec3, light.pos, tangent as [number, number, number], -width / 2);
+        const v1 = vec3.scaleAndAdd([], light.pos, tangent as [number, number, number], width / 2);
+        const v2 = vec3.scaleAndAdd([], light.pos, tangent as [number, number, number], -width / 2);
         const v0 = [v1[0], v1[1], v1[2] + light.height];
         const v3 = [v2[0], v2[1], v2[2] + light.height];
 
-        const v1extrusion = vec3.scaleAndAdd([] as unknown as vec3, light.normal, tangent as [number, number, number], horizontalSpread);
+        const v1extrusion = vec3.scaleAndAdd([], light.normal, tangent as [number, number, number], horizontalSpread);
         vec3.scale(v1extrusion, v1extrusion, fallOff);
-        const v2extrusion = vec3.scaleAndAdd([] as unknown as vec3, light.normal, tangent as [number, number, number], -horizontalSpread);
+        const v2extrusion = vec3.scaleAndAdd([], light.normal, tangent as [number, number, number], -horizontalSpread);
         vec3.scale(v2extrusion, v2extrusion, fallOff);
 
         vec3.add(v1extrusion, v1, v1extrusion);
@@ -691,9 +719,9 @@ function decodeLights(base64: string): Array<AreaLight> {
         const dx = x1 - x0;
         const dy = y1 - y0;
         const width = Math.hypot(dx, dy);
-        const normal: vec3 = [dy / width, -dx / width, 0];
-        const pos: vec3 = [x0 + dx * 0.5, y0 + dy * 0.5, elevation];
-        const points: vec4 = [x0, y0, x1, y1];
+        const normal: [number, number, number] = [dy / width, -dx / width, 0];
+        const pos: [number, number, number] = [x0 + dx * 0.5, y0 + dy * 0.5, elevation];
+        const points: [number, number, number, number] = [x0, y0, x1, y1];
         lights.push({pos, normal, width, height, depth, points});
     }
     return lights;

@@ -2,10 +2,10 @@
 // @ts-nocheck
 import {describe, test, expect, assert, beforeEach, beforeAll, afterEach, afterAll, vi} from 'vitest';
 import {Map} from '../../src/ui/map';
-import {extend} from '../../src/util/util';
 
 export function waitFor(evented, event) {
     return new Promise(resolve => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         evented.once(event, resolve);
     });
 }
@@ -33,8 +33,10 @@ export function doneAsync() {
     const withAsync = (fn) => {
         return (...args) => {
             try {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                 return fn(...args, doneRef);
             } catch (err) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                 doneRef.reject(err);
             }
         };
@@ -66,10 +68,13 @@ export function createMap(options?, callback?: (err: any, map: Map) => void) {
     Object.defineProperty(container, 'getBoundingClientRect',
         {value: () => ({height: 200, width: 200}), configurable: true});
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (!options || !options.skipCSSStub) vi.spyOn(Map.prototype, '_detectMissingCSS').mockImplementation(() => {});
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (options && options.deleteStyle) delete defaultOptions.style;
 
-    const map = new Map(extend(defaultOptions, options));
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    const map = new Map(Object.assign(defaultOptions, options));
     if (callback) {
         map.on('load', () => {
             callback(null, map);

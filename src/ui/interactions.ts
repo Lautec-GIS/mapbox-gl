@@ -102,13 +102,17 @@ export class InteractionSet {
     prevHoveredFeatures: Map<string, {feature: Feature; stop: boolean | void}>;
 
     constructor(map) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.map = map;
         this.interactionsByType = new Map(); // sort interactions into type buckets for fast handling
         this.delegatedInteractions = new Map();
         this.typeById = new Map(); // keep track of each id type for easy removal
         this.filters = new Map(); // cache compiled filter expressions for each interaction
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.handleType = this.handleType.bind(this);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.handleMove = this.handleMove.bind(this);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.handleOut = this.handleOut.bind(this);
         this.hoveredFeatures = new Map();
         this.prevHoveredFeatures = new Map();
@@ -146,6 +150,7 @@ export class InteractionSet {
         }
 
         if (interactions.size === 0) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.interactionsByType.set(type, interactions);
         }
         interactions.set(id, interaction);
@@ -215,6 +220,7 @@ export class InteractionSet {
         }
         if (featuresLeaving.size) {
             event.type = 'mouseleave';
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.handleType(event, Array.from(featuresLeaving.values()));
         }
     }
@@ -261,7 +267,7 @@ export class InteractionSet {
                     const targetFeatureId = getFeatureTargetKey(variant, feature, id);
 
                     // refresh feature state for features from delegated events (they're cached from previous move event)
-                    if (delegated) targetFeature.state = this.map.getFeatureState(targetFeature);
+                    if (delegated && targetFeature.id !== undefined) targetFeature.state = this.map.getFeatureState(targetFeature);
 
                     const hovered = isMouseEnter ? this.prevHoveredFeatures.get(targetFeatureId) : null;
                     const interactionEvent = new InteractionEvent(event, id, interaction, targetFeature);

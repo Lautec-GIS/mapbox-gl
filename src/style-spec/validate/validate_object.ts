@@ -8,8 +8,11 @@ import type {StyleSpecification, LayerSpecification} from '../types';
 type ObjectElementValidatorOptions = {
     key: string;
     value: unknown;
+    valueSpec?: unknown;
     style: Partial<StyleSpecification>;
     styleSpec: StyleReference;
+    object?: object;
+    objectKey?: string;
 };
 
 type ObjectValidatorOptions = {
@@ -39,6 +42,7 @@ export default function validateObject(options: ObjectValidatorOptions): Validat
     let errors: ValidationError[] = [];
     for (const objectKey in object) {
         const elementSpecKey = objectKey.split('.')[0]; // treat 'paint.*' as 'paint'
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const elementSpec = elementSpecs[elementSpecKey] || elementSpecs['*'];
 
         let validateElement;
@@ -57,9 +61,11 @@ export default function validateObject(options: ObjectValidatorOptions): Validat
             continue;
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
         errors = errors.concat(validateElement({
             key: (key ? `${key}.` : key) + objectKey,
             value: object[objectKey],
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             valueSpec: elementSpec,
             style,
             styleSpec,
@@ -74,7 +80,8 @@ export default function validateObject(options: ObjectValidatorOptions): Validat
             continue;
         }
 
-        if (elementSpecs[elementSpecKey].required && elementSpecs[elementSpecKey]['default'] === undefined && object[elementSpecKey] === undefined) {
+        const elementSpec = elementSpecs[elementSpecKey] as {required?: boolean; default?: unknown};
+        if (elementSpec.required && elementSpec['default'] === undefined && object[elementSpecKey] === undefined) {
             errors.push(new ValidationError(key, object, `missing required property "${elementSpecKey}"`));
         }
     }

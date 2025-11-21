@@ -5,21 +5,19 @@ import banner from './build/banner.js';
 // https://github.com/mapbox/mapbox-gl-js/issues/6058
 
 const config = (input, file, format) => ({
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     input,
     output: {
         name: 'mapboxgl',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         file,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         format,
         sourcemap: true,
         indent: false,
         banner
     },
-    treeshake: {
-        moduleSideEffects: (id, external) => {
-            return !id.endsWith("tracked_parameters.ts");
-        },
-        preset: "recommended"
-    },
+    treeshake: {preset: 'recommended', moduleSideEffects: (id) => !id.endsWith('devtools.ts')},
     plugins: plugins({minified: true, production: true, keepClassNames: true, test: false, bench: false, mode: 'production'})
 });
 

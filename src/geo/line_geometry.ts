@@ -51,11 +51,11 @@ export function createLineWallGeometry(vertices: Array<Point>): WallGeometry {
         first++;
     }
 
-    let currentVertex;
-    let prevVertex = (undefined as Point);
-    let nextVertex = (undefined as Point);
-    let prevNormal = (undefined as Point);
-    let nextNormal = (undefined as Point);
+    let currentVertex: Point | undefined;
+    let prevVertex: Point | undefined;
+    let nextVertex: Point | undefined;
+    let prevNormal: Point | undefined;
+    let nextNormal: Point | undefined;
 
     if (isPolygon) {
         currentVertex = vertices[len - 2];
@@ -122,7 +122,7 @@ export function createLineWallGeometry(vertices: Array<Point>): WallGeometry {
             if (miterLength < miterLimit) currentJoin = 'miter';
         }
 
-        const addWallJoin = (vert, normal, outerOffset, innerOffset) => {
+        const addWallJoin = (vert: Point, normal: Point, outerOffset: number, innerOffset: number) => {
             const innerPoint = new Point(vert.x, vert.y);
             const outerPoint = new Point(vert.x, vert.y);
             innerPoint.x += normal.x * innerOffset;
@@ -161,7 +161,9 @@ export function createLineWallGeometry(vertices: Array<Point>): WallGeometry {
 
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     wallGeometry.geometry = [...innerWall, ...outerWall.reverse(), innerWall[0]];
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     wallGeometry.joinNormals = [...joinNormals, ...joinNormals.reverse(), joinNormals[joinNormals.length - 1]];
 
     // Build index buffer

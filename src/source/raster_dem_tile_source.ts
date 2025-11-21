@@ -1,5 +1,5 @@
 import {getImage, ResourceType} from '../util/ajax';
-import {extend, prevPowerOfTwo} from '../util/util';
+import {getExpiryDataFromHeaders, prevPowerOfTwo} from '../util/util';
 import browser from '../util/browser';
 import offscreenCanvasSupported from '../util/offscreen_canvas_supported';
 import {OverscaledTileID} from './tile_id';
@@ -24,19 +24,19 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
         super(id, options, dispatcher, eventedParent);
         this.type = 'raster-dem';
         this.maxzoom = 22;
-        this._options = extend({type: 'raster-dem'}, options);
+        this._options = Object.assign({type: 'raster-dem'}, options);
         this.encoding = options.encoding || "mapbox";
     }
 
     override loadTile(tile: Tile, callback: Callback<undefined>) {
         const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), false, this.tileSize);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         tile.request = getImage(this.map._requestManager.transformRequest(url, ResourceType.Tile), imageLoaded.bind(this));
 
         function imageLoaded(
             err?: Error | null,
             img?: TextureImage | null,
-            cacheControl?: string | null,
-            expires?: string | null,
+            responseHeaders?: Headers,
         ) {
             delete tile.request;
             if (tile.aborted) {
@@ -46,7 +46,9 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
                 tile.state = 'errored';
                 callback(err);
             } else if (img) {
-                if (this.map._refreshExpiredTiles) tile.setExpiryData({cacheControl, expires});
+                const expiryData = getExpiryDataFromHeaders(responseHeaders);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                if (this.map._refreshExpiredTiles) tile.setExpiryData(expiryData);
                 const transfer = ImageBitmap && img instanceof ImageBitmap && offscreenCanvasSupported();
                 // DEMData uses 1px padding. Handle cases with image buffer of 1 and 2 pxs, the rest assume default buffer 0
                 // in order to keep the previous implementation working (no validation against tileSize).
@@ -55,6 +57,7 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
                 const padding = 1 - buffer;
                 const borderReady = padding < 1;
                 if (!borderReady && !tile.neighboringTiles) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     tile.neighboringTiles = this._getNeighboringTiles(tile.tileID);
                 }
 
@@ -63,16 +66,22 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
                 const params: WorkerSourceDEMTileRequest = {
                     uid: tile.uid,
                     tileID: tile.tileID,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     source: this.id,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     type: this.type,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     scope: this.scope,
                     rawImageData,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     encoding: this.encoding,
                     padding
                 };
 
                 if (!tile.actor || tile.state === 'expired') {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     tile.actor = this.dispatcher.getActor();
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                     tile.actor.send('loadTile', params, done.bind(this), undefined, true);
                 }
             }
@@ -104,8 +113,7 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
         const nx = (canonical.x + 1 + dim) % dim;
         const nxw = canonical.x + 1 === dim ? tileID.wrap + 1 : tileID.wrap;
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const neighboringTiles: Record<string, any> = {};
+        const neighboringTiles: Record<string, {backfilled: boolean}> = {};
         // add adjacent tiles
         neighboringTiles[new OverscaledTileID(tileID.overscaledZ, pxw, canonical.z, px, canonical.y).key] = {backfilled: false};
         neighboringTiles[new OverscaledTileID(tileID.overscaledZ, nxw, canonical.z, nx, canonical.y).key] = {backfilled: false};

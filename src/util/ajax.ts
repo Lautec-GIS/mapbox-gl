@@ -1,4 +1,4 @@
-import {extend, warnOnce, isWorker} from './util';
+import {warnOnce, isWorker} from './util';
 import {isMapboxHTTPURL, hasCacheDefeatingSku} from './mapbox_url';
 import config from './config';
 import assert from 'assert';
@@ -75,8 +75,7 @@ export type RequestParameters = {
 export type ResponseCallback<T> = (
     error?: Error | DOMException | AJAXError | null,
     data?: T | null,
-    cacheControl?: string | null,
-    expires?: string | null,
+    headers?: Headers
 ) => void;
 
 export class AJAXError extends Error {
@@ -101,9 +100,7 @@ export class AJAXError extends Error {
 // to the string(!) "null" (Firefox), or "file://" (Chrome, Safari, Edge, IE),
 // and we will set an empty referrer. Otherwise, we're using the document's URL.
 export const getReferrer: () => string = isWorker() ?
-// @ts-expect-error - TS2551 - Property 'worker' does not exist on type 'Window & typeof globalThis'. Did you mean 'Worker'? | TS2551 - Property 'worker' does not exist on type 'Window & typeof globalThis'. Did you mean 'Worker'?
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    () => self.worker.referrer :
+    () => (self as typeof self & {worker: {referrer: string}}).worker.referrer :
     () => (location.protocol === 'blob:' ? parent : self).location.href;
 
 // Determines whether a URL is a file:// URL. This is obviously the case if it begins
@@ -161,10 +158,12 @@ function makeFetchRequest(requestParameters: RequestParameters, callback: Respon
                 return callback(new AJAXError(response.statusText, response.status, requestParameters.url));
             }
         }).catch(error => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (error.name === 'AbortError') {
                 // silence expected AbortError
                 return;
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             callback(new Error(`${error.message} ${requestParameters.url}`));
         });
     };
@@ -185,8 +184,9 @@ function makeFetchRequest(requestParameters: RequestParameters, callback: Respon
                 cachePut(request, cacheableResponse, requestTime);
             }
             complete = true;
-            callback(null, result, response.headers.get('Cache-Control'), response.headers.get('Expires'));
+            callback(null, result, response.headers);
         }).catch(err => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             if (!aborted) callback(new Error(err.message));
         });
     };
@@ -226,12 +226,22 @@ function makeXMLHttpRequest(requestParameters: RequestParameters, callback: Resp
             if (requestParameters.type === 'json') {
                 // We're manually parsing JSON here to get better error messages.
                 try {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                     data = JSON.parse(xhr.response);
                 } catch (err) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                     return callback(err);
                 }
             }
-            callback(null, data, xhr.getResponseHeader('Cache-Control'), xhr.getResponseHeader('Expires'));
+            const headersObject = new Headers();
+            const headers = xhr.getAllResponseHeaders();
+            headers.trim().split(/[\r\n]+/).forEach(line => {
+                const parts = line.split(': ');
+                const header = parts.shift();
+                const value = parts.join(': ');
+                headersObject.append(header, value);
+            });
+            callback(null, data, headersObject);
         } else {
             callback(new AJAXError(xhr.statusText, xhr.status, requestParameters.url));
         }
@@ -260,22 +270,22 @@ export const makeRequest = function (requestParameters: RequestParameters, callb
 };
 
 export const getJSON = function (requestParameters: RequestParameters, callback: ResponseCallback<unknown>): Cancelable {
-    return makeRequest(extend(requestParameters, {type: 'json'}), callback);
+    return makeRequest(Object.assign(requestParameters, {type: 'json'}), callback);
 };
 
 export const getArrayBuffer = function (
     requestParameters: RequestParameters,
     callback: ResponseCallback<ArrayBuffer>,
 ): Cancelable {
-    return makeRequest(extend(requestParameters, {type: 'arrayBuffer'}), callback);
+    return makeRequest(Object.assign(requestParameters, {type: 'arrayBuffer'}), callback);
 };
 
 export const postData = function (requestParameters: RequestParameters, callback: ResponseCallback<string>): Cancelable {
-    return makeRequest(extend(requestParameters, {method: 'POST'}), callback);
+    return makeRequest(Object.assign(requestParameters, {method: 'POST'}), callback);
 };
 
 export const getData = function (requestParameters: RequestParameters, callback: ResponseCallback<string>): Cancelable {
-    return makeRequest(extend(requestParameters, {method: 'GET'}), callback);
+    return makeRequest(Object.assign(requestParameters, {method: 'GET'}), callback);
 };
 
 function sameOrigin(url: string) {
@@ -307,6 +317,7 @@ function arrayBufferToImageBitmap(data: ArrayBuffer, callback: Callback<ImageBit
     createImageBitmap(blob).then((imgBitmap) => {
         callback(null, imgBitmap);
     }).catch((e) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         callback(new Error(`Could not load image because of ${e.message}. Please make sure to use a supported image type such as PNG or JPEG. Note that SVGs are not supported.`));
     });
 }
@@ -335,8 +346,10 @@ export const getImage = function (
             requestParameters,
             callback,
             cancelled: false,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             cancel() { this.cancelled = true; }
         };
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         imageQueue.push(queued);
         return queued;
     }
@@ -348,10 +361,14 @@ export const getImage = function (
         advanced = true;
         numImageRequests--;
         assert(numImageRequests >= 0);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         while (imageQueue.length && numImageRequests < config.MAX_PARALLEL_IMAGE_REQUESTS) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             const request = imageQueue.shift();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const {requestParameters, callback, cancelled} = request;
             if (!cancelled) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument
                 request.cancel = getImage(requestParameters, callback).cancel;
             }
         }
@@ -359,7 +376,7 @@ export const getImage = function (
 
     // request the image with XHR to work around caching issues
     // see https://github.com/mapbox/mapbox-gl-js/issues/1470
-    const request = getArrayBuffer(requestParameters, (err?: Error | null, data?: ArrayBuffer | null, cacheControl?: string | null, expires?: string | null) => {
+    const request = getArrayBuffer(requestParameters, (err?: Error | null, data?: ArrayBuffer | null, headers?: Headers) => {
 
         advanceImageRequestQueue();
 
@@ -367,9 +384,9 @@ export const getImage = function (
             callback(err);
         } else if (data) {
             if (self.createImageBitmap) {
-                arrayBufferToImageBitmap(data, (err, imgBitmap) => callback(err, imgBitmap, cacheControl, expires));
+                arrayBufferToImageBitmap(data, (err, imgBitmap) => callback(err, imgBitmap, headers));
             } else {
-                arrayBufferToImage(data, (err, img) => callback(err, img, cacheControl, expires));
+                arrayBufferToImage(data, (err, img) => callback(err, img, headers));
             }
         }
     });

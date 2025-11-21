@@ -1,17 +1,19 @@
 import styleSpec from '../style-spec/reference/latest';
-import {extend, degToRad} from '../util/util';
+import {degToRad} from '../util/util';
 import {Evented} from '../util/evented';
 import {validateStyle, validateRain, emitValidationErrors} from './validate_style';
 import {Transitionable, PossiblyEvaluated} from './properties';
 import Color from '../style-spec/util/color';
 import {getProperties, type RainProps as Props} from '../../3d-style/style/rain_properties';
 
+import type {vec2, vec3} from 'gl-matrix';
+import type {Validator} from './validate_style';
 import type {RainSpecification} from '../style-spec/types';
 import type EvaluationParameters from './evaluation_parameters';
 import type {TransitionParameters, ConfigOptions, Transitioning} from './properties';
 import type Transform from '../geo/transform';
 import type {StyleSetterOptions} from '../style/style';
-import type {vec2, vec3} from 'gl-matrix';
+import type {StylePropertySpecification} from '../style-spec/style-spec';
 
 interface RainState {
     density: number;
@@ -76,21 +78,20 @@ class Rain extends Evented {
             return;
         }
 
-        const properties = extend({}, rain);
-        for (const name of Object.keys(styleSpec.rain)) {
+        const properties = Object.assign({}, rain);
+        const rainSpec = styleSpec.rain as Record<PropertyKey, StylePropertySpecification>;
+        for (const name of Object.keys(rainSpec)) {
             // Fallback to use default style specification when the properties wasn't set
             if (properties[name] === undefined) {
-                properties[name] = styleSpec.rain[name].default;
+                properties[name] = rainSpec[name].default;
             }
         }
 
         this._options = properties;
-        // @ts-expect-error - TS2345 - Argument of type 'RainSpecification' is not assignable to parameter of type 'PropertyValueSpecifications<Props>'.
         this._transitionable.setTransitionOrValue(this._options, configOptions);
     }
 
     updateConfig(configOptions?: ConfigOptions | null) {
-        // @ts-expect-error - TS2345 - Argument of type 'FogSpecification' is not assignable to parameter of type 'PropertyValueSpecifications<Props>'.
         this._transitionable.setTransitionOrValue(this._options, new Map(configOptions));
     }
 
@@ -107,8 +108,7 @@ class Rain extends Evented {
     }
 
     _validate(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        validate: any,
+        validate: Validator,
         value: unknown,
         options?: {
             validate?: boolean;
@@ -118,7 +118,8 @@ class Rain extends Evented {
             return false;
         }
 
-        return emitValidationErrors(this, validate.call(validateStyle, extend({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        return emitValidationErrors(this, validate.call(validateStyle, Object.assign({
             value,
             style: {glyphs: true, sprite: true},
             styleSpec

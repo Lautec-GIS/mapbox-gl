@@ -117,6 +117,16 @@ export function queryRenderedFeatures(
         }
     }
 
+    for (const layerId in query.layers) {
+        const layer = query.layers[layerId];
+        if (layer.styleLayer) {
+            const queryResults = layer.styleLayer.queryRenderedFeatures(queryGeometry, query.sourceCache, transform);
+            if (Object.keys(queryResults).length) {
+                renderedFeatureLayers.push({wrappedTileID: 0, queryResults});
+            }
+        }
+    }
+
     if (renderedFeatureLayers.length === 0) {
         return {};
     }
@@ -133,7 +143,7 @@ export function queryRenderedSymbols(
     availableImages: ImageId[],
     collisionIndex: CollisionIndex,
     retainedQueryData: Record<number, RetainedQueryData>,
-    worldview
+    worldview: string | undefined
 ): QueryResult {
     const result: QueryResult = {};
     const renderedSymbols = collisionIndex.queryRenderedSymbols(queryGeometry);
@@ -197,10 +207,9 @@ export function querySourceFeatures(sourceCache: SourceCache, params?: {
         return sourceCache.getTileByID(id);
     });
 
-    const result = [];
+    const result: Feature[] = [];
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const dataTiles: Record<string, any> = {};
+    const dataTiles: Record<string, boolean> = {};
     for (let i = 0; i < tiles.length; i++) {
         const tile = tiles[i];
         const dataID = tile.tileID.canonical.key;
@@ -210,7 +219,6 @@ export function querySourceFeatures(sourceCache: SourceCache, params?: {
         }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return result;
 }
 
@@ -231,6 +239,7 @@ function mergeRenderedFeatureLayers(tiles: RenderedFeatureLayers): QueryResult {
         const wrappedIDLayers = wrappedIDLayerMap[wrappedID] = wrappedIDLayerMap[wrappedID] || {};
         for (const layerID in queryResults) {
             const tileFeatures = queryResults[layerID];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const wrappedIDFeatures: Record<number, boolean> = wrappedIDLayers[layerID] = wrappedIDLayers[layerID] || {};
             const resultFeatures = result[layerID] = result[layerID] || [];
             for (const tileFeature of tileFeatures) {

@@ -1,7 +1,6 @@
 import {vec3, vec4, mat4} from 'gl-matrix';
 import {
     bindAll,
-    extend,
     warnOnce,
     clamp,
     wrap,
@@ -64,7 +63,7 @@ import type {LngLatLike, LngLatBoundsLike} from '../geo/lng_lat';
  * @property {PaddingOptions} padding Dimensions in pixels applied on each side of the viewport for shifting the vanishing point.
  * Note that when `padding` is used with `jumpTo`, `easeTo`, and `flyTo`, it also sets the global map padding as a side effect,
  * affecting all subsequent camera movements until the padding is reset. To avoid this, add the `retainPadding: false` option.
- * @property {boolean} retainPadding If `false`, the value provided with the `padding` option will not be retained as the global map padding. This is `true` by default.
+ * @property {boolean} retainPadding If `false`, the value provided with the `padding` option will not be retained as the global map padding. When set to `true` the current camera transform will be modified by the function being called with this option. This is `true` by default.
  * @example
  * // set the map's initial perspective with CameraOptions
  * const map = new mapboxgl.Map({
@@ -278,7 +277,7 @@ class Camera extends Evented<MapEvents> {
      */
     panBy(offset: PointLike, options?: AnimationOptions, eventData?: EventData): this {
         offset = Point.convert(offset).mult(-1);
-        return this.panTo(this.transform.center, extend({offset}, options), eventData);
+        return this.panTo(this.transform.center, Object.assign({offset}, options), eventData);
     }
 
     /**
@@ -299,7 +298,7 @@ class Camera extends Evented<MapEvents> {
      * @see [Example: Update a feature in realtime](https://docs.mapbox.com/mapbox-gl-js/example/live-update-feature/)
      */
     panTo(lnglat: LngLatLike, options?: AnimationOptions, eventData?: EventData): this {
-        return this.easeTo(extend({
+        return this.easeTo(Object.assign({
             center: lnglat
         }, options), eventData);
     }
@@ -360,7 +359,7 @@ class Camera extends Evented<MapEvents> {
      * });
      */
     zoomTo(zoom: number, options?: AnimationOptions | null, eventData?: EventData): this {
-        return this.easeTo(extend({
+        return this.easeTo(Object.assign({
             zoom
         }, options), eventData);
     }
@@ -493,7 +492,7 @@ class Camera extends Evented<MapEvents> {
      * map.rotateTo(30, {duration: 2000});
      */
     rotateTo(bearing: number, options?: EasingOptions, eventData?: EventData): this {
-        return this.easeTo(extend({
+        return this.easeTo(Object.assign({
             bearing
         }, options), eventData);
     }
@@ -513,7 +512,7 @@ class Camera extends Evented<MapEvents> {
      * map.resetNorth({duration: 2000});
      */
     resetNorth(options?: EasingOptions, eventData?: EventData): this {
-        this.rotateTo(0, extend({duration: 1000}, options), eventData);
+        this.rotateTo(0, Object.assign({duration: 1000}, options), eventData);
         return this;
     }
 
@@ -532,7 +531,7 @@ class Camera extends Evented<MapEvents> {
      * map.resetNorthPitch({duration: 2000});
      */
     resetNorthPitch(options?: EasingOptions, eventData?: EventData): this {
-        this.easeTo(extend({
+        this.easeTo(Object.assign({
             bearing: 0,
             pitch: 0,
             duration: 1000
@@ -625,17 +624,17 @@ class Camera extends Evented<MapEvents> {
 
     _extendPadding(padding: PaddingOptions | null | undefined | number): Required<PaddingOptions> {
         const defaultPadding = {top: 0, right: 0, bottom: 0, left: 0};
-        if (padding == null) return extend({}, defaultPadding, this.transform.padding);
+        if (padding == null) return Object.assign({}, defaultPadding, this.transform.padding);
 
         if (typeof padding === 'number') {
             return {top: padding, bottom: padding, right: padding, left: padding};
         }
 
-        return extend({}, defaultPadding, padding);
+        return Object.assign({}, defaultPadding, padding);
     }
 
     _extendCameraOptions(options?: CameraOptions): FullCameraOptions {
-        options = extend({
+        options = Object.assign({
             offset: [0, 0],
             maxZoom: this.transform.maxZoom
         }, options);
@@ -680,9 +679,9 @@ class Camera extends Evented<MapEvents> {
 
         const origin = latLngToECEF(midLat, midLng);
 
-        const zAxis = vec3.normalize([] as unknown as vec3, origin);
-        const xAxis = vec3.normalize([] as unknown as vec3, vec3.cross([] as unknown as vec3, zAxis, [0, 1, 0]));
-        const yAxis = vec3.cross([] as unknown as vec3, xAxis, zAxis);
+        const zAxis = vec3.normalize([], origin);
+        const xAxis = vec3.normalize([], vec3.cross([], zAxis, [0, 1, 0]));
+        const yAxis = vec3.cross([], xAxis, zAxis);
 
         const aabbOrientation: mat4 = [
             xAxis[0], xAxis[1], xAxis[2], 0,
@@ -707,7 +706,7 @@ class Camera extends Evented<MapEvents> {
 
         let aabb = Aabb.fromPoints(ecefCoords.map(p => [vec3.dot(xAxis, p), vec3.dot(yAxis, p), vec3.dot(zAxis, p)]));
 
-        const center = vec3.transformMat4([] as unknown as vec3, aabb.center, aabbOrientation) as [number, number, number];
+        const center = vec3.transformMat4([], aabb.center, aabbOrientation) as [number, number, number];
 
         if (vec3.squaredLength(center) === 0) {
             vec3.set(center, 0, 0, 1);
@@ -718,9 +717,9 @@ class Camera extends Evented<MapEvents> {
         tr.center = ecefToLatLng(center);
 
         const worldToCamera = tr.getWorldToCameraMatrix();
-        const cameraToWorld = mat4.invert(new Float64Array(16) as unknown as mat4, worldToCamera);
+        const cameraToWorld = mat4.invert(new Float64Array(16), worldToCamera);
 
-        aabb = Aabb.applyTransform(aabb, mat4.multiply([] as unknown as mat4, worldToCamera, aabbOrientation));
+        aabb = Aabb.applyTransform(aabb, mat4.multiply([], worldToCamera, aabbOrientation));
         const extendedAabb = this._extendAABB(aabb, tr, eOptions, bearing);
         if (!extendedAabb) {
             warnOnce('Map cannot fit within canvas with the given bounds, padding, and/or offset.');
@@ -733,16 +732,16 @@ class Camera extends Evented<MapEvents> {
         const aabbHalfExtentZ = (aabb.max[2] - aabb.min[2]) * 0.5;
         const frustumDistance = this._minimumAABBFrustumDistance(tr, aabb);
 
-        const offsetZ = vec3.scale([] as unknown as vec3, [0, 0, 1], aabbHalfExtentZ);
+        const offsetZ = vec3.scale([], [0, 0, 1], aabbHalfExtentZ);
         const aabbClosestPoint = vec3.add(offsetZ, center, offsetZ);
         const offsetDistance = frustumDistance + (tr.pitch === 0 ? 0 : vec3.distance(center, aabbClosestPoint));
 
         const globeCenter = tr.globeCenterInViewSpace;
-        const normal = vec3.sub([] as unknown as vec3, center, [globeCenter[0], globeCenter[1], globeCenter[2]]);
+        const normal = vec3.sub([], center, [globeCenter[0], globeCenter[1], globeCenter[2]]);
         vec3.normalize(normal, normal);
         vec3.scale(normal, normal, offsetDistance);
 
-        const cameraPosition = vec3.add([] as unknown as vec3, center, normal);
+        const cameraPosition = vec3.add([], center, normal);
 
         vec3.transformMat4(cameraPosition, cameraPosition, cameraToWorld);
 
@@ -790,7 +789,7 @@ class Camera extends Evented<MapEvents> {
         const width = tr.width - (left + right);
         const height = tr.height - (top + bottom);
 
-        const aabbSize = vec3.sub([] as unknown as vec3, aabb.max, aabb.min) as [number, number, number];
+        const aabbSize = vec3.sub([], aabb.max, aabb.min) as [number, number, number];
 
         const scaleX = width / aabbSize[0];
         const scaleY = height / aabbSize[1];
@@ -843,7 +842,7 @@ class Camera extends Evented<MapEvents> {
     queryTerrainElevation(lnglat: LngLatLike, options?: ElevationQueryOptions | null): number | null | undefined {
         const elevation = this.transform.elevation;
         if (elevation) {
-            options = extend({}, {exaggerated: true}, options);
+            options = Object.assign({}, {exaggerated: true}, options);
             return elevation.getAtPoint(MercatorCoordinate.fromLngLat(lnglat), null, options.exaggerated);
         }
         return null;
@@ -913,7 +912,7 @@ class Camera extends Evented<MapEvents> {
         let aabb = Aabb.fromPoints(worldCoords);
 
         const worldToCamera = tr.getWorldToCameraMatrix();
-        const cameraToWorld = mat4.invert(new Float64Array(16) as unknown as mat4, worldToCamera);
+        const cameraToWorld = mat4.invert(new Float64Array(16), worldToCamera);
 
         aabb = Aabb.applyTransform(aabb, worldToCamera);
         const extendedAabb = this._extendAABB(aabb, tr, eOptions, bearing);
@@ -923,7 +922,7 @@ class Camera extends Evented<MapEvents> {
         }
 
         aabb = extendedAabb;
-        const size = vec3.sub([] as unknown as vec3, aabb.max, aabb.min);
+        const size = vec3.sub([], aabb.max, aabb.min);
         const aabbHalfExtentZ = size[2] * 0.5;
         const frustumDistance = this._minimumAABBFrustumDistance(tr, aabb);
 
@@ -932,8 +931,8 @@ class Camera extends Evented<MapEvents> {
         vec4.transformMat4(normalZ, normalZ, worldToCamera);
         vec4.normalize(normalZ, normalZ);
 
-        const offset = vec3.scale([] as unknown as vec3, normalZ as unknown as vec3, frustumDistance + aabbHalfExtentZ);
-        const cameraPosition = vec3.add([] as unknown as vec3, aabb.center, offset);
+        const offset = vec3.scale([], normalZ, frustumDistance + aabbHalfExtentZ);
+        const cameraPosition = vec3.add([], aabb.center, offset);
 
         vec3.transformMat4(aabb.center, aabb.center, cameraToWorld);
         vec3.transformMat4(cameraPosition, cameraPosition, cameraToWorld);
@@ -1065,7 +1064,7 @@ class Camera extends Evented<MapEvents> {
         // cameraForBounds warns + returns undefined if unable to fit:
         if (!calculatedOptions) return this;
 
-        options = extend(calculatedOptions, options);
+        options = Object.assign(calculatedOptions, options);
 
         return options.linear ?
             this.easeTo(options, eventData) :
@@ -1329,7 +1328,7 @@ class Camera extends Evented<MapEvents> {
     ): this {
         this._stop(false, options.easeId);
 
-        options = extend({
+        options = Object.assign({
             offset: [0, 0],
             duration: 500,
             easing: defaultEasing
@@ -1602,7 +1601,7 @@ class Camera extends Evented<MapEvents> {
 
         this.stop();
 
-        options = extend({
+        options = Object.assign({
             offset: [0, 0],
             speed: 1.2,
             curve: 1.42,

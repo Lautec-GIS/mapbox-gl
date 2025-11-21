@@ -4,6 +4,7 @@ import {getType, isObject} from '../util/get_type';
 
 import type {StyleReference} from '../reference/latest';
 import type {StyleSpecification} from '../types';
+import type {StylePropertySpecification} from '../style-spec';
 
 type SnowValidatorOptions = {
     key: string;
@@ -16,7 +17,7 @@ export default function validateSnow(options: SnowValidatorOptions): ValidationE
     const snow = options.value;
     const style = options.style;
     const styleSpec = options.styleSpec;
-    const snowSpec = styleSpec.snow;
+    const snowSpec = styleSpec.snow as Record<PropertyKey, StylePropertySpecification>;
 
     if (snow === undefined) {
         return [];
@@ -34,6 +35,7 @@ export default function validateSnow(options: SnowValidatorOptions): ValidationE
             errors = errors.concat(validate({
                 key,
                 value: snow[key],
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 valueSpec: styleSpec.transition,
                 style,
                 styleSpec
@@ -42,6 +44,7 @@ export default function validateSnow(options: SnowValidatorOptions): ValidationE
             errors = errors.concat(validate({
                 key,
                 value: snow[key],
+
                 valueSpec: snowSpec[key],
                 style,
                 styleSpec

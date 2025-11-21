@@ -16,6 +16,7 @@ import {TriangleIndexArray, StarsVertexArray} from '../data/array_types';
 import {starsLayout} from './stars_attributes';
 import {starsUniformValues} from '../terrain/stars_program';
 import {mulberry32} from '../style-spec/util/random';
+import {DevTools} from '../ui/devtools';
 
 import type Fog from '../style/fog';
 import type Painter from './painter';
@@ -68,10 +69,10 @@ class Atmosphere {
         this.params = new StarsParams();
         this.updateNeeded = true;
 
-        painter.tp.registerParameter(this.params, ["Stars"], "starsCount", {min: 100, max: 16000, step: 1}, () => { this.updateNeeded = true; });
-        painter.tp.registerParameter(this.params, ["Stars"], "sizeMultiplier", {min: 0.01, max: 2.0, step: 0.01});
-        painter.tp.registerParameter(this.params, ["Stars"], "sizeRange", {min: 0.0, max: 200.0, step: 1}, () => { this.updateNeeded = true; });
-        painter.tp.registerParameter(this.params, ["Stars"], "intensityRange", {min: 0.0, max: 200.0, step: 1}, () => { this.updateNeeded = true; });
+        DevTools.addParameter(this.params, 'starsCount', 'Stars', {min: 100, max: 16000, step: 1}, () => { this.updateNeeded = true; });
+        DevTools.addParameter(this.params, 'sizeMultiplier', 'Stars', {min: 0.01, max: 2.0, step: 0.01});
+        DevTools.addParameter(this.params, 'sizeRange', 'Stars', {min: 0.0, max: 200.0, step: 1}, () => { this.updateNeeded = true; });
+        DevTools.addParameter(this.params, 'intensityRange', 'Stars', {min: 0.0, max: 200.0, step: 1}, () => { this.updateNeeded = true; });
     }
 
     update(painter: Painter) {
@@ -95,7 +96,7 @@ class Atmosphere {
             let base = 0;
             for (let i = 0; i < stars.length; ++i) {
 
-                const star = vec3.scale([] as unknown as vec3, stars[i], 200.0);
+                const star = vec3.scale([], stars[i], 200.0);
 
                 const size = Math.max(0, 1.0 + 0.01 * sizeRange * (-0.5 + 1.0 * sRand()));
                 const intensity = Math.max(0, 1.0 + 0.01 * intensityRange * (-0.5 + 1.0 * sRand()));
@@ -139,13 +140,13 @@ class Atmosphere {
 
         const fogLUT = painter.style.getLut(fog.scope);
         const colorIgnoreLut = fog.properties.get('color-use-theme') === 'none';
-        const fogColor = fog.properties.get('color').toNonPremultipliedRenderColor(colorIgnoreLut ? null : fogLUT).toArray01();
+        const fogColor = fog.properties.get('color').toNonPremultipliedRenderColor(colorIgnoreLut ? null : fogLUT);
 
         const hignoreLutIgnoreLut = fog.properties.get('high-color-use-theme') === 'none';
-        const highColor = fog.properties.get('high-color').toNonPremultipliedRenderColor(hignoreLutIgnoreLut ? null : fogLUT).toArray01();
+        const highColor = fog.properties.get('high-color').toNonPremultipliedRenderColor(hignoreLutIgnoreLut ? null : fogLUT);
 
         const spaceColorIgnoreLut = fog.properties.get('space-color-use-theme') === 'none';
-        const spaceColor = fog.properties.get('space-color').toNonPremultipliedRenderColor(spaceColorIgnoreLut ? null : fogLUT).toArray01();
+        const spaceColor = fog.properties.get('space-color').toNonPremultipliedRenderColor(spaceColorIgnoreLut ? null : fogLUT);
 
         // https://www.desmos.com/calculator/oanvvpr36d
         // Ensure horizon blend is 0-exclusive to prevent division by 0 in the shader
@@ -218,16 +219,16 @@ class Atmosphere {
 
         const program = painter.getOrCreateProgram('stars');
 
-        const orientation = quat.identity([] as unknown as quat);
+        const orientation = quat.identity([]);
         quat.rotateX(orientation, orientation, -tr._pitch);
         quat.rotateZ(orientation, orientation, -tr.angle);
         quat.rotateX(orientation, orientation, degToRad(tr._center.lat));
         quat.rotateY(orientation, orientation, -degToRad(tr._center.lng));
 
         const rotationMatrix = mat4.fromQuat(new Float32Array(16), orientation);
-        const mvp = mat4.multiply([] as unknown as mat4, tr.starsProjMatrix, rotationMatrix);
-        const modelView3 = mat3.fromMat4([] as unknown as mat3, rotationMatrix);
-        const modelviewInv = mat3.invert([] as unknown as mat3, modelView3);
+        const mvp = mat4.multiply([], tr.starsProjMatrix, rotationMatrix);
+        const modelView3 = mat3.fromMat4([], rotationMatrix);
+        const modelviewInv = mat3.invert([], modelView3);
 
         const camUp: [number, number, number] = [0, 1, 0];
         vec3.transformMat3(camUp, camUp, modelviewInv);

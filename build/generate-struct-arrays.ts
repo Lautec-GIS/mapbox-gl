@@ -10,13 +10,14 @@
 
 import fs from 'fs';
 import ejs from 'ejs';
-import {extend} from '../src/util/util';
 import {createLayout, viewTypes} from '../src/util/struct_array';
 
-// eslint-disable-next-line import/order
+// eslint-disable-next-line import-x/order
 import type {ViewType, StructArrayLayout, StructArrayMember} from '../src/util/struct_array';
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 const structArrayLayoutJs = ejs.compile(fs.readFileSync('src/util/struct_array_layout.js.ejs', 'utf8'), {strict: true});
+// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 const structArrayJs = ejs.compile(fs.readFileSync('src/util/struct_array.js.ejs', 'utf8'), {strict: true});
 
 const typeAbbreviations = {
@@ -49,7 +50,7 @@ function normalizeMembers(members: StructArrayMember[], usedTypes: Set<string | 
             usedTypes.add(member.type);
         }
 
-        return extend(member, {
+        return Object.assign(member, {
             size: sizeOf(member.type),
             view: member.type.toLowerCase()
         }) as StructArrayMember;
@@ -90,10 +91,14 @@ function createStructArrayLayoutType({
 
     // combine consecutive 'members' with same underlying type, summing their
     // component counts
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     if (!alignment || alignment === 1) members = members.reduce((memo, member) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (memo.length > 0 && memo[memo.length - 1].type === member.type) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const last = memo[memo.length - 1];
-            return memo.slice(0, -1).concat(extend({}, last, {
+            return memo.slice(0, -1).concat(Object.assign({}, last, {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                 components: last.components + member.components,
             }));
         }
@@ -122,6 +127,7 @@ function sizeOf(type: ViewType): number {
 
 function camelize(str: string) {
     return str.replace(/(?:^|[-_])(.)/g, (_, x) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         return /^[0-9]$/.test(x) ? _ : x.toUpperCase();
     });
 }
@@ -130,7 +136,7 @@ global.camelize = camelize;
 
 import particleAttributes from '../src/data/particle_attributes';
 import posAttributes, {posAttributesGlobeExt} from '../src/data/pos_attributes';
-// eslint-disable-next-line import/order
+// eslint-disable-next-line import-x/order
 import boundsAttributes from '../src/data/bounds_attributes';
 
 createStructArrayType('pos', posAttributes);
@@ -145,9 +151,19 @@ import lineAttributesPattern from '../src/data/bucket/line_attributes_pattern';
 import {patternAttributes} from '../src/data/bucket/pattern_attributes';
 import dashAttributes from '../src/data/bucket/dash_attributes';
 import skyboxAttributes from '../src/render/skybox_attributes';
-import {fillExtrusionGroundAttributes, fillExtrusionAttributes, fillExtrusionAttributesExt, centroidAttributes, hiddenByLandmarkAttributes, wallAttributes} from '../src/data/bucket/fill_extrusion_attributes';
-import {buildingPositionAttributes, buildingNormalAttributes, buildingColorAttributes, buildingBloomAttenuationAttributes} from '../3d-style/data/building_attributes';
-// eslint-disable-next-line import/order
+import {fillExtrusionGroundAttributes, fillExtrusionGroundRadiusAttributes, fillExtrusionAttributes, fillExtrusionAttributesExt, centroidAttributes, hiddenByLandmarkAttributes, wallAttributes} from '../src/data/bucket/fill_extrusion_attributes';
+import {
+    buildingPositionAttributes,
+    buildingNormalAttributes,
+    buildingCentroidAttributes,
+    buildingColorAttributes,
+    buildingFacadePaintAttributes,
+    buildingFacadeDataAttributes,
+    buildingFacadeVerticalRangeAttributes,
+    buildingBloomAttenuationAttributes,
+    buildingFloodLightWallRadiusAttributes
+} from '../3d-style/data/building_attributes';
+// eslint-disable-next-line import-x/order
 import {modelAttributes, color3fAttributes, color4fAttributes, normalAttributes, texcoordAttributes, instanceAttributes, featureAttributes} from '../3d-style/data/model_attributes';
 
 // layout vertex arrays
@@ -160,6 +176,7 @@ const layoutAttributes = {
     fillIntersectionsNormal: intersectionsNormalAttributes,
     'fill-extrusion': fillExtrusionAttributes,
     'fill-extrusion-ground': fillExtrusionGroundAttributes,
+    'fill-extrusion-ground-radius': fillExtrusionGroundRadiusAttributes,
     heatmap: circleAttributes,
     line: lineLayoutAttributes,
     lineExt: lineAttributesExt,
@@ -168,6 +185,7 @@ const layoutAttributes = {
     dash: dashAttributes
 };
 for (const name in layoutAttributes) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     createStructArrayType(`${name.replace(/-/g, '_')}_layout`, layoutAttributes[name]);
 }
 
@@ -175,7 +193,7 @@ for (const name in layoutAttributes) {
 createStructArrayType('fill_extrusion_ext', fillExtrusionAttributesExt);
 
 // symbol layer specific arrays
-// eslint-disable-next-line import/order
+// eslint-disable-next-line import-x/order
 import {
     symbolLayoutAttributes,
     symbolGlobeExtAttributes,
@@ -215,20 +233,20 @@ createStructArrayType('z_offset_vertex', zOffsetAttributes);
 createStructArrayType('symbol_orientation', orientationAttributes);
 
 import globeAttributes from '../src/terrain/globe_attributes';
-// eslint-disable-next-line import/order
+// eslint-disable-next-line import-x/order
 import {atmosphereLayout} from '../src/render/atmosphere_attributes';
 createStructArrayType('globe_vertex', globeAttributes);
 createStructArrayType('atmosphere_vertex', atmosphereLayout);
 
-// eslint-disable-next-line import/order
+// eslint-disable-next-line import-x/order
 import {starsLayout} from '../src/render/stars_attributes';
 createStructArrayType('stars_vertex', starsLayout);
 
-// eslint-disable-next-line import/order
+// eslint-disable-next-line import-x/order
 import {snowLayout} from '../src/precipitation/snow_attributes.js';
 createStructArrayType('snow_vertex', snowLayout);
 
-// eslint-disable-next-line import/order
+// eslint-disable-next-line import-x/order
 import {rainLayout} from '../src/precipitation/rain_attributes.js';
 createStructArrayType('rain_vertex', rainLayout);
 
@@ -317,8 +335,13 @@ createStructArrayType('fill_extrusion_hidden_by_landmark', hiddenByLandmarkAttri
 // Procedural buildings
 createStructArrayType('building_position', buildingPositionAttributes);
 createStructArrayType('building_normal', buildingNormalAttributes);
+createStructArrayType('building_centroid', buildingCentroidAttributes);
 createStructArrayType('building_color', buildingColorAttributes);
+createStructArrayType('building_facade_paint', buildingFacadePaintAttributes);
+createStructArrayType('building_facade_data', buildingFacadeDataAttributes);
+createStructArrayType('building_facade_vertical_range', buildingFacadeVerticalRangeAttributes);
 createStructArrayType('building_bloom_attenuation', buildingBloomAttenuationAttributes);
+createStructArrayType('building_flood_light_wall_radius', buildingFloodLightWallRadiusAttributes);
 
 // Globe extension arrays
 createStructArrayType('circle_globe_ext', circleGlobeAttributesExt);
@@ -335,9 +358,9 @@ import {register} from '../util/web_worker_transfer';
 
 import type {IStructArrayLayout} from '../util/struct_array';
 
-${// eslint-disable-next-line @typescript-eslint/no-base-to-string
+${// eslint-disable-next-line @typescript-eslint/no-base-to-string, @typescript-eslint/no-unsafe-argument
     layouts.map(structArrayLayoutJs).join('\n')}
-${// eslint-disable-next-line @typescript-eslint/no-base-to-string
+${// eslint-disable-next-line @typescript-eslint/no-base-to-string, @typescript-eslint/no-unsafe-argument
     arraysWithStructAccessors.map(structArrayJs).join('\n')}
 export {
     ${layouts.map(layout => layout.className).join(',\n    ')},

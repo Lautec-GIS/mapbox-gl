@@ -1,5 +1,5 @@
 import {Event, ErrorEvent, Evented} from '../util/evented';
-import {extend, pick} from '../util/util';
+import {getExpiryDataFromHeaders, pick} from '../util/util';
 import loadTileJSON from './load_tilejson';
 import {postTurnstileEvent} from '../util/mapbox';
 import TileBounds from './tile_bounds';
@@ -104,8 +104,8 @@ class VectorTileSource extends Evented<SourceEvents> implements ISource<'vector'
         this.isTileClipped = true;
         this._loaded = false;
 
-        extend(this, pick(options, ['url', 'scheme', 'tileSize', 'promoteId']));
-        this._options = extend({type: 'vector'}, options);
+        Object.assign(this, pick(options, ['url', 'scheme', 'tileSize', 'promoteId']));
+        this._options = Object.assign({type: 'vector'}, options);
 
         this._collectResourceTiming = !!options.collectResourceTiming;
 
@@ -133,7 +133,7 @@ class VectorTileSource extends Evented<SourceEvents> implements ISource<'vector'
 
                 this.fire(new ErrorEvent(err));
             } else if (tileJSON) {
-                extend(this, tileJSON);
+                Object.assign(this, tileJSON);
 
                 this.hasWorldviews = !!tileJSON.worldview_options;
                 if (tileJSON.worldview_default) {
@@ -242,10 +242,10 @@ class VectorTileSource extends Evented<SourceEvents> implements ISource<'vector'
     }
 
     serialize(): VectorSourceSpecification {
-        return extend({}, this._options);
+        return Object.assign({}, this._options);
     }
 
-    loadTile(tile: Tile, callback: Callback<undefined>) {
+    loadTile(tile: Tile, callback: Callback<WorkerSourceVectorTileResult>) {
         const tileUrl = tile.tileID.canonical.url(this.tiles, this.scheme);
         const url = this.map._requestManager.normalizeTileURL(tileUrl);
         const request = this.map._requestManager.transformRequest(url, ResourceType.Tile);
@@ -273,7 +273,8 @@ class VectorTileSource extends Evented<SourceEvents> implements ISource<'vector'
             extraShadowCaster: tile.isExtraShadowCaster,
             tessellationStep: this.map._tessellationStep,
             scaleFactor: this.map.getScaleFactor(),
-            worldview: this.map.getWorldview() || this.worldviewDefault
+            worldview: this.map.getWorldview() || this.worldviewDefault,
+            indoor: this.map.indoor ? this.map.indoor.getIndoorTileOptions(this.id, this.scope) : null
         };
 
         // If we request a Mapbox URL, use the `worldview` param in the WorkerTile
@@ -291,22 +292,27 @@ class VectorTileSource extends Evented<SourceEvents> implements ISource<'vector'
             // if workers are not ready to receive messages yet, use the idle time to preemptively
             // load tiles on the main thread and pass the result instead of requesting a worker to do so
             if (!this.dispatcher.ready) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const cancel = loadVectorTile.call({deduped: this._deduped}, params, (err?: Error | null, data?: LoadVectorTileResult | null) => {
                     if (err || !data) {
                         done.call(this, err);
                     } else {
+                        const expiryData = getExpiryDataFromHeaders(data.responseHeaders);
                         // the worker will skip the network request if the data is already there
                         params.data = {
-                            cacheControl: data.cacheControl,
-                            expires: data.expires,
+                            cacheControl: expiryData.cacheControl,
+                            expires: expiryData.expires,
                             rawData: data.rawData.slice(0)
                         };
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                         if (tile.actor) tile.actor.send('loadTile', params, done.bind(this), undefined, true);
                     }
                 }, true);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 tile.request = {cancel};
 
             } else {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 tile.request = tile.actor.send('loadTile', params, done.bind(this), undefined, true);
             }
 
@@ -315,6 +321,7 @@ class VectorTileSource extends Evented<SourceEvents> implements ISource<'vector'
             tile.reloadCallback = callback;
 
         } else {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             tile.request = tile.actor.send('reloadTile', params, done.bind(this));
         }
 
@@ -331,14 +338,18 @@ class VectorTileSource extends Evented<SourceEvents> implements ISource<'vector'
             if (data && data.resourceTiming)
                 tile.resourceTiming = data.resourceTiming;
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (this.map._refreshExpiredTiles && data) tile.setExpiryData(data);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             tile.loadVectorData(data, this.map.painter);
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             cacheEntryPossiblyAdded(this.dispatcher);
 
-            callback(null);
+            callback(null, data);
 
             if (tile.reloadCallback) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 this.loadTile(tile, tile.reloadCallback);
                 tile.reloadCallback = null;
             }

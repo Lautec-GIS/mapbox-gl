@@ -4,6 +4,7 @@ import {
     preludeVertPrecisionQualifiers,
     preludeCommonSource,
     includeMap,
+    preludeFragExtensions,
 } from '../shaders/shaders';
 import assert from 'assert';
 import VertexArrayObject from './vertex_array_object';
@@ -43,7 +44,6 @@ export type DrawMode = WebGL2RenderingContext['POINTS'] | WebGL2RenderingContext
 export type ShaderSource = {
     fragmentSource: string;
     vertexSource: string;
-    staticAttributes: Array<string>;
     usedDefines: Array<DynamicDefinesType>;
     vertexIncludes: Array<string>;
     fragmentIncludes: Array<string>;
@@ -61,6 +61,7 @@ const debugWireframe3DLayerProgramNames = [
     "rainParticle",
     "snowParticle",
     "fillExtrusion",  "fillExtrusionGroundEffect",
+    "building", "buildingBloom",
     "elevatedStructures",
     "model",
     "symbol"];
@@ -75,7 +76,6 @@ const instancingUniforms = (context: Context): InstancingUniformType => ({
 class Program<Us extends UniformBindings> {
     program: WebGLProgram;
     attributes: Record<string, number>;
-    numAttributes: number;
     fixedUniforms: Us;
     binderUniforms: Array<BinderUniform>;
     failedToCreate: boolean;
@@ -124,15 +124,14 @@ class Program<Us extends UniformBindings> {
         this.name = name;
         this.fixedDefines = [...fixedDefines];
 
-        const dynamicAttrInfo = configuration ? configuration.getBinderAttributes() : [];
-        const allAttrInfo = (source.staticAttributes || []).concat(dynamicAttrInfo);
-
         let defines = configuration ? configuration.defines() : [];
         defines = defines.concat(fixedDefines.map((define) => `#define ${define}`));
         const version = '#version 300 es\n';
 
         let fragmentSource = version + defines.concat(
+            preludeFragExtensions,
             preludeFragPrecisionQualifiers,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             preludeCommonSource,
             prelude.fragmentSource).join('\n');
         for (const include of source.fragmentIncludes) {
@@ -142,6 +141,7 @@ class Program<Us extends UniformBindings> {
 
         let vertexSource = version + defines.concat(
             preludeVertPrecisionQualifiers,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             preludeCommonSource,
             prelude.vertexSource).join('\n');
         for (const include of source.vertexIncludes) {
@@ -184,17 +184,6 @@ class Program<Us extends UniformBindings> {
 
         this.attributes = {};
 
-        this.numAttributes = allAttrInfo.length;
-
-        for (let i = 0; i < this.numAttributes; i++) {
-            if (allAttrInfo[i]) {
-                // Handle pragma defined attributes
-                const attributeName = allAttrInfo[i].startsWith('a_') ? allAttrInfo[i] : `a_${allAttrInfo[i]}`;
-                gl.bindAttribLocation(this.program, i, attributeName);
-                this.attributes[attributeName] = i;
-            }
-        }
-
         gl.linkProgram(this.program);
         assert(gl.getProgramParameter(this.program, gl.LINK_STATUS), gl.getProgramInfoLog(this.program));
 
@@ -230,6 +219,14 @@ class Program<Us extends UniformBindings> {
         }
     }
 
+    getAttributeLocation(gl: WebGL2RenderingContext, name: string): number {
+        let location = this.attributes[name];
+        if (location === undefined) {
+            location = this.attributes[name] = gl.getAttribLocation(this.program, name);
+        }
+        return location;
+    }
+
     setTerrainUniformValues(context: Context, terrainUniformValues: UniformValues<TerrainUniformsType>) {
         if (!this.terrainUniforms) return;
         const uniforms: TerrainUniformsType = this.terrainUniforms;
@@ -239,6 +236,7 @@ class Program<Us extends UniformBindings> {
 
         for (const name in terrainUniformValues) {
             if (uniforms[name]) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 uniforms[name].set(this.program, name, terrainUniformValues[name]);
             }
         }
@@ -253,6 +251,7 @@ class Program<Us extends UniformBindings> {
 
         for (const name in globeUniformValues) {
             if (uniforms[name]) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 uniforms[name].set(this.program, name, globeUniformValues[name]);
             }
         }
@@ -266,6 +265,7 @@ class Program<Us extends UniformBindings> {
         context.program.set(this.program);
 
         for (const name in fogUniformValues) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             uniforms[name].set(this.program, name, fogUniformValues[name]);
         }
     }
@@ -278,6 +278,7 @@ class Program<Us extends UniformBindings> {
         context.program.set(this.program);
 
         for (const name in cutoffUniformValues) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             uniforms[name].set(this.program, name, cutoffUniformValues[name]);
         }
     }
@@ -290,6 +291,7 @@ class Program<Us extends UniformBindings> {
         context.program.set(this.program);
 
         for (const name in lightsUniformValues) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             uniforms[name].set(this.program, name, lightsUniformValues[name]);
         }
     }
@@ -301,6 +303,7 @@ class Program<Us extends UniformBindings> {
         context.program.set(this.program);
 
         for (const name in shadowUniformValues) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             uniforms[name].set(this.program, name, shadowUniformValues[name]);
         }
     }
@@ -368,9 +371,13 @@ class Program<Us extends UniformBindings> {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const copyUniformValues = (group: string, pSrc: any, pDst: any) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (pSrc[group] && pDst[group]) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 for (const name in pSrc[group]) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     if (pDst[group][name]) {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                         pDst[group][name].set(pDst.program, name, pSrc[group][name].current);
                     }
                 }
@@ -440,7 +447,9 @@ class Program<Us extends UniformBindings> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     checkUniforms(name: string, define: DynamicDefinesType, uniforms: any) {
         if (this.fixedDefines.includes(define)) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             for (const key of Object.keys(uniforms)) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 if (!uniforms[key].initialized) {
                     throw new Error(`Program '${this.name}', from draw '${name}': uniform ${key} not set but required by ${define} being defined`);
                 }

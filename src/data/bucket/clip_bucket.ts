@@ -25,6 +25,7 @@ import type {VectorTileLayer} from '@mapbox/vector-tile';
 import type {SpritePositions} from '../../util/image';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
+import type {GlobalProperties} from '../../style-spec/expression';
 
 class ClipBucket implements Bucket {
     index: number;
@@ -38,6 +39,7 @@ class ClipBucket implements Bucket {
     footprints: Array<Footprint>;
 
     worldview: string;
+    hasAppearances: boolean | null;
 
     constructor(options: BucketParameters<ClipStyleLayer>) {
         this.zoom = options.zoom;
@@ -50,6 +52,7 @@ class ClipBucket implements Bucket {
         this.footprints = [];
 
         this.worldview = options.worldview;
+        this.hasAppearances = null;
     }
 
     updateFootprints(id: UnwrappedTileID, footprints: Array<TileFootprint>) {
@@ -61,14 +64,17 @@ class ClipBucket implements Bucket {
         }
     }
 
+    updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
+    }
+
     populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
-        const bucketFeatures = [];
+        const bucketFeatures: BucketFeature[] = [];
 
         for (const {feature, id, index, sourceLayerIndex} of features) {
             const needGeometry = this.layers[0]._featureFilter.needGeometry;
             const evaluationFeature = toEvaluationFeature(feature, needGeometry);
 
-            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview}), evaluationFeature, canonical))
+            if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom, {worldview: this.worldview, activeFloors: options.activeFloors}), evaluationFeature, canonical))
                 continue;
 
             const bucketFeature: BucketFeature = {
@@ -140,7 +146,9 @@ class ClipBucket implements Bucket {
                 }
             }
 
-            const indices = earcut(flattened, holeIndices);
+            // earcut library lacks proper type definitions
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+            const indices = earcut(flattened, holeIndices) as number[];
             assert(indices.length % 3 === 0);
 
             const grid = new TriangleGridIndex(points, indices, 8, 256);

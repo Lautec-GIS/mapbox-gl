@@ -3,11 +3,10 @@
 import assert from 'assert';
 import {describe, test, expect, waitFor, vi, createMap, doneAsync} from '../../../util/vitest';
 import {getRequestBody, mockFetch} from '../../../util/network';
-import {extend} from '../../../../src/util/util';
 import {performanceEvent_} from '../../../../src/util/mapbox';
 
 function createStyleJSON(properties) {
-    return extend({
+    return Object.assign({
         "version": 8,
         "sources": {},
         "layers": []
@@ -44,9 +43,11 @@ describe('Map', () => {
             async function getEventNames() {
                 const events = await Promise.all(fetchSpy.mock.calls.map(async ([arg]: [any]) => {
                     const requestBody = await getRequestBody(arg);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
                     return JSON.parse(requestBody.slice(1, requestBody.length - 1));
                 }));
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 return events.map(e => e.event);
             }
             expect(await getEventNames()).toEqual([
@@ -73,16 +74,20 @@ describe('Map', () => {
             expect(map._fullyLoaded).toBeTruthy();
             expect(map._loaded).toBeTruthy();
             const reqBody = await getRequestBody(fetchSpy.mock.calls[1][0]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
             const performanceEvent = JSON.parse(reqBody.slice(1, reqBody.length - 1));
             const checkMetric = (data, metricName, metricValue) => {
                 for (const metric of data) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     if (metric.name === metricName) {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         expect(metric.value).toEqual(metricValue);
                         return;
                     }
                 }
                 assert(false);
             };
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             checkMetric(performanceEvent.attributes, 'projection', 'globe');
             performanceEvent_.pendingRequest = null;
         });
@@ -91,13 +96,16 @@ describe('Map', () => {
             function getStyleLoadEventChecker(payload) {
                 return async (request, doneRef) => {
                     const reqBody = await getRequestBody(request);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
                     const performanceEvent = JSON.parse(reqBody.slice(1, reqBody.length - 1));
 
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     if (performanceEvent.event !== 'style.load') {
                         return new Response(JSON.stringify({}));
                     }
 
                     expect(performanceEvent).toEqual(payload);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     doneRef.resolve();
 
                     return new Response(JSON.stringify({}));
@@ -120,7 +128,9 @@ describe('Map', () => {
                     },
                     'https://events.mapbox.com/events/v2': withAsync(getStyleLoadEventChecker({
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 0,
                         style: new URL('/style.json', location.href).toString(),
@@ -165,7 +175,9 @@ describe('Map', () => {
                     },
                     'https://events.mapbox.com/events/v2': withAsync(getStyleLoadEventChecker({
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 0,
                         style: new URL('/style.json', location.href).toString(),
@@ -194,7 +206,9 @@ describe('Map', () => {
                     },
                     'https://events.mapbox.com/events/v2': withAsync(getStyleLoadEventChecker({
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 0,
                         style: 'https://localhost:8080/style.json'
@@ -219,7 +233,9 @@ describe('Map', () => {
                     },
                     'https://events.mapbox.com/events/v2': withAsync(getStyleLoadEventChecker({
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 0,
                         style: 'json://1187918353',
@@ -266,7 +282,9 @@ describe('Map', () => {
                     },
                     'https://events.mapbox.com/events/v2': withAsync(getStyleLoadEventChecker({
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 0,
                         style: 'json://4028586463',
@@ -350,14 +368,18 @@ describe('Map', () => {
                 const expected = [
                     {
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 0,
                         style: 'mapbox://styles/mapbox/standard',
                     },
                     {
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 1,
                         style: new URL('/another.json', location.href).toString(),
@@ -383,24 +405,29 @@ describe('Map', () => {
                     },
                     'https://events.mapbox.com/events/v2': withAsync(async (request, doneRef) => {
                         const reqBody = await getRequestBody(request);
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
                         const performanceEvent = JSON.parse(reqBody.slice(1, reqBody.length - 1));
 
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         if (performanceEvent.event !== 'style.load') {
                             return new Response(JSON.stringify({}));
                         }
 
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId = reqBody.mapInstanceId;
 
                         const index = styleLoadEventCounter++;
 
                         expect(performanceEvent).toEqual({
                             ...expected[index],
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                             mapInstanceId: mapInstanceId || expected[index].mapInstanceId
                         });
 
                         assert(styleLoadEventCounter <= expected.length, 'More then expected "style.load" events');
 
                         if (styleLoadEventCounter === expected.length) {
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                             doneRef.resolve();
                         }
 
@@ -430,14 +457,18 @@ describe('Map', () => {
                 const expected = [
                     {
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 0,
                         style: 'mapbox://styles/mapbox/standard',
                     },
                     {
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 1,
                         style: 'json://684132956',
@@ -467,24 +498,29 @@ describe('Map', () => {
                     },
                     'https://events.mapbox.com/events/v2': withAsync(async (request, doneRef) => {
                         const reqBody = await getRequestBody(request);
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
                         const performanceEvent = JSON.parse(reqBody.slice(1, reqBody.length - 1));
 
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         if (performanceEvent.event !== 'style.load') {
                             return new Response(JSON.stringify({}));
                         }
 
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId = reqBody.mapInstanceId;
 
                         const index = styleLoadEventCounter++;
 
                         expect(performanceEvent).toEqual({
                             ...expected[index],
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                             mapInstanceId: mapInstanceId || expected[index].mapInstanceId
                         });
 
                         assert(styleLoadEventCounter <= expected.length, 'More then expected "style.load" events');
 
                         if (styleLoadEventCounter === expected.length) {
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                             doneRef.resolve();
                         }
 
@@ -524,14 +560,18 @@ describe('Map', () => {
                 const expected = [
                     {
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 0,
                         style: 'mapbox://styles/mapbox/standard',
                     },
                     {
                         event: 'style.load',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         created: expect.any(String),
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId: expect.any(String),
                         eventId: 1,
                         style: new URL('/another.json', location.href).toString(),
@@ -578,24 +618,29 @@ describe('Map', () => {
                     },
                     'https://events.mapbox.com/events/v2': withAsync(async (request, doneRef) => {
                         const reqBody = await getRequestBody(request);
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
                         const performanceEvent = JSON.parse(reqBody.slice(1, reqBody.length - 1));
 
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         if (performanceEvent.event !== 'style.load') {
                             return new Response(JSON.stringify({}));
                         }
 
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         mapInstanceId = reqBody.mapInstanceId;
 
                         const index = styleLoadEventCounter++;
 
                         expect(performanceEvent).toEqual({
                             ...expected[index],
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                             mapInstanceId: mapInstanceId || expected[index].mapInstanceId
                         });
 
                         assert(styleLoadEventCounter <= expected.length, 'More then expected "style.load" events');
 
                         if (styleLoadEventCounter === expected.length) {
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                             doneRef.resolve();
                         }
 
@@ -615,6 +660,82 @@ describe('Map', () => {
 
                 return wait;
             });
+        });
+
+        test('sends appearance event', async () => {
+            const fetchSpy = vi.spyOn(window, 'fetch').mockImplementation(() => {
+                return Promise.resolve(new Response(JSON.stringify({})));
+            });
+            const map = createMap({
+                accessToken: 'access-token',
+                style: {
+                    version: 8,
+                    sources: {
+                        "fake": {
+                            "type": "geojson",
+                            "data": {
+                                "type": "Feature",
+                                "geometry": {
+                                    "type": "Point",
+                                    "coordinates": [-77.0323, 38.9131]
+                                },
+                                "properties": {
+                                    "title": "Mapbox DC",
+                                    "marker-symbol": "monument"
+                                }
+                            }
+                        }
+                    },
+                    layers: [
+                        {
+                            id: 'layer-with-appearances',
+                            source: 'fake',
+                            type: 'symbol',
+                            layout: {
+                                "icon-image": "charging-station",
+                                "icon-size": 1.2
+                            },
+                            appearances: [
+                                {
+                                    "condition": ["==", ["feature-state", "availability"], "partial"],
+                                    "properties": {
+                                        "icon-image": ["image", "charging-station", {"params": {"fill": "orange"}}],
+                                        "icon-size": 1.1
+                                    }
+                                },
+                                {
+                                    "condition": ["==", ["feature-state", "availability"], "none"],
+                                    "properties": {
+                                        "icon-image": ["image", "charging-station", {"params": {"fill": "red"}}],
+                                        "icon-size": 1
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            });
+            await waitFor(map, "idle");
+            map.triggerRepaint();
+            await waitFor(map, "idle");
+            expect(map._fullyLoaded).toBeTruthy();
+            expect(map._loaded).toBeTruthy();
+
+            async function getEventNames() {
+                const events = await Promise.all(fetchSpy.mock.calls.map(async ([arg]: [any]) => {
+                    const requestBody = await getRequestBody(arg);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+                    return JSON.parse(requestBody.slice(1, requestBody.length - 1));
+                }));
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                return events.map(e => e.event);
+            }
+            expect(await getEventNames()).toEqual([
+                'style.load',
+                'metrics'
+            ]);
+            performanceEvent_.pendingRequest = null;
         });
     });
 });

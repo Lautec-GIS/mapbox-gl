@@ -2,9 +2,11 @@ import * as DOM from '../../util/dom';
 import {bindAll} from '../../util/util';
 import config from '../../util/config';
 import {getHashString} from '../hash';
+import {sanitizeLinks} from '../../util/sanitize';
 
 import type {Map, ControlPosition, IControl} from '../map';
 import type {StyleSpecification} from '../../style-spec/types';
+import type {MapDataEvent} from '../events';
 
 export type AttributionControlOptions = {
     compact?: boolean;
@@ -133,9 +135,8 @@ class AttributionControl implements IControl {
         }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _updateData(e: any) {
-        if (e && (e.sourceDataType === 'metadata' || e.sourceDataType === 'visibility' || e.dataType === 'style')) {
+    _updateData(e: MapDataEvent) {
+        if (e && ((e.dataType === 'source' && (e.sourceDataType === 'metadata' || e.sourceDataType === 'visibility')) || e.dataType === 'style')) {
             this._updateAttributions();
             this._updateEditLink();
         }
@@ -181,7 +182,7 @@ class AttributionControl implements IControl {
         }
 
         // check if attribution string is different to minimize DOM changes
-        const attribHTML = attributions.join(' | ');
+        const attribHTML = attributions.map(attr => sanitizeLinks(attr)).join(' | ');
         if (attribHTML === this._attribHTML) return;
 
         this._attribHTML = attribHTML;

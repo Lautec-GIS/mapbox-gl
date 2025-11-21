@@ -1,4 +1,4 @@
-import {extend, pick} from '../util/util';
+import {getExpiryDataFromHeaders, pick} from '../util/util';
 import {getImage, ResourceType} from '../util/ajax';
 import {Event, ErrorEvent, Evented} from '../util/evented';
 import loadTileJSON from './load_tilejson';
@@ -92,8 +92,8 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
         this.tileSize = 512;
         this._loaded = false;
 
-        this._options = extend({type: 'raster'}, options);
-        extend(this, pick(options, ['url', 'scheme', 'tileSize']));
+        this._options = Object.assign({type: 'raster'}, options);
+        Object.assign(this, pick(options, ['url', 'scheme', 'tileSize']));
     }
 
     load(callback?: Callback<undefined>) {
@@ -106,7 +106,7 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
             if (err) {
                 this.fire(new ErrorEvent(err));
             } else if (tileJSON) {
-                extend(this, tileJSON);
+                Object.assign(this, tileJSON);
 
                 if (tileJSON.raster_layers) {
                     this.rasterLayers = tileJSON.raster_layers;
@@ -196,8 +196,8 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
         this.cancelTileJSONRequest();
     }
 
-    serialize(): RasterSourceSpecification | RasterDEMSourceSpecification {
-        return extend({}, this._options);
+    serialize(): RasterSourceSpecification | RasterDEMSourceSpecification | RasterArraySourceSpecification {
+        return Object.assign({}, this._options);
     }
 
     hasTile(tileID: OverscaledTileID): boolean {
@@ -207,7 +207,7 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
     loadTile(tile: Tile, callback: Callback<undefined>) {
         const use2x = browser.devicePixelRatio >= 2;
         const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), use2x, this.tileSize);
-        tile.request = getImage(this.map._requestManager.transformRequest(url, ResourceType.Tile), (error, data, cacheControl, expires) => {
+        tile.request = getImage(this.map._requestManager.transformRequest(url, ResourceType.Tile), (error, data, responseHeaders) => {
             delete tile.request;
 
             if (tile.aborted) {
@@ -222,7 +222,8 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
 
             if (!data) return callback(null);
 
-            if (this.map._refreshExpiredTiles) tile.setExpiryData({cacheControl, expires});
+            const expiryData = getExpiryDataFromHeaders(responseHeaders);
+            if (this.map._refreshExpiredTiles) tile.setExpiryData(expiryData);
             tile.setTexture(data, this.map.painter);
             tile.state = 'loaded';
 

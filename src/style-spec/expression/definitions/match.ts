@@ -34,7 +34,7 @@ class Match implements Expression {
         if (args.length % 2 !== 1)
             return context.error(`Expected an even number of arguments.`);
 
-        let inputType;
+        let inputType: Type | undefined;
         let outputType: Type | null | undefined;
         if (context.expectedType && context.expectedType.kind !== 'value') {
             outputType = context.expectedType;
@@ -95,12 +95,13 @@ class Match implements Expression {
             return null;
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         return new Match(inputType, outputType, input, cases, outputs, otherwise);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     evaluate(ctx: EvaluationContext): any {
-        const input = (this.input.evaluate(ctx));
+        const input = (this.input.evaluate(ctx)) as number | string;
         const output = (typeEquals(typeOf(input), this.inputType) && this.outputs[this.cases[input]]) || this.otherwise;
         return output.evaluate(ctx);
     }

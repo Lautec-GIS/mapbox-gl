@@ -75,6 +75,13 @@
   "sprite": "local://sprites/standard",
   "layers": [
     {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "white"
+      }
+    },
+    {
       "id": "icon-x4",
       "type": "symbol",
       "source": "geojson-x4",

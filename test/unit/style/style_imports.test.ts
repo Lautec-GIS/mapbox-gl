@@ -10,13 +10,12 @@ import VectorTileSource from '../../../src/source/vector_tile_source';
 import GlyphManager from '../../../src/render/glyph_manager';
 import {Event} from '../../../src/util/evented';
 import {OverscaledTileID} from '../../../src/source/tile_id';
-import {extend} from '../../../src/util/util';
 import {makeFQID} from '../../../src/util/fqid';
 import {ImageId} from '../../../src/style-spec/expression/types/image_id';
 import {StubMap} from './utils';
 
 function createStyleJSON(properties) {
-    return extend({
+    return Object.assign({
         version: 8,
         sources: {},
         layers: []
@@ -27,6 +26,7 @@ describe('Style#loadURL', () => {
     test('wraps style with schema into import', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             name: 'Mapbox Standard',
             schema: {
@@ -41,6 +41,7 @@ describe('Style#loadURL', () => {
         await new Promise(resolve => {
             style.once('style.load', () => {
                 const rootStyle = style.serialize();
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 expect(rootStyle.imports).toEqual([{id: 'basemap', url: '', data: initialStyle}]);
                 resolve();
             });
@@ -52,6 +53,7 @@ describe('Style#loadURL', () => {
     test('wraps fragment into import', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             name: 'Mapbox Standard',
             fragment: true,
@@ -64,6 +66,7 @@ describe('Style#loadURL', () => {
         await new Promise(resolve => {
             style.once('style.load', () => {
                 const rootStyle = style.serialize();
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 expect(rootStyle.imports).toEqual([{id: 'basemap', url: '', data: initialStyle}]);
                 resolve();
             });
@@ -75,10 +78,12 @@ describe('Style#loadURL', () => {
     test('imports style from URL', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'streets', url: '/styles/streets-v12.json'}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const fragment = createStyleJSON({
             sources: {mapbox: {type: 'vector', tiles: []}},
             layers: [{id: 'land', type: 'background'}]
@@ -101,7 +106,9 @@ describe('Style#loadURL', () => {
             style.once("style.load", () => {
                 expect(spy).toHaveBeenCalledTimes(2);
                 const fragmentStyle = style.getFragmentStyle('streets');
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(fragmentStyle.stylesheet.layers).toEqual(fragment.layers);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(fragmentStyle.stylesheet.sources).toEqual(fragment.sources);
                 resolve();
             });
@@ -117,6 +124,7 @@ describe('Style#loadURL', () => {
 
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'foo', url: '/styles/not-found.json'}],
         });
@@ -130,12 +138,15 @@ describe('Style#loadURL', () => {
     test('imports style from JSON', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const fragment = createStyleJSON({
             sources: {mapbox: {type: 'vector', tiles: []}},
             layers: [{id: 'land', type: 'background'}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}],
         });
 
@@ -154,7 +165,9 @@ describe('Style#loadURL', () => {
         expect(spy).toHaveBeenCalledTimes(1);
 
         const fragmentStyle = style.getFragmentStyle('streets');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(fragmentStyle.stylesheet.layers).toEqual(fragment.layers);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(fragmentStyle.stylesheet.sources).toEqual(fragment.sources);
 
     });
@@ -162,11 +175,13 @@ describe('Style#loadURL', () => {
     test('imports nested styles with circular dependencies', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'parent', url: '/styles/parent.json'}]
         });
 
         // Parent fragment imports 2 children
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const parentFragment = createStyleJSON({
             imports: [
                 {id: 'child1', url: '/styles/child1.json'},
@@ -175,12 +190,14 @@ describe('Style#loadURL', () => {
         });
 
         // Child imports parent fragment
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const childFragment1 = createStyleJSON({
             sources: {childSource1: {type: 'vector', tiles: []}},
             imports: [{id: 'parent', url: '/styles/parent.json'}]
         });
 
         // Child imports neighbour child fragment
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const childFragment2 = createStyleJSON({
             sources: {childSource2: {type: 'vector', tiles: []}},
             imports: [{id: 'child1', url: '/styles/child1.json'}]
@@ -262,6 +279,7 @@ describe('Style#loadURL', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'streets', url: '/styles/streets-v12.json'}],
         });
@@ -279,7 +297,9 @@ describe('Style#loadURL', () => {
         await waitFor(style, "style.load");
         expect(spy).toHaveBeenCalledTimes(1);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].style.scope).toEqual('streets');
 
     });
@@ -289,6 +309,7 @@ describe('Style#loadURL', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'streets', url: '/styles/streets-v12.json'}],
         });
@@ -306,12 +327,18 @@ describe('Style#loadURL', () => {
         await waitFor(style, "style.load");
         expect(spy).toHaveBeenCalledTimes(2);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].dataType).toEqual('style');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].style.scope).toEqual('');
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].dataType).toEqual('style');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].style.scope).toEqual('streets');
 
     });
@@ -321,6 +348,7 @@ describe('Style#loadURL', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'streets', url: '/styles/streets-v12.json'}],
         });
@@ -339,13 +367,19 @@ describe('Style#loadURL', () => {
         expect(spy).toHaveBeenCalledTimes(2);
 
         // initial root style 'data' event
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].dataType).toEqual('style');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].style.scope).toEqual('');
 
         // child style 'data' event
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].dataType).toEqual('style');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].style.scope).toEqual('streets');
 
     });
@@ -355,6 +389,7 @@ describe('Style#loadURL', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'streets', url: '/styles/streets-v12.json'}],
         });
@@ -367,6 +402,7 @@ describe('Style#loadURL', () => {
         style.loadURL('/style.json');
         const {error} = await waitFor(map, "error");
         expect(error).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(error.message).toMatch(/version/);
 
     });
@@ -376,10 +412,12 @@ describe('Style#loadJSON', () => {
     test('imports style from URL', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'streets', url: '/styles/streets-v12.json'}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const fragment = createStyleJSON({
             sources: {mapbox: {type: 'vector', tiles: []}},
             layers: [{id: 'land', type: 'background'}]
@@ -394,12 +432,15 @@ describe('Style#loadJSON', () => {
             }
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
         await waitFor(style, "style.load");
         expect(spy).toHaveBeenCalledTimes(1);
 
         const fragmentStyle = style.getFragmentStyle('streets');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(fragmentStyle.stylesheet.layers).toEqual(fragment.layers);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(fragmentStyle.stylesheet.sources).toEqual(fragment.sources);
     });
 
@@ -407,22 +448,28 @@ describe('Style#loadJSON', () => {
         const style = new Style(new StubMap());
         const spy = vi.spyOn(window, 'fetch');
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const fragment = createStyleJSON({
             sources: {mapbox: {type: 'vector', tiles: []}},
             layers: [{id: 'land', type: 'background'}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
         expect(spy).not.toHaveBeenCalled();
 
         const fragmentStyle = style.getFragmentStyle('streets');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(fragmentStyle.stylesheet.layers).toEqual(fragment.layers);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(fragmentStyle.stylesheet.sources).toEqual(fragment.sources);
     });
 
@@ -431,14 +478,18 @@ describe('Style#loadJSON', () => {
         const stub = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         const MAX_IMPORT_DEPTH = 5;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         function createNestedStyle(style = createStyleJSON(), depth = MAX_IMPORT_DEPTH + 1) {
             if (depth === 0) return style;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const nextStyle = createStyleJSON({imports: [{id: `streets-${depth}`, url: '/style.json', data: style}]});
             return createNestedStyle(nextStyle, depth - 1);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createNestedStyle();
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -459,19 +510,24 @@ describe('Style#loadJSON', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/styles/streets-v12.json', data: createStyleJSON()}],
         });
 
         const spy = vi.fn();
         map.on('style.import.load', spy);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
         expect(spy).toHaveBeenCalledTimes(1);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].style.scope).toEqual('streets');
 
     });
@@ -482,24 +538,33 @@ describe('Style#loadJSON', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/styles/streets-v12.json', data: createStyleJSON()}],
         });
 
         const spy = vi.fn();
         map.on('dataloading', spy);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
         expect(spy).toHaveBeenCalledTimes(2);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].dataType).toEqual('style');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].style.scope).toEqual('');
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].dataType).toEqual('style');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].style.scope).toEqual('streets');
     });
 
@@ -508,26 +573,35 @@ describe('Style#loadJSON', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/styles/streets-v12.json', data: createStyleJSON()}],
         });
 
         const spy = vi.fn();
         map.on('data', spy);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
         expect(spy).toHaveBeenCalledTimes(2);
 
         // initial root style 'data' event
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].dataType).toEqual('style');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].style.scope).toEqual('');
 
         // child style 'data' event
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].target).toEqual(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].dataType).toEqual('style');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].style.scope).toEqual('streets');
 
     });
@@ -537,14 +611,18 @@ describe('Style#loadJSON', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/styles/streets-v12.json', data: createStyleJSON({version: 'invalid'})}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         const {error} = await waitFor(map, "error");
         expect(error).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(error.message).toMatch(/version/);
 
     });
@@ -552,12 +630,15 @@ describe('Style#loadJSON', () => {
     test('creates sources', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'basemap', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}}
             })}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -568,7 +649,9 @@ describe('Style#loadJSON', () => {
     test('creates layers', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}},
                 layers: [{
@@ -580,6 +663,7 @@ describe('Style#loadJSON', () => {
             })}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -590,7 +674,9 @@ describe('Style#loadJSON', () => {
     test('own entities', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}},
                 layers: [{id: 'background', type: 'background'}]
@@ -599,6 +685,7 @@ describe('Style#loadJSON', () => {
             layers: [{id: 'background', type: 'background'}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -618,17 +705,21 @@ describe('Style#addImport', () => {
     test('to the end', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}}
             })}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
 
         style.addImport({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             id: 'land', url: '/land.json', data: createStyleJSON({
                 sources: {land: {type: 'vector', tiles: []}}
             })
@@ -643,28 +734,34 @@ describe('Style#addImport', () => {
     test('before another import', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 {id: 'streets', url: '/style.json', data: createStyleJSON({
                     sources: {mapbox: {type: 'vector', tiles: []}}
                 })},
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 {id: 'streets-v2', url: '/style.json', data: createStyleJSON({
                     sources: {mapbox: {type: 'vector', tiles: []}}
                 })}
             ],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
 
         style.addImport({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             id: 'land', url: '/land.json', data: createStyleJSON({
                 sources: {land: {type: 'vector', tiles: []}}
             })
         }, 'streets-v2');
 
         style.addImport({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             id: 'land-v2', url: '/land.json', data: createStyleJSON({
                 sources: {land: {type: 'vector', tiles: []}}
             })
@@ -683,7 +780,9 @@ describe('Style#updateImport', () => {
     test('updates import with provided json', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}},
                 schema: {
@@ -695,12 +794,14 @@ describe('Style#updateImport', () => {
             })}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
 
         style.updateImport('streets', {
             id: 'streets',
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             data: createStyleJSON({
                 sources: {'mapbox-v12': {type: 'vector', tiles: []}}
             }),
@@ -729,7 +830,9 @@ describe('Style#updateImport', () => {
             },
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}},
                 schema: {
@@ -741,6 +844,7 @@ describe('Style#updateImport', () => {
             })}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -774,10 +878,12 @@ describe('Style#updateImport', () => {
             },
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'streets', url: '/style.json'}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -799,11 +905,13 @@ describe('Style#updateImport', () => {
     test('update import with no config should use values in schema', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'basemap', url: '',
                 config: {
                     lightPreset: "day"
                 },
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     sources: {new: {type: 'vector', tiles: []}},
                     schema: {
@@ -815,12 +923,14 @@ describe('Style#updateImport', () => {
             }],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
 
         style.updateImport('basemap', {
             id: 'basemap',
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}},
                 schema: {
@@ -919,12 +1029,15 @@ describe('Style#addSource', () => {
     test('same id in different scopes', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}}
             })}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -939,7 +1052,9 @@ describe('Style#addSource', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}}
             })}],
@@ -971,6 +1086,7 @@ describe('Style#addSource', () => {
                 source.fire(new Event('data'));
             });
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(initialStyle);
         });
     });
@@ -980,13 +1096,16 @@ describe('Style#removeSource', () => {
     test('same id in different scope is intact', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             sources: {mapbox: {type: 'vector', tiles: []}},
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 sources: {mapbox: {type: 'vector', tiles: []}}
             })}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1003,7 +1122,9 @@ describe('Style#addLayer', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 layers: [{
                     id: 'background',
@@ -1025,6 +1146,7 @@ describe('Style#addLayer', () => {
                 layer.fire(new Event('error', {mapbox: true}));
             });
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(initialStyle);
         });
     });
@@ -1032,10 +1154,12 @@ describe('Style#addLayer', () => {
     test('adds before the given layer', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [
                         {id: 'a', type: 'background'},
@@ -1049,6 +1173,7 @@ describe('Style#addLayer', () => {
             ]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1067,6 +1192,7 @@ describe('Style#addLayer', () => {
     test('Checks scope exist after adding layer', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON());
 
         await waitFor(style, "style.load");
@@ -1079,10 +1205,12 @@ describe('Style#addLayer', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({layers: [{id: 'a', type: 'background'}]})
             }],
             layers: [{id: 'a', type: 'background'}]
@@ -1090,6 +1218,7 @@ describe('Style#addLayer', () => {
 
         await new Promise(resolve => {
             map.on('error', ({error}) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(error.message).toMatch(/does not exist on this map/);
                 resolve();
             });
@@ -1098,6 +1227,7 @@ describe('Style#addLayer', () => {
                 style.addLayer({id: 'c', type: 'background'}, makeFQID('a', 'streets'));
             });
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(initialStyle);
         });
     });
@@ -1107,13 +1237,16 @@ describe('Style#removeLayer', () => {
     test('same id in different scope is intact', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             layers: [{id: 'background', type: 'background'}],
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'streets', url: '/style.json', data: createStyleJSON({
                 layers: [{id: 'background', type: 'background'}]
             })}],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1128,16 +1261,19 @@ describe('Style#removeLayer', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({layers: [{id: 'a', type: 'background'}]})
             }]
         });
 
         await new Promise(resolve => {
             map.on('error', ({error}) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(error.message).toMatch(/does not exist in the map\'s style/);
                 resolve();
             });
@@ -1146,6 +1282,7 @@ describe('Style#removeLayer', () => {
                 style.removeLayer(makeFQID('a', 'streets'));
             });
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(initialStyle);
         });
     });
@@ -1155,10 +1292,12 @@ describe('Style#moveLayer', () => {
     test('reorders layers', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [
                         {id: 'a', type: 'background'},
@@ -1174,6 +1313,7 @@ describe('Style#moveLayer', () => {
             ]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1192,10 +1332,12 @@ describe('Style#moveLayer', () => {
     test('fires an error on moving layer from different scope', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({layers: [{id: 'background', type: 'background'}]})
             }]
         });
@@ -1210,6 +1352,7 @@ describe('Style#moveLayer', () => {
                 style.moveLayer(makeFQID('background', 'streets'));
             });
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(initialStyle);
         });
     });
@@ -1219,10 +1362,12 @@ describe('Style#_mergeLayers', () => {
     test('supports slots', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [
                         {id: 'land', type: 'background'},
@@ -1239,6 +1384,7 @@ describe('Style#_mergeLayers', () => {
             ]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1258,10 +1404,12 @@ describe('Style#_mergeLayers', () => {
     test('supports nested slots', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [
                         {id: 'land', type: 'background'},
@@ -1277,6 +1425,7 @@ describe('Style#_mergeLayers', () => {
             ]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1294,6 +1443,7 @@ describe('Style#_mergeLayers', () => {
     test('supports dynamic adding slots', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             layers: [
                 {id: 'park', type: 'background'},
@@ -1301,6 +1451,7 @@ describe('Style#_mergeLayers', () => {
             ]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1317,10 +1468,12 @@ describe('Style#_mergeLayers', () => {
     test('supports adding layer into a slot with before', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [
                         {id: 'land', type: 'background'},
@@ -1332,6 +1485,7 @@ describe('Style#_mergeLayers', () => {
             layers: [{id: 'national-park', type: 'background', slot: 'below-water'}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1349,10 +1503,12 @@ describe('Style#_mergeLayers', () => {
         const style = new Style(new StubMap());
         const stub = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [
                         {id: 'land', type: 'background'},
@@ -1365,6 +1521,7 @@ describe('Style#_mergeLayers', () => {
             }]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1393,10 +1550,12 @@ describe('Style#_mergeLayers', () => {
     test('supports moving layer inside a slot', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [
                         {id: 'land', type: 'background'},
@@ -1412,6 +1571,7 @@ describe('Style#_mergeLayers', () => {
             ]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1430,10 +1590,12 @@ describe('Style#_mergeLayers', () => {
         const style = new Style(new StubMap());
         const stub = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [
                         {id: 'land', type: 'background'},
@@ -1454,6 +1616,7 @@ describe('Style#_mergeLayers', () => {
             ]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1481,6 +1644,7 @@ describe('Style#_mergeLayers', () => {
     test('supports nested slots', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [
                 {
@@ -1525,6 +1689,7 @@ describe('Style#_mergeLayers', () => {
             ]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1550,6 +1715,7 @@ describe('Style#_mergeLayers', () => {
 test('Style#getSlots', async () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
         imports: [
             {
@@ -1578,6 +1744,7 @@ test('Style#getSlots', async () => {
         ]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
     await waitFor(style, 'style.load');
     expect(style.getSlots()).toEqual(['bottom', 'user-slot-1', 'middle', 'top', 'user-slot-2']);
@@ -1590,10 +1757,12 @@ describe('Style#getLights', () => {
     test('root style resolves lights from import', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({lights: [
                     {id: 'sun', type: 'directional', properties: {intensity: 0.4}},
                     {id: 'environment', type: 'ambient', properties: {intensity: 0.4}}
@@ -1611,6 +1780,7 @@ describe('Style#getLights', () => {
     test('root style overrides lights in imports', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             lights: [
                 {id: 'sun', type: 'directional', properties: {intensity: 0.4}},
@@ -1619,6 +1789,7 @@ describe('Style#getLights', () => {
             imports: [{
                 id: 'streets',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({lights: [
                     {id: 'sun', type: 'directional', properties: {intensity: 0.6}},
                     {id: 'environment', type: 'ambient', properties: {intensity: 0.6}}
@@ -1638,6 +1809,7 @@ describe('Style#getLights', () => {
         async () => {
             const style = new Style(new StubMap());
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(createStyleJSON({
                 lights: [
                     {id: 'sun', type: 'directional', properties: {intensity: 0.4}},
@@ -1646,6 +1818,7 @@ describe('Style#getLights', () => {
                 imports: [{
                     id: 'streets',
                     url: '/styles/streets-v12.json',
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     data: createStyleJSON()
                 }],
             }));
@@ -1663,10 +1836,12 @@ describe('Terrain', () => {
     test('root style resolves terrain from import', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     terrain: {source: 'mapbox-dem', exaggeration: 1.5},
                     sources: {
@@ -1688,10 +1863,12 @@ describe('Terrain', () => {
     test('root style overrides terrain in imports', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [{
                 id: 'first',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     terrain: {source: 'dem', exaggeration: 1},
                     sources: {
@@ -1705,6 +1882,7 @@ describe('Terrain', () => {
                     imports: [{
                         id: 'second',
                         url: '/styles/streets-v12.json',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         data: createStyleJSON({
                             terrain: {source: 'mapbox-dem', exaggeration: 1.5},
                             sources: {
@@ -1728,11 +1906,13 @@ describe('Terrain', () => {
     test('root style disables terrain in imports', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             terrain: null,
             imports: [{
                 id: 'basemap',
                 url: '',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     projection: {name: 'globe'},
                     terrain: {source: 'dem', exaggeration: 1},
@@ -1748,6 +1928,7 @@ describe('Terrain', () => {
     test('empty root style terrain overrides terrain in imports', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             terrain: {source: 'mapbox-dem', exaggeration: 2},
             sources: {
@@ -1761,6 +1942,7 @@ describe('Terrain', () => {
             imports: [{
                 id: 'basemap',
                 url: '/standard.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     terrain: {source: 'mapbox-dem', exaggeration: 1.5},
                     sources: {
@@ -1788,6 +1970,7 @@ describe('Terrain', () => {
         const importWithTerrain = {
             id: 'basemap',
             url: '/standard.json',
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             data: createStyleJSON({
                 terrain: {source: 'mapbox-dem', exaggeration: 1.5},
                 sources: {
@@ -1801,6 +1984,7 @@ describe('Terrain', () => {
             })
         };
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const rootWithTerrain = createStyleJSON({
             terrain: {source: 'mapbox-dem', exaggeration: 2},
             sources: {
@@ -1814,11 +1998,13 @@ describe('Terrain', () => {
             imports: [importWithTerrain],
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const rootWithoutTerrain = createStyleJSON({
             imports: [importWithTerrain],
         });
 
         // Using terrain from the root style
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(rootWithTerrain);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.load', resolve));
@@ -1826,11 +2012,13 @@ describe('Terrain', () => {
         expect(style.getTerrain()).toEqual({source: 'mapbox-dem', exaggeration: 2});
 
         // Using terrain from the imported style
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(rootWithoutTerrain);
         expect(style.terrain.scope).toEqual(style.getFragmentStyle('basemap').scope);
         expect(style.getTerrain()).toEqual({source: 'mapbox-dem', exaggeration: 1.5});
 
         // Using terrain from the root style again
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(rootWithTerrain);
         expect(style.terrain.scope).toEqual(style.scope);
         expect(style.getTerrain()).toEqual({source: 'mapbox-dem', exaggeration: 2});
@@ -1841,6 +2029,7 @@ describe('Terrain', () => {
         async () => {
             const style = new Style(new StubMap());
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(createStyleJSON({
                 terrain: {source: 'mapbox-dem', exaggeration: 1.5},
                 sources: {
@@ -1854,6 +2043,7 @@ describe('Terrain', () => {
                 imports: [{
                     id: 'streets',
                     url: '/styles/streets-v12.json',
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     data: createStyleJSON({terrain: undefined})
                 }],
             }));
@@ -1869,6 +2059,7 @@ describe('Terrain', () => {
             const map = new StubMap();
             const style = new Style(map);
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const initialStyle = createStyleJSON({
                 imports: [
                     {id: 'basemap', url: '/standard.json'},
@@ -1876,6 +2067,7 @@ describe('Terrain', () => {
                 ],
             });
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const standardFragment = createStyleJSON({
                 terrain: {source: 'mapbox-dem', exaggeration: 1.5},
                 sources: {
@@ -1893,6 +2085,7 @@ describe('Terrain', () => {
                 ]
             });
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const navigationFragment = createStyleJSON({
                 sources: {composite: {type: 'vector', tiles: []}},
                 layers: [{id: 'traffic', type: 'line', source: 'composite', 'source-layer': 'traffic'}]
@@ -1929,11 +2122,13 @@ describe('Terrain', () => {
     test('supports config', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'standard',
                 url: '/standard.json',
                 config: {showTerrain: true},
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     schema: {
                         showTerrain: {
@@ -1951,6 +2146,7 @@ describe('Terrain', () => {
             }]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -1965,11 +2161,13 @@ describe('Terrain', () => {
     test('setTerrain updates imported terrain properties', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [
                 {
                     id: "basemap",
                     url: "",
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     data: createStyleJSON({
                         sources: {
                             "mapbox-dem": {
@@ -2002,10 +2200,12 @@ describe('Style#getFog', () => {
     test('resolves fog from import', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({fog: {range: [1, 2], color: 'white', 'horizon-blend': 0}})
             }],
         }));
@@ -2021,15 +2221,18 @@ describe('Style#getFog', () => {
     test('root style overrides fog in imports', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [{
                 id: 'first',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     fog: {range: [1, 2], color: 'white', 'horizon-blend': 0},
                     imports: [{
                         id: 'second',
                         url: '/styles/streets-v12.json',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         data: createStyleJSON({fog: {range: [0, 1], color: 'blue', 'horizon-blend': 0.5}})
                     }]
                 })
@@ -2047,11 +2250,13 @@ describe('Style#getFog', () => {
     test('empty fog in import does not override fog in root style', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             fog: {range: [1, 2], color: 'white', 'horizon-blend': 0},
             imports: [{
                 id: 'streets',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({fog: undefined})
             }],
         }));
@@ -2070,10 +2275,12 @@ describe('Camera', () => {
         const map = new StubMap();
         const style = new Style(map);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({camera: {'camera-projection': 'orthographic'}})
             }],
         }));
@@ -2088,16 +2295,19 @@ describe('Camera', () => {
             const map = new StubMap();
             const style = new Style(map);
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(createStyleJSON({
                 imports: [
                     {
                         id: 'basemap',
                         url: '/standard.json',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         data: createStyleJSON({camera: {'camera-projection': 'orthographic'}})
                     },
                     {
                         id: 'navigation',
                         url: '/navigation.json',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         data: createStyleJSON()
                     }
                 ],
@@ -2114,15 +2324,18 @@ describe('Camera', () => {
     test('root style overrides camera in imports', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [{
                 id: 'first',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     camera: {'camera-projection': 'perspective'},
                     imports: [{
                         id: 'second',
                         url: '/styles/streets-v12.json',
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         data: createStyleJSON({camera: {'camera-projection': 'orthographic'}})
                     }]
                 })
@@ -2136,11 +2349,13 @@ describe('Camera', () => {
     test('camera set by user overrides camera in imports', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             camera: {'camera-projection': 'perspective'},
             imports: [{
                 id: 'first',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON()
             }],
         }));
@@ -2155,11 +2370,13 @@ describe('Camera', () => {
         async () => {
             const style = new Style(new StubMap());
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(createStyleJSON({
                 camera: {'camera-projection': 'orthographic'},
                 imports: [{
                     id: 'streets',
                     url: '/styles/streets-v12.json',
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     data: createStyleJSON()
                 }],
             }));
@@ -2175,10 +2392,12 @@ describe('Projection', () => {
         const map = new StubMap();
         const style = new Style(map);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({projection: {name: 'globe'}})
             }],
         }));
@@ -2194,11 +2413,13 @@ describe('Projection', () => {
         const map = new StubMap();
         const style = new Style(map);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             projection: {name: 'globe'},
             imports: [{
                 id: 'streets',
                 url: '/styles/streets-v12.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({projection: {name: 'albers'}})
             }],
         }));
@@ -2216,11 +2437,13 @@ describe('Projection', () => {
             const map = new StubMap();
             const style = new Style(map);
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(createStyleJSON({
                 projection: {name: 'albers'},
                 imports: [{
                     id: 'streets',
                     url: '/styles/streets-v12.json',
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     data: createStyleJSON()
                 }],
             }));
@@ -2238,7 +2461,9 @@ describe('Transition', () => {
     test('resolves transition from import', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'standard', url: '/standard.json', data: createStyleJSON({
                 transition: {duration: 900, delay: 200},
             })}]
@@ -2254,8 +2479,10 @@ describe('Transition', () => {
     test('root style overrides transition in imports', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             transition: {duration: 600, delay: 100},
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'standard', url: '/standard.json', data: createStyleJSON({
                 transition: {duration: 900, delay: 200},
             })}]
@@ -2270,6 +2497,7 @@ describe('Glyphs', () => {
     test('fallbacks to the default glyphs URL', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             fragment: true,
         }));
@@ -2286,12 +2514,14 @@ describe('Glyphs', () => {
     test('uses root style glyph url even if fragment provides its own', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             fragment: true,
             glyphs: 'mapbox://fonts/foo/{fontstack}/{range}.pbf',
             imports: [{
                 id: 'bar',
                 url: './standard.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({glyphs: 'mapbox://fonts/bar/{fontstack}/{range}.pbf'})
             }]
         }));
@@ -2307,11 +2537,13 @@ describe('Glyphs', () => {
     test('uses glyph url from import if there is one and no glyph url in root style', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(createStyleJSON({
             fragment: true,
             imports: [{
                 id: 'bar',
                 url: './standard.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({glyphs: 'mapbox://fonts/bar/{fontstack}/{range}.pbf'})
             }]
         }));
@@ -2345,19 +2577,23 @@ describe('Style#queryRenderedFeatures', () => {
         }];
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
         layers: [{id: 'land', type: 'line', source: 'mapbox'}],
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
         layers: [{id: 'land', type: 'line', source: 'mapbox'}],
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
     test.skip('returns features only from the root style', async () => {
         const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, 'style.load');
@@ -2373,6 +2609,7 @@ describe('Style#queryRenderedFeatures', () => {
     test.skip('returns features only from the root style when including layers', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, 'style.load');
@@ -2389,15 +2626,19 @@ describe('Style#queryRenderedFeatures', () => {
 test('Style#setFeatureState', async () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
 
     await new Promise(resolve => {
@@ -2407,6 +2648,7 @@ test('Style#setFeatureState', async () => {
         style.on('style.load', () => {
             style.setFeatureState({source: makeFQID('mapbox', 'streets'), id: 12345}, {'hover': true});
             expect(spy).toHaveBeenCalledTimes(1);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(spy.mock.calls[0][0].error.message).toMatch(/does not exist in the map's style/);
             resolve();
         });
@@ -2416,15 +2658,19 @@ test('Style#setFeatureState', async () => {
 test('Style#getFeatureState', () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
 
     const spy = vi.fn();
@@ -2433,6 +2679,7 @@ test('Style#getFeatureState', () => {
     style.on('style.load', () => {
         expect(style.getFeatureState({source: makeFQID('mapbox', 'streets'), id: 12345})).toBeFalsy();
         expect(spy).toHaveBeenCalledTimes(1);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].error.message).toMatch(/does not exist in the map's style/);
     });
 });
@@ -2440,15 +2687,19 @@ test('Style#getFeatureState', () => {
 test('Style#removeFeatureState', () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
 
     const spy = vi.fn();
@@ -2457,6 +2708,7 @@ test('Style#removeFeatureState', () => {
     style.on('style.load', () => {
         style.removeFeatureState({source: makeFQID('mapbox', 'streets'), id: 12345}, 'hover');
         expect(spy).toHaveBeenCalledTimes(1);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].error.message).toMatch(/does not exist in the map's style/);
     });
 });
@@ -2464,15 +2716,19 @@ test('Style#removeFeatureState', () => {
 test('Style#setLayoutProperty', () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
         layers: [{id: 'land', type: 'line', source: 'mapbox', layout: {visibility: 'visible'}}],
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
 
     const spy = vi.fn();
@@ -2480,9 +2736,11 @@ test('Style#setLayoutProperty', () => {
 
     style.on('style.load', () => {
         style.setLayoutProperty(makeFQID('land', 'streets'), 'visibility', 'none');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].error.message).toMatch(/does not exist in the map's style/);
 
         expect(style.getLayoutProperty(makeFQID('land', 'streets'), 'visibility')).toBeFalsy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].error.message).toMatch(/does not exist in the map's style/);
 
         expect(
@@ -2495,15 +2753,19 @@ test('Style#setLayoutProperty', () => {
 test('Style#setPaintProperty', () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
         layers: [{id: 'land', type: 'background', source: 'mapbox', paint: {'background-color': 'blue'}}],
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
 
     const spy = vi.fn();
@@ -2511,9 +2773,11 @@ test('Style#setPaintProperty', () => {
 
     style.on('style.load', () => {
         style.setPaintProperty(makeFQID('land', 'streets'), 'background-color', 'red');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].error.message).toMatch(/does not exist in the map's style/);
 
         expect(style.getPaintProperty(makeFQID('land', 'streets'), 'background-color')).toBeFalsy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].error.message).toMatch(/does not exist in the map's style/);
 
         expect(
@@ -2526,15 +2790,19 @@ test('Style#setPaintProperty', () => {
 test('Style#setLayerZoomRange', () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
         layers: [{id: 'symbol', type: 'symbol', source: 'mapbox', minzoom: 0, maxzoom: 22}],
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
 
     const spy = vi.fn();
@@ -2542,6 +2810,7 @@ test('Style#setLayerZoomRange', () => {
 
     style.on('style.load', () => {
         style.setLayerZoomRange(makeFQID('symbol', 'streets'), 5, 12);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].error.message).toMatch(/does not exist in the map's style/);
 
         expect(style.getLayer(makeFQID('symbol', 'streets')).minzoom).toEqual(0);
@@ -2552,15 +2821,19 @@ test('Style#setLayerZoomRange', () => {
 test('Style#setFilter', () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
         layers: [{id: 'symbol', type: 'symbol', source: 'mapbox', filter: ['==', 'id', 0]}],
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
 
     const spy = vi.fn();
@@ -2568,9 +2841,11 @@ test('Style#setFilter', () => {
 
     style.on('style.load', () => {
         style.setFilter(makeFQID('symbol', 'streets'), ['==', 'id', 1]);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0].error.message).toMatch(/does not exist in the map's style/);
 
         expect(style.getFilter(makeFQID('symbol', 'streets'))).toBeFalsy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0].error.message).toMatch(/does not exist in the map's style/);
 
         expect(style.getLayer(makeFQID('symbol', 'streets')).filter).toEqual(['==', 'id', 0]);
@@ -2580,14 +2855,18 @@ test('Style#setFilter', () => {
 test('Style#setGeoJSONSourceData', async () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({
         sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'streets', url: '/styles/streets-v12.json', data: fragment}]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
 
     await waitFor(style, 'style.load');
@@ -2598,11 +2877,13 @@ describe('Style#setConfigProperty', () => {
     test('Updates layers in scope', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'standard',
                 url: '/standard.json',
                 config: {showBackground: false},
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [{
                         id: 'background',
@@ -2618,6 +2899,7 @@ describe('Style#setConfigProperty', () => {
             }]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -2629,7 +2911,9 @@ describe('Style#setConfigProperty', () => {
             expect(value.scope).toEqual('standard');
             expect(value.removedIds).toEqual([]);
             const fqid = makeFQID('showBackground', 'standard');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             expect(value.options.get(fqid).value.value).toEqual(true);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             expect(value.layers.map(layer => layer.id)).toEqual(['background']);
         };
 
@@ -2641,11 +2925,13 @@ describe('Style#setConfigProperty', () => {
     test('Reevaluates layer visibility', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'standard',
                 url: '/standard.json',
                 config: {showBackground: false},
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     layers: [{
                         id: 'background',
@@ -2657,6 +2943,7 @@ describe('Style#setConfigProperty', () => {
             }]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         await waitFor(style, "style.load");
@@ -2674,16 +2961,21 @@ describe('Style#setState', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.load', resolve));
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.import.load', resolve));
@@ -2696,18 +2988,24 @@ describe('Style#setState', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.load', resolve));
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON()}, {id: 'b', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.import.load', resolve));
@@ -2720,18 +3018,24 @@ describe('Style#setState', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'b', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.load', resolve));
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON()}, {id: 'b', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.import.load', resolve));
@@ -2742,18 +3046,24 @@ describe('Style#setState', () => {
     test('Removes fragment', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON()}, {id: 'b', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => style.on('style.load', resolve));
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         expect(style.serialize()).toEqual(nextStyle);
     });
@@ -2761,6 +3071,7 @@ describe('Style#setState', () => {
     test('Removes 3D light independently', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({imports: [{id: 'basemap', url: '', data: createStyleJSON({
             lights: [
                 {id: 'sun', type: 'directional', properties: {intensity: 0.5}},
@@ -2768,6 +3079,7 @@ describe('Style#setState', () => {
             ]
         })}]});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => style.on('style.load', resolve));
@@ -2775,12 +3087,14 @@ describe('Style#setState', () => {
         expect(style.ambientLight).toBeTruthy();
         expect(style.directionalLight).toBeTruthy();
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({imports: [{id: 'basemap', url: '', data: createStyleJSON({
             lights: [
                 {id: 'sun', type: 'directional', properties: {intensity: 0.5}},
             ]
         })}]});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         expect(style.serialize()).toEqual(nextStyle);
 
@@ -2791,6 +3105,7 @@ describe('Style#setState', () => {
     test('Removes all fragments', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const fragmentStyle = createStyleJSON({
             lights: [
                 {id: 'sun', type: 'directional', properties: {intensity: 0.5}},
@@ -2802,17 +3117,21 @@ describe('Style#setState', () => {
             sources: {'mapbox-dem': {type: 'raster-dem', tiles: ['http://example.com/{z}/{x}/{y}.png']}},
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({imports: [{id: 'a', url: '', data: fragmentStyle}]});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => style.on('style.load', resolve));
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
             sources: {mapbox: {type: 'vector', tiles: []}},
             layers: [{id: 'land', type: 'background'}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         expect(style.serialize()).toEqual(nextStyle);
 
@@ -2830,18 +3149,24 @@ describe('Style#setState', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON()}, {id: 'b', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.load', resolve));
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'b', url: '', data: createStyleJSON()}, {id: 'a', url: '', data: createStyleJSON()}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => map.on('style.import.load', resolve));
@@ -2857,6 +3182,7 @@ describe('Style#setState', () => {
         const style = new Style(map);
         style.setEventedParent(map, {style});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const data = createStyleJSON({
             layers: [{id: 'a', type: 'background'}],
             schema: {lightPreset: {default: 'day'}}
@@ -2869,11 +3195,13 @@ describe('Style#setState', () => {
             '/style2.json': () => new Response(JSON.stringify(data))
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{id: 'a', url: '/style1.json', config: {lightPreset: 'night'}}],
             layers: [{id: 'b', type: 'background', paint: {'background-color': 'red'}}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
             imports: [{id: 'a', url: '/style2.json', config: {lightPreset: 'night'}}],
             layers: [{id: 'b', type: 'background', paint: {'background-color': 'pink'}}]
@@ -2881,9 +3209,11 @@ describe('Style#setState', () => {
 
         await new Promise(resolve => {
             map.on('style.load', () => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 style.setState(nextStyle);
 
                 expect(style.serialize()).toStrictEqual(createStyleJSON({
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     imports: [{id: 'a', url: '/style2.json', config: {lightPreset: 'night'}, data}],
                     layers: [{id: 'b', type: 'background', paint: {'background-color': 'pink'}}]
                 }));
@@ -2896,6 +3226,7 @@ describe('Style#setState', () => {
                 resolve();
             });
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             style.loadJSON(initialStyle);
         });
     });
@@ -2903,18 +3234,24 @@ describe('Style#setState', () => {
     test('Updates fragment data', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON({layers: [{id: 'a', type: 'background'}]})}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
         // eslint-disable-next-line no-promise-executor-return
         await new Promise((resolve) => style.on('style.load', resolve));
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             imports: [{id: 'a', url: '', data: createStyleJSON({layers: [{id: 'b', type: 'background'}]})}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         expect(style.serialize()).toEqual(nextStyle);
     });
@@ -2922,10 +3259,12 @@ describe('Style#setState', () => {
     test('Updates layer slot', async () => {
         const style = new Style(new StubMap());
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const initialStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
                     layers: [
@@ -2940,6 +3279,7 @@ describe('Style#setState', () => {
             layers: [{id: 'layer', type: 'background', slot: 'middle'}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
 
         // eslint-disable-next-line no-promise-executor-return
@@ -2952,10 +3292,12 @@ describe('Style#setState', () => {
             makeFQID('labels', 'streets'),
         ]);
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const nextStyle = createStyleJSON({
             imports: [{
                 id: 'streets',
                 url: '/style.json',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 data: createStyleJSON({
                     sources: {mapbox: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
                     layers: [
@@ -2970,6 +3312,7 @@ describe('Style#setState', () => {
             layers: [{id: 'layer', type: 'background', slot: 'top'}]
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.setState(nextStyle);
         expect(style.serialize()).toEqual(nextStyle);
 
@@ -2985,6 +3328,7 @@ describe('Style#setState', () => {
 test('Style#serialize', async () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragmentStyle = createStyleJSON({
         fog: {range: [1, 2], color: 'white', 'horizon-blend': 0},
         lights: [
@@ -2998,7 +3342,9 @@ test('Style#serialize', async () => {
         transition: {duration: 900, delay: 200}
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'basemap', url: '', data: fragmentStyle}]
     });
 
@@ -3018,6 +3364,7 @@ test('Style#serialize', async () => {
             resolve();
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
     });
 });
@@ -3026,8 +3373,10 @@ test('Style#areTilesLoaded', async () => {
     const style = new Style(new StubMap());
 
     const source = {type: 'geojson', data: {type: 'FeatureCollection', features: []}};
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
         sources: {geojson: source},
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         imports: [{id: 'basemap', url: '', data: createStyleJSON({
             sources: {geojson: source}
         })}]
@@ -3053,6 +3402,7 @@ test('Style#areTilesLoaded', async () => {
             resolve();
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         style.loadJSON(initialStyle);
     });
 });
@@ -3060,8 +3410,11 @@ test('Style#areTilesLoaded', async () => {
 test('Style#_updateTilesForChangedImages', async () => {
     const style = new Style(new StubMap());
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const fragment = createStyleJSON({sources: {geojson: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}}});
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rootStyle = createStyleJSON({imports: [{id: 'basemap', url: '', data: fragment}]});
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(rootStyle);
 
     await waitFor(style, 'style.load');
@@ -3107,10 +3460,12 @@ test('Style#_updateTilesForChangedImages', async () => {
 
 test('Style#getFeaturesetDescriptors', async () => {
     const style = new Style(new StubMap());
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
         imports: [{
             id: 'basemap',
             url: '',
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             data: createStyleJSON({
                 featuresets: {
                     poi: {selectors: []},
@@ -3120,6 +3475,7 @@ test('Style#getFeaturesetDescriptors', async () => {
         }]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
     await waitFor(style, 'style.load');
 
@@ -3132,16 +3488,20 @@ test('Style#getFragmentStyle', async () => {
     const style = new Style(map);
 
     // Load a style with imports
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const initialStyle = createStyleJSON({
         imports: [{
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             id: 'basemap', url: '', data: createStyleJSON({
                 imports: [{
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     id: 'basemap', url: '', data: createStyleJSON()
                 }]
             })
         }]
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     style.loadJSON(initialStyle);
     await waitFor(style, 'style.load');
 

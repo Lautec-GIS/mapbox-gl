@@ -40,8 +40,7 @@ const exported = {
         return {cancel: () => cancelAnimationFrame(frame)};
     },
 
-    getImageData(img: CanvasImageSource, padding: number = 0): ImageData {
-        // @ts-expect-error - TS2339 - Property 'width' does not exist on type 'CanvasImageSource'. | TS2339 - Property 'height' does not exist on type 'CanvasImageSource'.
+    getImageData(img: ImageBitmap | HTMLImageElement, padding: number = 0): ImageData {
         const {width, height} = img;
 
         if (!canvas) {

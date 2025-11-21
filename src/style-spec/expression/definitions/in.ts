@@ -48,20 +48,25 @@ class In implements Expression {
     }
 
     evaluate(ctx: EvaluationContext): boolean {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const needle = (this.needle.evaluate(ctx));
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const haystack = (this.haystack.evaluate(ctx));
 
         if (haystack == null) return false;
 
         if (!isValidNativeType(needle, ['boolean', 'string', 'number', 'null'])) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             throw new RuntimeError(`Expected first argument to be of type boolean, string, number or null, but found ${toString(typeOf(needle))} instead.`);
         }
 
         if (!isValidNativeType(haystack, ['string', 'array'])) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             throw new RuntimeError(`Expected second argument to be of type array or string, but found ${toString(typeOf(haystack))} instead.`);
         }
 
-        return haystack.indexOf(needle) >= 0;
+        // Type assertions safe due to isValidNativeType checks above
+        return (haystack as string | unknown[]).indexOf(needle as string) >= 0;
     }
 
     eachChild(fn: (_: Expression) => void) {

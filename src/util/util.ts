@@ -5,7 +5,6 @@ import assert from 'assert';
 import deepEqual from '../style-spec/util/deep_equal';
 
 import type {vec4} from 'gl-matrix';
-import type {UnionToIntersection} from 'utility-types';
 import type {Range} from '../../3d-style/elevation/elevation_feature';
 import type {Callback} from '../types/callback';
 
@@ -280,6 +279,7 @@ export function asyncAll<Item, Result>(
         fn(item, (err, result) => {
             if (err) error = err;
             results[i] = result;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             if (--remaining === 0) callback(error, results);
         });
     });
@@ -303,26 +303,6 @@ export function keysDifference<S, T>(
         }
     }
     return difference;
-}
-
-/**
- * Given a destination object and optionally many source objects,
- * copy all properties from the source objects into the destination.
- * The last source object given overrides properties from previous
- * source objects.
- *
- * @param dest destination object
- * @param sources sources from which properties are pulled
- * @private
- */
-export function extend<T extends object, U extends Array<object | null | undefined>>(dest: T, ...sources: U): T & UnionToIntersection<U[number]> {
-    for (const src of sources) {
-        for (const k in src) {
-            dest[k] = src[k];
-        }
-    }
-
-    return dest as T & UnionToIntersection<U[number]>;
 }
 
 /**
@@ -372,7 +352,7 @@ export function uuid(): string {
         return a ?
             (a ^ Math.random() * (16 >> a / 4)).toString(16) :
             // @ts-expect-error - TS2365 - Operator '+' cannot be applied to types 'number[]' and 'number'.
-            // eslint-disable-next-line @typescript-eslint/restrict-plus-operands, @typescript-eslint/no-unsafe-unary-minus
+            // eslint-disable-next-line @typescript-eslint/restrict-plus-operands, @typescript-eslint/no-unsafe-unary-minus, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             ([1e7] + -[1e3] + -4e3 + -8e3 + -1e11).replace(/[018]/g, b) as string;
     }
     return b();
@@ -383,7 +363,7 @@ export function uuid(): string {
  * @private
  */
 export function isPowerOfTwo(value: number): boolean {
-    return (Math.log(value) / Math.LN2) % 1 === 0;
+    return (Math.log2(value)) % 1 === 0;
 }
 
 /**
@@ -392,7 +372,7 @@ export function isPowerOfTwo(value: number): boolean {
  */
 export function nextPowerOfTwo(value: number): number {
     if (value <= 1) return 1;
-    return Math.pow(2, Math.ceil(Math.log(value) / Math.LN2));
+    return Math.pow(2, Math.ceil(Math.log2(value)));
 }
 
 /**
@@ -401,7 +381,7 @@ export function nextPowerOfTwo(value: number): number {
  */
 export function prevPowerOfTwo(value: number): number {
     if (value <= 1) return 1;
-    return Math.pow(2, Math.floor(Math.log(value) / Math.LN2));
+    return Math.pow(2, Math.floor(Math.log2(value)));
 }
 
 /**
@@ -438,6 +418,7 @@ export function validateUuid(str?: string | null): boolean {
 export function bindAll(fns: Array<string>, context: unknown): void {
     fns.forEach((fn) => {
         if (!context[fn]) { return; }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         context[fn] = context[fn].bind(context);
     });
 }
@@ -455,6 +436,7 @@ export function mapObject<T, U>(
 ): Record<PropertyKey, U> {
     const output: Record<PropertyKey, U> = {};
     for (const key in input) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         output[key] = iterator.call(context || this, input[key], key, input);
     }
     return output;
@@ -557,6 +539,7 @@ export function calculateSignedArea(ring: Array<Point>): number {
     for (let i = 0, len = ring.length, j = len - 1, p1, p2; i < len; j = i++) {
         p1 = ring[i];
         p2 = ring[j];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         sum += (p2.x - p1.x) * (p1.y + p2.y);
     }
     return sum;
@@ -666,7 +649,9 @@ export function parseCacheControl(cacheControl: string): Record<string, number> 
 
     const header: Record<string, string | number> = {};
     cacheControl.replace(re, ($0, $1, $2, $3) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const value = $2 || $3;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         header[$1] = value ? value.toLowerCase() : true;
         return '';
     });
@@ -678,6 +663,13 @@ export function parseCacheControl(cacheControl: string): Record<string, number> 
     }
 
     return header as Record<string, number>;
+}
+
+export function getExpiryDataFromHeaders(responseHeaders: Headers | Map<string, string> | undefined) {
+    if (!responseHeaders) return {cacheControl: undefined, expires: undefined};
+    const cacheControl = responseHeaders.get('Cache-Control');
+    const expires = responseHeaders.get('Expires');
+    return {cacheControl, expires};
 }
 
 let _isSafari: boolean | null = null;
@@ -722,8 +714,11 @@ export function isFullscreen(): boolean {
 
 export function storageAvailable(type: string): boolean {
     try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const storage = self[type];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         storage.setItem('_mapbox_test_', 1);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         storage.removeItem('_mapbox_test_');
         return true;
     } catch (e) {

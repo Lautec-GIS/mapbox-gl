@@ -1,5 +1,5 @@
 import browser from '../util/browser';
-import {bezier, clamp, extend} from '../util/util';
+import {bezier, clamp} from '../util/util';
 import Point from '@mapbox/point-geometry';
 
 import type {Map} from './map';
@@ -11,22 +11,22 @@ const defaultInertiaOptions = {
     easing: bezier(0, 0, 0.3, 1),
 };
 
-const defaultPanInertiaOptions = extend({
+const defaultPanInertiaOptions = Object.assign({
     deceleration: 2500,
     maxSpeed: 1400
 }, defaultInertiaOptions);
 
-const defaultZoomInertiaOptions = extend({
+const defaultZoomInertiaOptions = Object.assign({
     deceleration: 20,
     maxSpeed: 1400
 }, defaultInertiaOptions);
 
-const defaultBearingInertiaOptions = extend({
+const defaultBearingInertiaOptions = Object.assign({
     deceleration: 1000,
     maxSpeed: 360
 }, defaultInertiaOptions);
 
-const defaultPitchInertiaOptions = extend({
+const defaultPitchInertiaOptions = Object.assign({
     deceleration: 1000,
     maxSpeed: 90
 }, defaultInertiaOptions);
@@ -38,14 +38,22 @@ export type InertiaOptions = {
     maxSpeed: number;
 };
 
+export type InertiaSettings = {
+    zoomDelta?: number;
+    bearingDelta?: number;
+    pitchDelta?: number;
+    panDelta?: Point;
+    around?: Point;
+    pinchAround?: Point;
+};
+
 export type InputEvent = MouseEvent | TouchEvent | KeyboardEvent | WheelEvent;
 
 export default class HandlerInertia {
     _map: Map;
     _inertiaBuffer: Array<{
         time: number;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        settings: any;
+        settings: InertiaSettings;
     }>;
 
     constructor(map: Map) {
@@ -57,8 +65,7 @@ export default class HandlerInertia {
         this._inertiaBuffer = [];
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    record(settings: any) {
+    record(settings: InertiaSettings) {
         this._drainInertiaBuffer();
         this._inertiaBuffer.push({time: browser.now(), settings});
     }
@@ -105,11 +112,10 @@ export default class HandlerInertia {
         const lastEntry = this._inertiaBuffer[this._inertiaBuffer.length - 1];
         const duration = (lastEntry.time - this._inertiaBuffer[0].time);
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const easeOptions: Record<string, any> = {};
+        const easeOptions: EasingOptions & {easeId?: string; noMoveStart?: boolean} = {} as EasingOptions & {easeId?: string; noMoveStart?: boolean};
 
         if (deltas.pan.mag()) {
-            const result = calculateEasing(deltas.pan.mag(), duration, extend({}, defaultPanInertiaOptions, panInertiaOptions || {}));
+            const result = calculateEasing(deltas.pan.mag(), duration, Object.assign({}, defaultPanInertiaOptions, panInertiaOptions || {}));
             easeOptions.offset = deltas.pan.mult(result.amount / deltas.pan.mag());
             easeOptions.center = this._map.transform.center;
             extendDuration(easeOptions, result);
@@ -134,7 +140,9 @@ export default class HandlerInertia {
         }
 
         if (easeOptions.zoom || easeOptions.bearing) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const last = deltas.pinchAround === undefined ? deltas.around : deltas.pinchAround;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             easeOptions.around = last ? this._map.unproject(last) : this._map.getCenter();
         }
 

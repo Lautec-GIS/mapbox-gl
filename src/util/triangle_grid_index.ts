@@ -76,7 +76,7 @@ class TriangleGridIndex {
         this.xScale = 1.0 / cellSize;
         this.yScale = 1.0 / cellSize;
 
-        const associatedTriangles = [];
+        const associatedTriangles: Array<{cellIdx: number; triIdx: number}> = [];
 
         // For each triangle find all intersecting cells
         for (let t = 0; t < this.triangleCount; t++) {

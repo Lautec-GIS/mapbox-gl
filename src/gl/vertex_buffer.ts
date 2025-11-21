@@ -72,8 +72,8 @@ class VertexBuffer {
     enableAttributes(gl: WebGL2RenderingContext, program: Program<UniformBindings>) {
         for (let j = 0; j < this.attributes.length; j++) {
             const member = this.attributes[j];
-            const attribIndex: number | undefined = program.attributes[member.name];
-            if (attribIndex !== undefined) {
+            const attribIndex = program.getAttributeLocation(gl, member.name);
+            if (attribIndex !== -1) {
                 gl.enableVertexAttribArray(attribIndex);
             }
         }
@@ -88,12 +88,12 @@ class VertexBuffer {
     setVertexAttribPointers(gl: WebGL2RenderingContext, program: Program<UniformBindings>, vertexOffset?: number | null) {
         for (let j = 0; j < this.attributes.length; j++) {
             const member = this.attributes[j];
-            const attribIndex: number | undefined = program.attributes[member.name];
-
-            if (attribIndex !== undefined) {
+            const attribIndex = program.getAttributeLocation(gl, member.name);
+            if (attribIndex !== -1) {
                 gl.vertexAttribPointer(
                     attribIndex,
                     member.components,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                     gl[AttributeType[member.type]],
                     false,
                     this.itemSize,
@@ -106,9 +106,8 @@ class VertexBuffer {
     setVertexAttribDivisor(gl: WebGL2RenderingContext, program: Program<UniformBindings>, value: number) {
         for (let j = 0; j < this.attributes.length; j++) {
             const member = this.attributes[j];
-            const attribIndex: number | undefined = program.attributes[member.name];
-
-            if (attribIndex !== undefined && this.instanceCount && this.instanceCount > 0) {
+            const attribIndex = program.getAttributeLocation(gl, member.name);
+            if (attribIndex !== -1 && this.instanceCount && this.instanceCount > 0) {
                 gl.vertexAttribDivisor(attribIndex, value);
             }
         }

@@ -3,29 +3,25 @@ import {fileURLToPath} from 'node:url';
 import jsdoc from 'eslint-plugin-jsdoc';
 import config from 'eslint-config-mourner';
 import tseslint from 'typescript-eslint';
-import importPlugin from 'eslint-plugin-import';
+import {createNodeResolver, importX} from 'eslint-plugin-import-x';
+import {createTypeScriptImportResolver} from 'eslint-import-resolver-typescript';
 import {globalIgnores} from 'eslint/config';
 import {includeIgnoreFile} from '@eslint/compat';
+import tsConfig from './tsconfig.json' with {type: 'json'};
+import noObjectMethodsOnCollections from './test/eslint-rules/no-object-methods-on-collections.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const gitignorePath = path.resolve(__dirname, '.gitignore');
 
 export default tseslint.config(
-    globalIgnores([
-        './debug/**/*',
-        './rollup/**/*',
-        './src/style-spec/bin',
-        './src/style-spec/dist',
-        './test/build/typings/**/*',
-        './test/build/transpilation/**/*',
-    ]),
-
+    globalIgnores(tsConfig.exclude),
     includeIgnoreFile(gitignorePath),
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     ...config,
     tseslint.configs.recommendedTypeChecked,
-    importPlugin.flatConfigs.recommended,
+    importX.flatConfigs.recommended,
     jsdoc.configs['flat/recommended'],
 
     // Settings
@@ -38,16 +34,11 @@ export default tseslint.config(
         },
 
         settings: {
-            'import/parsers': {
+            'import-x/parsers': {
                 '@typescript-eslint/parser': ['.ts'],
             },
 
-            'import/resolver': {
-                node: true,
-                typescript: {
-                    project: './tsconfig.json',
-                },
-            },
+            'import-x/resolver-next': [createTypeScriptImportResolver(), createNodeResolver()],
 
             jsdoc: {
                 mode: 'typescript',
@@ -67,7 +58,6 @@ export default tseslint.config(
     // Default rules
     {
         rules: {
-            'no-loss-of-precision': 'off',
             'no-use-before-define': 'off',
             'implicit-arrow-linebreak': 'off',
             'arrow-parens': 'off',
@@ -81,7 +71,7 @@ export default tseslint.config(
             'array-bracket-spacing': 'off',
             'consistent-return': 'off',
             'global-require': 'off',
-            'import/no-commonjs': 'error',
+            'import-x/no-commonjs': 'error',
             'key-spacing': 'off',
             'no-eq-null': 'off',
             'no-lonely-if': 'off',
@@ -151,11 +141,6 @@ export default tseslint.config(
     {
         rules: {
             '@typescript-eslint/unbound-method': 'off',
-            '@typescript-eslint/no-unsafe-call': 'off',
-            '@typescript-eslint/no-unsafe-argument': 'off',
-            '@typescript-eslint/no-unsafe-assignment': 'off',
-            '@typescript-eslint/no-loss-of-precision': 'off',
-            '@typescript-eslint/no-unsafe-member-access': 'off',
             '@typescript-eslint/only-throw-error': 'off',
             '@typescript-eslint/method-signature-style': 'error',
             '@typescript-eslint/consistent-type-exports': 'error',
@@ -163,7 +148,6 @@ export default tseslint.config(
             '@typescript-eslint/restrict-template-expressions': ['off', {
                 allowNever: true,
             }],
-            '@typescript-eslint/no-unnecessary-type-constraint': 'off',
             'no-unused-vars': 'off',
             '@typescript-eslint/no-unused-vars': ['error', {
                 args: 'none',
@@ -173,19 +157,33 @@ export default tseslint.config(
         }
     },
 
+    // Custom rules
+    {
+        plugins: {
+            mapbox: {
+                rules: {
+                    'no-object-methods-on-collections': noObjectMethodsOnCollections,
+                },
+            },
+        },
+        rules: {
+            'mapbox/no-object-methods-on-collections': 'error',
+        },
+    },
+
     // Import plugin rules
     {
         rules: {
-            'import/named': 'off',
-            'import/namespace': 'off',
-            'import/default': 'off',
-            'import/no-named-as-default-member': 'off',
-            'import/no-unresolved': 'off',
-            'import/no-named-as-default': 'off',
+            'import-x/named': 'off',
+            'import-x/namespace': 'off',
+            'import-x/default': 'off',
+            'import-x/no-named-as-default-member': 'off',
+            'import-x/no-unresolved': 'off',
+            'import-x/no-named-as-default': 'off',
             'no-duplicate-imports': 'off',
-            'import/no-duplicates': 'error',
+            'import-x/no-duplicates': 'error',
 
-            'import/order': ['error', {
+            'import-x/order': ['error', {
                 groups: [[
                     'builtin',
                     'external',
@@ -200,14 +198,15 @@ export default tseslint.config(
                 'newlines-between': 'always',
             }],
 
-            'import/no-restricted-paths': ['error', {
+            'import-x/no-restricted-paths': ['error', {
                 zones: [{
                     target: './src/style-spec',
                     from: ['./src/!(style-spec)/**/*', './3d-style/**/*'],
                 }],
             }],
 
-            'import/extensions': ['error', {
+            'import-x/extensions': ['error', {
+                ts: 'ignorePackages',
                 js: 'always',
                 json: 'always',
             }],

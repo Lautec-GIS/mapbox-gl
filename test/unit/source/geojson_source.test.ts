@@ -6,7 +6,6 @@ import {OverscaledTileID} from '../../../src/source/tile_id';
 import GeoJSONSource from '../../../src/source/geojson_source';
 import Transform from '../../../src/geo/transform';
 import LngLat from '../../../src/geo/lng_lat';
-import {extend} from '../../../src/util/util';
 
 const wrapDispatcher = (dispatcher) => {
     return {
@@ -56,12 +55,15 @@ const hawkHill = {
 
 describe('GeoJSONSource#setData', () => {
     function createSource(opts) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         opts = opts || {};
-        opts = extend(opts, {data: {}});
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        opts = Object.assign(opts, {data: {}});
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         return new GeoJSONSource('id', opts, wrapDispatcher({
             send(type, data, callback) {
                 if (callback) {
-                    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+                    // eslint-disable-next-line @typescript-eslint/no-implied-eval, @typescript-eslint/no-unsafe-argument
                     return setTimeout(callback, 0);
                 }
             }
@@ -101,6 +103,7 @@ describe('GeoJSONSource#setData', () => {
         };
         source.actor.send = function (type, params, cb) {
             if (type === 'geojson.loadData') {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(params.request.collectResourceTiming).toBeTruthy();
                 // eslint-disable-next-line @typescript-eslint/no-implied-eval
                 setTimeout(cb, 0);
@@ -134,6 +137,7 @@ describe('GeoJSONSource#update', () => {
         return new Promise((resolve) => {
             const mockDispatcher = wrapDispatcher({
                 send(message, args, callback) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                     const ids = JSON.parse(args.data).features.map(f => f.id);
                     if (count++ === 0) {
                         expect(ids).to.deep.equal([1]);
@@ -141,7 +145,7 @@ describe('GeoJSONSource#update', () => {
                         expect(ids).to.deep.equal([2, 3]);
                         resolve();
                     }
-                    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+                    // eslint-disable-next-line @typescript-eslint/no-implied-eval, @typescript-eslint/no-unsafe-argument
                     setTimeout(callback);
                     return true;
                 }
@@ -159,6 +163,7 @@ describe('GeoJSONSource#update', () => {
         const mockDispatcher = wrapDispatcher({
             send(message, params) {
                 expect(message).toEqual('geojson.loadData');
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(params.geojsonVtOptions).toEqual({
                     extent: 8192,
                     maxZoom: 10,
@@ -183,6 +188,7 @@ describe('GeoJSONSource#update', () => {
         const mockDispatcher = wrapDispatcher({
             send(message, params) {
                 expect(message).toEqual('geojson.loadData');
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(params.superclusterOptions).toEqual({
                     maxZoom: 12,
                     minPoints: 3,
@@ -207,6 +213,7 @@ describe('GeoJSONSource#update', () => {
     test('transforms url before making request', () => {
         const mapStub = {
             _requestManager: {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 transformRequest: (url) => { return {url}; }
             }
         };
@@ -220,7 +227,7 @@ describe('GeoJSONSource#update', () => {
         const mockDispatcher = wrapDispatcher({
             send(message, args, callback) {
                 if (callback) {
-                    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+                    // eslint-disable-next-line @typescript-eslint/no-implied-eval, @typescript-eslint/no-unsafe-argument
                     setTimeout(callback, 0);
                 }
             }
@@ -241,6 +248,7 @@ describe('GeoJSONSource#update', () => {
         const mockDispatcher = wrapDispatcher({
             send(message, args, callback) {
                 if (callback) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     setTimeout(callback.bind(null, 'error'), 0);
                 }
             }
@@ -276,7 +284,7 @@ describe('GeoJSONSource#update', () => {
                         resolve();
                     }
                     if (callback) {
-                        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+                        // eslint-disable-next-line @typescript-eslint/no-implied-eval, @typescript-eslint/no-unsafe-argument
                         setTimeout(callback, 0);
                     }
                 }
@@ -305,6 +313,7 @@ describe('GeoJSONSource#update', () => {
 describe('GeoJSONSource#serialize', () => {
     const mapStub = {
         _requestManager: {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             transformRequest: (url) => { return {url}; }
         },
         getWorldview: () => undefined

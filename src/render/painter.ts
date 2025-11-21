@@ -42,6 +42,7 @@ import {BuildingTileBorderManager} from '../../3d-style/render/building_tile_bor
 import {GlobeSharedBuffers, globeToMercatorTransition} from '../geo/projection/globe_util';
 import {Terrain, defaultTerrainUniforms} from '../terrain/terrain';
 import {Debug} from '../util/debug';
+import {DevTools} from '../ui/devtools';
 import Tile from '../source/tile';
 import {RGBAImage} from '../util/image';
 import {LayerTypeMask} from '../../3d-style/util/conflation';
@@ -55,6 +56,7 @@ import Framebuffer from '../gl/framebuffer';
 import {OcclusionParams} from './occlusion_params';
 import {Rain} from '../precipitation/draw_rain';
 import {Snow} from '../precipitation/draw_snow';
+import {PerformanceUtils} from '../util/performance';
 
 import type ImageManager from './image_manager';
 import type IndexBuffer from '../gl/index_buffer';
@@ -67,7 +69,6 @@ import type GlyphManager from './glyph_manager';
 import type {ContextOptions} from '../gl/context';
 import type {CutoffParams} from './cutoff';
 import type {DepthRangeType, DepthMaskType, DepthFuncType} from '../gl/types';
-import type {ITrackedParameters} from '../tracked-parameters/tracked_parameters_base';
 import type {LightsUniformsType} from '../../3d-style/render/lights';
 import type {OverscaledTileID, UnwrappedTileID} from '../source/tile_id';
 import type {ProgramName} from './program';
@@ -79,6 +80,7 @@ import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
 
 export type RenderPass = 'offscreen' | 'opaque' | 'translucent' | 'sky' | 'shadow' | 'light-beam';
 export type DepthPrePass = 'initialize' | 'reset' | 'geometry';
+export type EmissiveMode = 'constant' | 'dual-source-blending' | 'mrt-fallback';
 
 export type CanvasCopyInstances = {
     canvasCopies: WebGLTexture[];
@@ -245,8 +247,6 @@ class Painter {
     _shadowRenderer?: ShadowRenderer;
     _wireframeDebugCache: WireframeDebugCache;
 
-    tp: ITrackedParameters;
-
     _debugParams: {
         forceEnablePrecipitation: boolean;
         showTerrainProxyTiles: boolean;
@@ -277,14 +277,16 @@ class Painter {
 
     worldview: string;
 
-    constructor(gl: WebGL2RenderingContext, contextCreateOptions: ContextOptions, transform: Transform, scaleFactor: number, tp: ITrackedParameters, worldview: string | undefined) {
+    _forceEmissiveMode: boolean;
+    emissiveMode: EmissiveMode;
+
+    constructor(gl: WebGL2RenderingContext, contextCreateOptions: ContextOptions, transform: Transform, scaleFactor: number, worldview: string | undefined) {
         this.context = new Context(gl, contextCreateOptions);
 
         this.transform = transform;
         this._tileTextures = {};
         this.frameCopies = [];
         this.loadTimeStamps = [];
-        this.tp = tp;
 
         this._timeStamp = browser.now();
         this._averageFPS = 0;
@@ -303,37 +305,36 @@ class Painter {
         const layerTypes = ["fill", "line", "symbol", "circle", "heatmap", "fill-extrusion", "building", "raster", "raster-particle", "hillshade", "model", "background", "sky"];
 
         for (const layerType of layerTypes) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             this._debugParams.enabledLayers[layerType] = true;
         }
 
-        tp.registerParameter(this._debugParams, ["Terrain"], "showTerrainProxyTiles", {}, () => {
+        DevTools.addParameter(this._debugParams, 'showTerrainProxyTiles', 'Terrain', {}, () => {
             this.style.map.triggerRepaint();
         });
-
-        tp.registerParameter(this._debugParams, ["Precipitation"], "forceEnablePrecipitation");
-
-        tp.registerParameter(this._debugParams, ["FPS"], "fpsWindow", {min: 1, max: 100, step: 1});
-        tp.registerBinding(this._debugParams, ["FPS"], 'continousRedraw', {
+        DevTools.addParameter(this._debugParams, 'forceEnablePrecipitation', 'Precipitation');
+        DevTools.addParameter(this._debugParams, 'fpsWindow', 'FPS', {min: 1, max: 100, step: 1});
+        DevTools.addBinding(this._debugParams, 'continousRedraw', 'FPS', {
             readonly: true,
-            label: "continuous redraw"
+            label: 'continuous redraw'
         });
-        tp.registerBinding(this, ["FPS"], '_averageFPS', {
+        DevTools.addBinding(this, '_averageFPS', 'FPS', {
             readonly: true,
-            label: "value"
+            label: 'value'
         });
-        tp.registerBinding(this, ["FPS"], '_averageFPS', {
+        DevTools.addBinding(this, '_averageFPS', 'FPS', {
             readonly: true,
-            label: "graph",
+            label: 'graph',
             view: 'graph',
             min: 0,
             max: 200
         });
-        // Layers
+
         for (const layerType of layerTypes) {
-            tp.registerParameter(this._debugParams.enabledLayers, ["Debug", "Layers"], layerType);
+            DevTools.addParameter(this._debugParams.enabledLayers, layerType, 'Debug > Layers');
         }
 
-        this.occlusionParams = new OcclusionParams(tp);
+        this.occlusionParams = new OcclusionParams();
 
         this.setup();
 
@@ -368,6 +369,9 @@ class Painter {
         this.scaleFactor = scaleFactor;
 
         this.worldview = worldview;
+
+        this._forceEmissiveMode = false;
+        this.emissiveMode = 'constant';
     }
 
     updateTerrain(style: Style, adaptCameraAltitude: boolean) {
@@ -681,8 +685,16 @@ class Painter {
 
         const gl = this.context.gl;
         if (deferredDrapingEnabled() && this.renderPass === 'translucent') {
-            return new ColorMode([gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.CONSTANT_ALPHA, gl.ONE_MINUS_SRC_ALPHA],
-                new Color(0, 0, 0, emissiveStrengthForDrapedLayers === undefined ? 0 : emissiveStrengthForDrapedLayers), [true, true, true, true]);
+            if ((emissiveStrengthForDrapedLayers != null && this.emissiveMode !== 'mrt-fallback') || this.emissiveMode === 'constant') {
+                // Color mode for constant emissive strength.
+                return new ColorMode([gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.CONSTANT_ALPHA, gl.ONE_MINUS_SRC_ALPHA], new Color(0, 0, 0, emissiveStrengthForDrapedLayers != null ? emissiveStrengthForDrapedLayers : 0.0), [true, true, true, true]);
+            } else if (this.emissiveMode === 'dual-source-blending') {
+                const extBlendFuncExtended = this.context.extBlendFuncExtended;
+                return new ColorMode([gl.ONE, gl.ONE_MINUS_SRC_ALPHA, extBlendFuncExtended.SRC1_ALPHA_WEBGL, gl.ONE_MINUS_SRC_ALPHA], Color.transparent, [true, true, true, true]);
+            } else {
+                // Fallback to using a secondary render target for emissive strength values. Normal color mode is used for this.
+                return this.colorModeForRenderPass();
+            }
         } else {
             return this.colorModeForRenderPass();
         }
@@ -720,6 +732,7 @@ class Painter {
         const depthHeight = Math.ceil(this.height);
 
         const fboPrev = this.context.bindFramebuffer.get();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const texturePrev: WebGLTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
 
         if (!this.depthFBO || this.depthFBO.width !== depthWidth || this.depthFBO.height !== depthHeight) {
@@ -730,7 +743,7 @@ class Painter {
             }
 
             if (depthWidth !== 0 && depthHeight !== 0) {
-                this.depthFBO = new Framebuffer(this.context, depthWidth, depthHeight, false, 'texture');
+                this.depthFBO = new Framebuffer(this.context, depthWidth, depthHeight, 0, 'texture');
 
                 this.depthTexture = new Texture(this.context, {width: depthWidth, height: depthHeight, data: null}, gl.DEPTH24_STENCIL8);
                 this.depthFBO.depthAttachment.set(this.depthTexture.texture);
@@ -765,6 +778,8 @@ class Painter {
         this._dt = curTime - this._timeStamp;
         this._timeStamp = curTime;
 
+        const renderStartTime = PerformanceUtils.now();
+
         Debug.run(() => { this.updateAverageFPS(); });
 
         // Update debug cache, i.e. clear all unused buffers
@@ -781,6 +796,7 @@ class Painter {
             const layer = layers[id];
 
             if (layer.type in this._debugParams.enabledLayers) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 return this._debugParams.enabledLayers[layer.type];
             }
 
@@ -792,6 +808,8 @@ class Painter {
         let layersRequireTerrainDepth = false;
         let layersRequireFinalDepth = false;
         let buildingLayer = null;
+        let conflationSourcesOrLayersInStyle = 0;
+        let conflationActiveThisFrame = false;
 
         for (const id of layerIds) {
             const layer = layers[id];
@@ -800,14 +818,17 @@ class Painter {
                 layersRequireTerrainDepth = true;
             } else if (layer.type === 'building') {
                 buildingLayer = layer;
+                ++conflationSourcesOrLayersInStyle;
             } else if (layer.type === 'symbol') {
-                if (layer.hasInitialOcclusionOpacityProperties) {
+                if (layer.hasOcclusionOpacityProperties) {
                     layersRequireFinalDepth = true;
                 } else {
                     layersRequireTerrainDepth = true;
                 }
             }
         }
+
+        this.updateEmissiveMode();
 
         let orderedLayers = layerIds.map(id => layers[id]);
         const sourceCaches = this.style._mergedSourceCaches;
@@ -819,20 +840,21 @@ class Painter {
 
         this.imageManager.beginFrame();
 
-        let conflationSourcesInStyle = 0;
-        let conflationActiveThisFrame = false;
-
+        const prepareStartTime = PerformanceUtils.now();
         for (const id in sourceCaches) {
             const sourceCache = sourceCaches[id];
             if (sourceCache.used) {
+                const sourceCachePrepareStartTime = PerformanceUtils.now();
                 sourceCache.prepare(this.context);
+                PerformanceUtils.measureLowOverhead(PerformanceUtils.GROUP_RENDERING, `prepare: ${sourceCache.id.toString()}`, sourceCachePrepareStartTime, undefined);
 
                 // @ts-expect-error - TS2339 - Property 'usedInConflation' does not exist on type 'Source'.
                 if (sourceCache.getSource().usedInConflation) {
-                    ++conflationSourcesInStyle;
+                    ++conflationSourcesOrLayersInStyle;
                 }
             }
         }
+        PerformanceUtils.measureLowOverhead(PerformanceUtils.GROUP_RENDERING, 'sourceCaches: prepare', prepareStartTime, undefined);
 
         let clippingActiveThisFrame = false;
         for (const layer of orderedLayers) {
@@ -874,7 +896,7 @@ class Painter {
             return cache.getSource();
         };
 
-        if (conflationSourcesInStyle || clippingActiveThisFrame || this._clippingActiveLastFrame) {
+        if (conflationSourcesOrLayersInStyle || clippingActiveThisFrame || this._clippingActiveLastFrame) {
             const conflationLayersInStyle: TypedStyleLayer[] = [];
             const conflationLayerIndicesInStyle: number[] = [];
 
@@ -1075,7 +1097,9 @@ class Painter {
             if (!this.buildingTileBorderManager) {
                 this.buildingTileBorderManager = new BuildingTileBorderManager();
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const buildingLayerSourceCache = this.style.getLayerSourceCache(buildingLayer);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.buildingTileBorderManager.updateBorders(buildingLayerSourceCache, buildingLayer);
         }
 
@@ -1102,8 +1126,10 @@ class Painter {
 
         // Shadow pass ==================================================
         if (this._shadowRenderer) {
+            const shadowPassStartTime = PerformanceUtils.now();
             this.renderPass = 'shadow';
             this._shadowRenderer.drawShadowPass(this.style, coordsShadowCasters);
+            PerformanceUtils.measureLowOverhead(PerformanceUtils.GROUP_RENDERING, 'Shadow Pass', shadowPassStartTime);
         }
 
         // Rebind the main framebuffer now that all offscreen layers have been rendered:
@@ -1149,7 +1175,7 @@ class Painter {
         // Opaque pass ===============================================
         // Draw opaque layers top-to-bottom first.
         this.renderPass = 'opaque';
-
+        const opaquePassStartTime = PerformanceUtils.now();
         if (this.style.fog && this.transform.projection.supportsFog && this._atmosphere && !this._showOverdrawInspector && shouldRenderAtmosphere) {
             this._atmosphere.drawStars(this, this.style.fog);
         }
@@ -1168,6 +1194,7 @@ class Painter {
         if (this.style.fog && this.transform.projection.supportsFog && this._atmosphere && !this._showOverdrawInspector && shouldRenderAtmosphere) {
             this._atmosphere.drawAtmosphereGlow(this, this.style.fog);
         }
+        PerformanceUtils.measureLowOverhead(PerformanceUtils.GROUP_RENDERING, 'Opaque Pass', opaquePassStartTime);
 
         // Sky pass ======================================================
         // Draw all sky layers bottom to top.
@@ -1189,7 +1216,7 @@ class Painter {
         // Translucent pass ===============================================
         // Draw all other layers bottom-to-top.
         this.renderPass = 'translucent';
-
+        const translucentPassStartTime = PerformanceUtils.now();
         function coordsForTranslucentLayer(layer: TypedStyleLayer, sourceCache?: SourceCache) {
             // For symbol layers in the translucent pass, we add extra tiles to the renderable set
             // for cross-tile symbol fading. Symbol layers don't use tile clipping, so no need to render
@@ -1287,6 +1314,7 @@ class Painter {
                         const depthPassLayer = orderedLayers[this.currentLayer];
                         if (depthPrepass[depthPassLayer.type]) {
                             const sourceCache = this.style.getLayerSourceCache(depthPassLayer);
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                             depthPrepass[depthPassLayer.type](this, sourceCache, depthPassLayer, coordsForTranslucentLayer(depthPassLayer, sourceCache), pass);
                         }
                     }
@@ -1327,6 +1355,7 @@ class Painter {
                         const maskLayer = orderedLayers[this.currentLayer];
                         if (groundShadowMask[maskLayer.type]) {
                             const sourceCache = this.style.getLayerSourceCache(maskLayer);
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                             groundShadowMask[maskLayer.type](this, sourceCache, maskLayer, coordsForTranslucentLayer(maskLayer, sourceCache));
                         }
                     }
@@ -1384,12 +1413,15 @@ class Painter {
         if (this._rain) {
             this._rain.draw(this);
         }
+        PerformanceUtils.measureLowOverhead(PerformanceUtils.GROUP_RENDERING, 'Translucent Pass', translucentPassStartTime);
+
         if (this.options.showTileBoundaries || this.options.showQueryGeometry || this.options.showTileAABBs) {
             // Use source with highest maxzoom
             let selectedSource = null;
             orderedLayers.forEach((layer) => {
                 const sourceCache = style.getLayerSourceCache(layer);
                 if (sourceCache && !layer.isHidden(this.transform.zoom) && sourceCache.getVisibleCoordinates().length) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     if (!selectedSource || (selectedSource.getSource().maxzoom < sourceCache.getSource().maxzoom)) {
                         selectedSource = sourceCache;
                     }
@@ -1397,15 +1429,18 @@ class Painter {
             });
             if (selectedSource) {
                 if (this.options.showTileBoundaries) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     drawDebug(this, selectedSource, selectedSource.getVisibleCoordinates(), Color.red, false, this.options.showParseStatus);
                 }
 
                 Debug.run(() => {
                     if (!selectedSource) return;
                     if (this.options.showQueryGeometry) {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                         drawDebugQueryGeometry(this, selectedSource, selectedSource.getVisibleCoordinates());
                     }
                     if (this.options.showTileAABBs) {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                         Debug.drawAabbs(this, selectedSource, selectedSource.getVisibleCoordinates());
                     }
                 });
@@ -1433,6 +1468,8 @@ class Painter {
         if (!conflationActiveThisFrame) {
             this.conflationActive = false;
         }
+
+        PerformanceUtils.measureLowOverhead(PerformanceUtils.GROUP_RENDERING, 'Painter.render', renderStartTime);
     }
 
     prepareLayer(layer: TypedStyleLayer) {
@@ -1444,6 +1481,7 @@ class Painter {
 
         if (prepare[layer.type] && (isLayerSupported || isCustomLayerWithTerrain)) {
             const sourceCache = this.style.getLayerSourceCache(layer);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             prepare[layer.type](layer, sourceCache, this);
         }
 
@@ -1456,12 +1494,14 @@ class Painter {
 
         this.id = layer.id;
 
+        const startTime = PerformanceUtils.now();
         this.gpuTimingStart(layer);
         if ((!painter.transform.projection.unsupportedLayers || !painter.transform.projection.unsupportedLayers.includes(layer.type) ||
             (painter.terrain && layer.type === 'custom')) && layer.type !== 'clip') {
             draw[layer.type](painter, sourceCache, layer, coords, this.style.placement.variableOffsets, this.options.isInitialLoad);
         }
         this.gpuTimingEnd();
+        PerformanceUtils.measureLowOverhead(PerformanceUtils.GROUP_RENDERING_DETAILED, `renderLayer: ${layer.type.toString()}`, startTime, undefined);
     }
 
     gpuTimingStart(layer: TypedStyleLayer) {
@@ -1941,6 +1981,19 @@ class Painter {
         }
     }
 
+    updateEmissiveMode() {
+        if (this._forceEmissiveMode) return;
+
+        const hasDataDriven = this.style.hasDataDrivenEmissiveStrength();
+
+        if (!hasDataDriven) {
+            this.emissiveMode = 'constant';
+        } else if (this.context.extBlendFuncExtended) {
+            this.emissiveMode = 'dual-source-blending';
+        } else {
+            this.emissiveMode = 'mrt-fallback';
+        }
+    }
 }
 
 export default Painter;

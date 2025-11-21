@@ -53,6 +53,8 @@ function getCanvas(width: number, height: number): OffscreenCanvas | HTMLCanvasE
 
 type Context = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
+let canvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+let context: Context;
 /**
  * Renders a uSVG icon to an ImageData object.
  *
@@ -67,10 +69,8 @@ export function renderIcon(icon: Icon, options: RasterizationOptions): ImageData
     const naturalWidth = tree.width;
     const naturalHeight = tree.height;
 
-    const tr = options.transform ? options.transform : new DOMMatrix();
-
-    const renderedWidth = Math.max(1, Math.round(naturalWidth * tr.a)); // transform.sx
-    const renderedHeight = Math.max(1, Math.round(naturalHeight * tr.d)); // transform.sy
+    const renderedWidth = Math.max(1, Math.round(naturalWidth * options.sx)); // transform.sx
+    const renderedHeight = Math.max(1, Math.round(naturalHeight * options.sy)); // transform.sy
 
     // We need to apply transform to reflect icon size change
     const finalTr = new DOMMatrix([
@@ -79,8 +79,13 @@ export function renderIcon(icon: Icon, options: RasterizationOptions): ImageData
         0, 0
     ]);
 
-    const canvas = getCanvas(renderedWidth, renderedHeight);
-    const context = canvas.getContext('2d') as Context;
+    if (canvas === null) {
+        canvas = getCanvas(10, 10);
+        context = canvas.getContext('2d') as Context;
+    }
+
+    canvas.width = renderedWidth;
+    canvas.height = renderedHeight;
 
     renderNodes(context, finalTr, tree, tree as unknown as Group, colorReplacements);
     return context.getImageData(0, 0, renderedWidth, renderedHeight);

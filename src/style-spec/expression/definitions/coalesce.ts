@@ -26,7 +26,7 @@ class Coalesce implements Expression {
         if (expectedType && expectedType.kind !== 'value') {
             outputType = expectedType;
         }
-        const parsedArgs = [];
+        const parsedArgs: Expression[] = [];
 
         for (const arg of args.slice(1)) {
             const parsed = context.parse(arg, 1 + parsedArgs.length, outputType, undefined, {typeAnnotation: 'omit'});
@@ -53,9 +53,10 @@ class Coalesce implements Expression {
     evaluate(ctx: EvaluationContext): any {
         let result = null;
         let argCount = 0;
-        let firstImage;
+        let firstImage: ResolvedImage | undefined;
         for (const arg of this.args) {
             argCount++;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             result = arg.evaluate(ctx);
             // we need to keep track of the first requested image in a coalesce statement
             // if coalesce can't find a valid image, we return the first image so styleimagemissing can fire

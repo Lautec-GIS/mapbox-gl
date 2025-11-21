@@ -75,6 +75,8 @@ export type SerializedStructArray = {
     arrayBuffer: ArrayBuffer;
 };
 
+const EMPTY_BUFFER = new ArrayBuffer(0);
+
 /**
  * `StructArray` provides an abstraction over `ArrayBuffer` and `TypedArray`
  * making it behave like an array of typed structs.
@@ -112,9 +114,12 @@ class StructArray implements IStructArrayLayout {
     members: Array<StructArrayMember>;
     bytesPerElement: number;
 
+    _reallocCount: number;
+
     constructor() {
-        this.capacity = -1;
-        this.resize(0);
+        this._reallocCount = 0;
+        this.capacity = 0;
+        this.length = 0;
     }
 
     /**
@@ -126,7 +131,7 @@ class StructArray implements IStructArrayLayout {
     static serialize(array: StructArray, transferables?: Set<Transferable>): SerializedStructArray {
         array._trim();
 
-        if (transferables) {
+        if (transferables && array.arrayBuffer) {
             transferables.add(array.arrayBuffer);
         }
 
@@ -137,10 +142,16 @@ class StructArray implements IStructArrayLayout {
     }
 
     static deserialize(input: SerializedStructArray): StructArray {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const structArray: StructArray = Object.create(this.prototype);
         structArray.arrayBuffer = input.arrayBuffer;
         structArray.length = input.length;
-        structArray.capacity = input.arrayBuffer.byteLength / structArray.bytesPerElement;
+        if (input.arrayBuffer) {
+            structArray.capacity = input.arrayBuffer.byteLength / structArray.bytesPerElement;
+        } else {
+            structArray.capacity = 0;
+            structArray.arrayBuffer = EMPTY_BUFFER;
+        }
         structArray._refreshViews();
         return structArray;
     }
@@ -181,6 +192,7 @@ class StructArray implements IStructArrayLayout {
      */
     reserve(n: number) {
         if (n > this.capacity) {
+            this._reallocCount++;
             this.capacity = Math.max(n, Math.floor(this.capacity * RESIZE_MULTIPLIER), DEFAULT_CAPACITY);
             this.arrayBuffer = new ArrayBuffer(this.capacity * this.bytesPerElement);
 
@@ -188,6 +200,15 @@ class StructArray implements IStructArrayLayout {
             this._refreshViews();
             if (oldUint8Array) this.uint8.set(oldUint8Array);
         }
+    }
+
+    /**
+     * Indicate a planned increase in size, so that any necessary allocation may
+     * be done once, ahead of time.
+     * @param {number} n The expected number of additional elements added to the array.
+     */
+    reserveForAdditional(n: number) {
+        this.reserve(this.length + n);
     }
 
     /**

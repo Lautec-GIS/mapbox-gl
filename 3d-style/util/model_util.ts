@@ -20,6 +20,7 @@ import {Aabb} from '../../src/util/primitives';
 import {polygonIntersectsPolygon} from '../../src/util/intersection_tests';
 import Point from '@mapbox/point-geometry';
 
+import type {vec2} from 'gl-matrix';
 import type Transform from '../../src/geo/transform';
 
 export function rotationScaleYZFlipMatrix(out: mat4, rotation: vec3, scale: vec3) {
@@ -83,13 +84,13 @@ export function rotationFor3Points(
     h2: number,
     meterToMercator: number,
 ): quat {
-    const p0p1: vec3 = [p1[0] - p0[0], p1[1] - p0[1], 0.0];
-    const p0p2: vec3 = [p2[0] - p0[0], p2[1] - p0[1], 0.0];
+    const p0p1: [number, number, number] = [p1[0] - p0[0], p1[1] - p0[1], 0.0];
+    const p0p2: [number, number, number] = [p2[0] - p0[0], p2[1] - p0[1], 0.0];
     // If model scale is zero, all bounding box points are identical and no rotation can be calculated
     if (vec3.length(p0p1) < 1e-12 || vec3.length(p0p2) < 1e-12) {
         return quat.identity(out);
     }
-    const from = vec3.cross([] as unknown as vec3, p0p1, p0p2);
+    const from = vec3.cross([], p0p1, p0p2);
     vec3.normalize(from, from);
     vec3.subtract(p0p2, p2, p0);
     p0p1[2] = (h1 - h0) * meterToMercator;
@@ -101,9 +102,9 @@ export function rotationFor3Points(
 }
 
 export function coordinateFrameAtEcef(ecef: vec3): mat4 {
-    const zAxis: vec3 = [ecef[0], ecef[1], ecef[2]];
-    let yAxis: vec3 = [0.0, 1.0, 0.0];
-    const xAxis: vec3 = vec3.cross([] as unknown as vec3, yAxis, zAxis);
+    const zAxis: [number, number, number] = [ecef[0], ecef[1], ecef[2]];
+    let yAxis: [number, number, number] = [0.0, 1.0, 0.0];
+    const xAxis: vec3 = vec3.cross([], yAxis, zAxis);
     vec3.cross(yAxis, zAxis, xAxis);
     if (vec3.squaredLength(yAxis) === 0.0) {
         // Coordinate space is ambiguous if the model is placed directly at north or south pole
@@ -137,7 +138,7 @@ export function convertModelMatrix(matrix: mat4, transform: Transform, scaleWith
     const lat = latFromMercatorY(position[1] / worldSize);
     const lng = lngFromMercatorX(position[0] / worldSize);
     // Construct a matrix for scaling the original one to ecef space and removing the translation in mercator space
-    const mercToEcef = mat4.identity([] as unknown as mat4);
+    const mercToEcef = mat4.identity([]);
     const sourcePixelsPerMeter = mercatorZfromAltitude(1, lat) * worldSize;
     const pixelsPerMeterConversion = mercatorZfromAltitude(1, 0) * worldSize * getMetersPerPixelAtLatitude(lat, transform.zoom);
     const pixelsToEcef = 1.0 / globeECEFUnitsToPixelScale(worldSize);
@@ -151,11 +152,11 @@ export function convertModelMatrix(matrix: mat4, transform: Transform, scaleWith
     // Construct coordinate space matrix at the provided location in ecef space.
     const ecefCoord = latLngToECEF(lat, lng);
     // add altitude
-    vec3.add(ecefCoord, ecefCoord, vec3.scale([] as unknown as vec3, vec3.normalize([] as unknown as vec3, ecefCoord), sourcePixelsPerMeter * scale * position[2]));
+    vec3.add(ecefCoord, ecefCoord, vec3.scale([], vec3.normalize([], ecefCoord), sourcePixelsPerMeter * scale * position[2]));
     const ecefFrame = coordinateFrameAtEcef(ecefCoord);
     mat4.scale(mercToEcef, mercToEcef, [scale, scale, scale * sourcePixelsPerMeter]);
     mat4.translate(mercToEcef, mercToEcef, [-position[0], -position[1], -position[2]]);
-    const result = mat4.multiply([] as unknown as mat4, transform.globeMatrix, ecefFrame);
+    const result = mat4.multiply([], transform.globeMatrix, ecefFrame);
     mat4.multiply(result, result, mercToEcef);
     mat4.multiply(result, result, matrix);
     return result;
@@ -169,7 +170,7 @@ export function mercatorToGlobeMatrix(matrix: mat4, transform: Transform): mat4 
     const pixelsToEcef = pixelsPerMeterConversion / globeECEFUnitsToPixelScale(worldSize);
     const pixelsPerMeter = mercatorZfromAltitude(1, transform.center.lat) * worldSize;
 
-    const m = mat4.identity([] as unknown as mat4);
+    const m = mat4.identity([]);
     mat4.rotateY(m, m, degToRad(transform.center.lng));
     mat4.rotateX(m, m, degToRad(transform.center.lat));
 
@@ -214,6 +215,79 @@ export function convertModelMatrixForGlobe(matrix: mat4, transform: Transform, s
     return modelMatrix;
 }
 
+/**
+ * Computes the convex hull from points using Jarvis's algorithm (Gift Wrapping).
+ * The algorithm finds the leftmost point first and then iterates through
+ * outermost points until the hull is closed.
+ *
+ * @param points Array of 2D points to compute convex hull for
+ * @returns Array of Points forming the convex hull as a closed linear ring,
+ *          or empty array if input has fewer than 3 points
+ * @private
+ */
+// Ported from gl-native: src/mbgl/util/bounding_volumes.cpp - convexPolygonFromPoints
+export function convexPolygonFromPoints(points: Array<vec2>): Array<Point> {
+    assert(points.length >= 3, 'Polygon must have at least 3 points');
+
+    const ring: Array<Point> = [];
+
+    // Find the leftmost and bottommost point first
+    let leftmostIdx = 0;
+    for (let i = 1; i < points.length; i++) {
+        if (points[i][0] < points[leftmostIdx][0] ||
+            (points[i][0] === points[leftmostIdx][0] && points[i][1] < points[leftmostIdx][1])) {
+            leftmostIdx = i;
+        }
+    }
+
+    let current = leftmostIdx;
+    let next: number;
+    const visitedMap = new Uint8Array(points.length);
+
+    do {
+        // Return if the previous point is revisited, otherwise will end up with infinite loop
+        if (visitedMap[current]) {
+            break;
+        }
+
+        ring.push(new Point(points[current][0], points[current][1]));
+        visitedMap[current] = 1;
+
+        // Find the next most outmost point
+        next = (current + 1) % points.length;
+        for (let i = 0; i < points.length; i++) {
+            if ((points[i][0] === points[next][0] && points[i][1] === points[next][1]) ||
+                (points[i][0] === points[current][0] && points[i][1] === points[current][1])) {
+                continue;
+            }
+
+            // Sign of the result of the cross product tells the direction
+            const a: vec2 = [points[i][0] - points[current][0], points[i][1] - points[current][1]];
+            const b: vec2 = [points[next][0] - points[current][0], points[next][1] - points[current][1]];
+            const det = a[0] * b[1] - a[1] * b[0];
+            const dir = a[0] * b[0] + a[1] * b[1];
+
+            // Iterate over the points and select the rightmost point as 'next' relative to 'current'.
+            // If vectors a and b are collinear and point in the same direction, update 'next' to index i if i is
+            // further than next. If vectors a and b are collinear but point in opposite directions, index i is not
+            // considered rightmost but leftmost and is ignored. If next and current are overlapped, update 'next'
+            // to index i.
+            if (det > 0.0 || (det === 0.0 && dir >= 0.0 && (a[0] * a[0] + a[1] * a[1]) > (b[0] * b[0] + b[1] * b[1]))) {
+                next = i;
+            }
+        }
+
+        current = next;
+    } while (current !== leftmostIdx);
+
+    // Close the ring by adding the first point
+    if (ring.length > 0) {
+        ring.push(ring[0]);
+    }
+
+    return ring;
+}
+
 // In case of intersection, returns depth of the closest corner. Otherwise, returns undefined.
 export function queryGeometryIntersectsProjectedAabb(
     queryGeometry: Point[],
@@ -225,36 +299,16 @@ export function queryGeometryIntersectsProjectedAabb(
     const corners = Aabb.projectAabbCorners(aabb, worldViewProjection);
     // convert to screen points
     let minDepth = Number.MAX_VALUE;
-    let closestCornerIndex = -1;
     for (let c = 0; c < corners.length; ++c) {
         const corner = corners[c];
         corner[0] = (0.5 * corner[0] + 0.5) * transform.width;
         corner[1] = (0.5 - 0.5 * corner[1]) * transform.height;
         if (corner[2] < minDepth) {
-            closestCornerIndex = c;
             minDepth = corner[2]; // This is a rough aabb intersection check for now and no need to interpolate over aabb sides.
         }
     }
-    const p = (i: number): Point => new Point(corners[i][0], corners[i][1]);
 
-    let convexPolygon;
-    switch (closestCornerIndex) {
-    case 0:
-    case 6:
-        convexPolygon = [p(1), p(5), p(4), p(7), p(3), p(2), p(1)];
-        break;
-    case 1:
-    case 7:
-        convexPolygon = [p(0), p(4), p(5), p(6), p(2), p(3), p(0)];
-        break;
-    case 3:
-    case 5:
-        convexPolygon = [p(1), p(0), p(4), p(7), p(6), p(2), p(1)];
-        break;
-    default:
-        convexPolygon = [p(1), p(5), p(6), p(7), p(3), p(0), p(1)];
-        break;
-    }
+    const convexPolygon = convexPolygonFromPoints(corners);
 
     if (polygonIntersectsPolygon(queryGeometry, convexPolygon)) {
         return minDepth;

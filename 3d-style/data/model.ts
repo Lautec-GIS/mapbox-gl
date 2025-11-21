@@ -8,6 +8,7 @@ import {globeToMercatorTransition} from '../../src/geo/projection/globe_util';
 import {number as interpolate} from '../../src/style-spec/util/interpolate';
 import MercatorCoordinate, {getMetersPerPixelAtLatitude, getLatitudeScale, mercatorZfromAltitude} from '../../src/geo/mercator_coordinate';
 import {rotationScaleYZFlipMatrix, getBoxBottomFace, rotationFor3Points, convertModelMatrixForGlobe} from '../util/model_util';
+import {degToRad} from '../../src/util/util';
 
 import type {StructArray} from '../../src/util/struct_array';
 import type {ModelLayoutArray, TriangleIndexArray, NormalLayoutArray, TexcoordLayoutArray, FeatureVertexArray} from '../../src/data/array_types';
@@ -47,6 +48,7 @@ export type PbrMetallicRoughness = {
 };
 
 export type MaterialDescription = {
+    name: string | undefined;
     emissiveFactor: [number, number, number];
     alphaMode: string;
     alphaCutoff: number;
@@ -59,6 +61,7 @@ export type MaterialDescription = {
 };
 
 export type Material = {
+    name: string | undefined;
     normalTexture: ModelTexture | null | undefined;
     occlusionTexture: ModelTexture | null | undefined;
     emissionTexture: ModelTexture | null | undefined;
@@ -68,6 +71,17 @@ export type Material = {
     alphaCutoff: number;
     doubleSided: boolean;
     defined: boolean;
+};
+
+export type MaterialOverride = {
+        color: Color;
+        colorMix: number;
+        emissionStrength: number;
+        opacity: number;
+};
+
+export type NodeOverride = {
+    orientation: vec3; // euler ZXY
 };
 
 export const HEIGHTMAP_DIM = 64;
@@ -84,7 +98,7 @@ export type Mesh = {
     texcoordBuffer: VertexBuffer;
     colorArray: StructArray;
     colorBuffer: VertexBuffer;
-    featureData: ArrayBufferView;
+    featureData: Uint32Array | Float32Array;
     featureArray: FeatureVertexArray;
     pbrBuffer: VertexBuffer;
     material: Material;
@@ -107,7 +121,9 @@ export type AreaLight = {
 
 export type ModelNode = {
     id: string;
-    matrix: mat4;
+    name: string | null | undefined;
+    globalMatrix: mat4;
+    localMatrix: mat4;
     meshes: Array<Mesh>;
     children: Array<ModelNode>;
     footprint: Footprint | null | undefined;
@@ -116,6 +132,7 @@ export type ModelNode = {
     elevation: number | null | undefined;
     anchor: vec2;
     hidden: boolean;
+    isGeometryBloom: boolean;
 };
 
 export const ModelTraits = {
@@ -188,14 +205,14 @@ export function calculateModelMatrix(matrix: mat4, model: Readonly<Model>, state
             if (state.elevation) {
                 elevation = state.elevation.getAtPointOrZero(new MercatorCoordinate(projectedPoint.x / worldSize, projectedPoint.y / worldSize), 0.0);
             }
-            const mercProjPos = vec4.transformMat4([] as unknown as vec4, [projectedPoint.x, projectedPoint.y, elevation, 1.0], state.projMatrix);
+            const mercProjPos = vec4.transformMat4([], [projectedPoint.x, projectedPoint.y, elevation, 1.0], state.projMatrix);
             const mercProjectionScale = mercProjPos[3] / state.cameraToCenterDistance;
             const viewMetersPerPixel = getMetersPerPixelAtLatitude(state.center.lat, zoom);
             scaleXY = mercProjectionScale;
             scaleZ = mercProjectionScale * viewMetersPerPixel;
         } else if (state.projection.name === 'globe') {
             const globeMatrix = convertModelMatrixForGlobe(matrix, state);
-            const worldViewProjection = mat4.multiply([] as unknown as mat4, state.projMatrix, globeMatrix);
+            const worldViewProjection = mat4.multiply([], state.projMatrix, globeMatrix);
             const globeProjPos =  [0, 0, 0, 1];
             vec4.transformMat4(globeProjPos as [number, number, number, number], globeProjPos as [number, number, number, number], worldViewProjection);
             const globeProjectionScale = globeProjPos[3] / state.cameraToCenterDistance;
@@ -225,13 +242,13 @@ export function calculateModelMatrix(matrix: mat4, model: Readonly<Model>, state
 
     const orientation = model.orientation;
 
-    const rotationScaleYZFlip = [] as unknown as mat4;
+    const rotationScaleYZFlip = [];
     rotationScaleYZFlipMatrix(
         rotationScaleYZFlip,
         [
-            orientation[0] + rotation[0],
-            orientation[1] + rotation[1],
-            orientation[2] + rotation[2]
+            orientation[0] + (rotation ? rotation[0] : 0),
+            orientation[1] + (rotation ? rotation[1] : 0),
+            orientation[2] + (rotation ? rotation[2] : 0)
         ],
         scale
     );
@@ -239,11 +256,11 @@ export function calculateModelMatrix(matrix: mat4, model: Readonly<Model>, state
 
     if (applyElevation && state.elevation) {
         let elevate = 0;
-        const rotateOnTerrain = [] as unknown as quat;
+        const rotateOnTerrain = [];
         if (followTerrainSlope && state.elevation) {
             elevate = positionModelOnTerrain(rotateOnTerrain, state, model.aabb, matrix, position);
-            const rotationOnTerrain = mat4.fromQuat([] as unknown as mat4, rotateOnTerrain);
-            const appendRotation = mat4.multiply([] as unknown as mat4, rotationOnTerrain, rotationScaleYZFlip);
+            const rotationOnTerrain = mat4.fromQuat([], rotateOnTerrain);
+            const appendRotation = mat4.multiply([], rotationOnTerrain, rotationScaleYZFlip);
             mat4.multiply(matrix, modelMatrixBeforeRotationScaleYZFlip, appendRotation);
         } else {
             elevate = state.elevation.getAtPointOrZero(new MercatorCoordinate(projectedPoint.x / worldSize, projectedPoint.y / worldSize), 0.0);
@@ -254,6 +271,16 @@ export function calculateModelMatrix(matrix: mat4, model: Readonly<Model>, state
     }
 }
 
+function rotationYZX(out: mat4, rotation: vec3) {
+    mat4.identity(out);
+    mat4.rotateY(out, out, degToRad(rotation[1]));
+    mat4.rotateZ(out, out, degToRad(rotation[2]));
+    mat4.rotateX(out, out, degToRad(rotation[0]));
+}
+
+export type ModelMaterialOverrides = Map<string, MaterialOverride>;
+export type ModelNodeOverrides = Map<string, NodeOverride>;
+
 export default class Model {
     id: string;
     position: LngLat;
@@ -263,36 +290,56 @@ export default class Model {
     uploaded: boolean;
     aabb: Aabb;
 
-    constructor(id: string, position: [number, number] | null | undefined, orientation: [number, number, number] | null | undefined, nodes: Array<ModelNode>) {
+    materialOverrides: ModelMaterialOverrides = new Map();
+    nodeOverrides: ModelNodeOverrides = new Map();
+
+    materialOverrideNames: string[] = [];
+    nodeOverrideNames: string[] = [];
+    featureProperties: Record<string, unknown> = {};
+
+    uri: string;
+
+    constructor(id: string, uri: string, position: [number, number] | null | undefined, orientation: [number, number, number] | null | undefined, nodes: Array<ModelNode>) {
         this.id = id;
+        this.uri = uri;
         this.position = position != null ? new LngLat(position[0], position[1]) : new LngLat(0, 0);
 
         this.orientation = orientation != null ? orientation : [0, 0, 0];
         this.nodes = nodes;
         this.uploaded = false;
         this.aabb = new Aabb([Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]);
-        this.matrix = [] as unknown as mat4;
+        this.matrix = [];
     }
 
     _applyTransformations(node: ModelNode, parentMatrix: mat4) {
         // update local matrix
-        mat4.multiply(node.matrix, parentMatrix, node.matrix);
+        mat4.multiply(node.globalMatrix, parentMatrix, node.localMatrix);
+
+        const nodeOverride = this.nodeOverrides.get(node.name);
+        if (nodeOverride !== undefined) {
+            // Apply orientation override
+            const m = [] as unknown as mat4;
+            rotationYZX(m, nodeOverride.orientation);
+            mat4.multiply(node.globalMatrix, node.globalMatrix, m);
+        }
+
         // apply local transform to bounding volume
         if (node.meshes) {
             for (const mesh of node.meshes) {
-                const enclosingBounds = Aabb.applyTransformFast(mesh.aabb, node.matrix);
+                const enclosingBounds = Aabb.applyTransformFast(mesh.aabb, node.globalMatrix);
                 this.aabb.encapsulate(enclosingBounds);
             }
         }
         if (node.children) {
             for (const child of node.children) {
-                this._applyTransformations(child, node.matrix);
+                this._applyTransformations(child, node.globalMatrix);
             }
         }
     }
 
     computeBoundsAndApplyParent() {
         const localMatrix = mat4.identity([] as unknown as mat4);
+        this.aabb = new Aabb([Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]);
         for (const node of this.nodes) {
             this._applyTransformations(node, localMatrix);
         }

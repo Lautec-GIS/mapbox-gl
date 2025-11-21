@@ -107,7 +107,7 @@ const todo = [
     // https://mapbox.atlassian.net/browse/MAPSNAT-2636
     "render-tests/icon-text-fit/stretch-nine-part-content-interpolate-text-size",
     // https://mapbox.atlassian.net/browse/GLJS-1189
-    "render-tests/background-pattern/image-update/delayed/same-size-before-color-theme-change"
+    "render-tests/background-pattern/image-update/delayed/same-size-before-color-theme-change",
 ];
 
 const skip = [
@@ -230,19 +230,6 @@ const skip = [
     "render-tests/background-pattern/image-update/delayed/different-size-before-color-theme-change",
     "render-tests/background-pattern/image-update/delayed/different-size-with-color-theme",
 
-    "render-tests/building/opacity",
-    "render-tests/building/faux-facade/building-facade",
-    "render-tests/building/faux-facade/building-facade-color-theme",
-    "render-tests/building/faux-facade/emissive-chance",
-    "render-tests/building/faux-facade/property-update",
-    "render-tests/building/faux-facade/shadows-supported",
-    "render-tests/building/faux-facade/skillion-unsupported",
-    "render-tests/building/faux-facade/window-ao",
-    "render-tests/building/faux-facade/building-facade-true-with-facade-hint",
-    "render-tests/building/faux-facade/building-facade-true-without-facade-hint",
-    "render-tests/building/faux-facade/feature-state",
-    "render-tests/building/cutoff-fade",
-
     // https://mapbox.atlassian.net/browse/GLJS-1295
     "render-tests/placement/icon-optional",
     "render-tests/placement/text-optional/basic",
@@ -273,6 +260,17 @@ const skip = [
 
     // fill-extrusions always get removed. This will be separated (similar to symbol and model) in future.
     "render-tests/clip-layer/clip-layer-keep-fill-extrusions",
+
+    // Requires support for hd-roads-markup/elevationId - not yet supported in gl-js
+    "render-tests/model-layer/model-elevation-reference/hd-road-markup/with-elevation-id",
+    "render-tests/building/terrain/terrain-toggle-conflation-works",
+    "render-tests/building/terrain/terrain-unsupported",
+    "render-tests/building/globe-unsupported",
+
+    // Ignore procedural buiding clip layer render tests for now.
+    "render-tests/building/clip-layer/default",
+    "render-tests/building/clip-layer/lower-order-clipping-skipped",
+    "render-tests/building/clip-layer/with-FE-and-landmarks"
 ];
 
 export default {todo, skip};

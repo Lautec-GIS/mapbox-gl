@@ -3,14 +3,12 @@ import ValidationError from '../error/validation_error';
 
 import type {StyleReference} from '../reference/latest';
 import type {StyleSpecification} from '../types';
+import type {NumberPropertySpecification} from '../style-spec';
 
 type NumberValidatorOptions = {
     key: string;
     value: unknown;
-    valueSpec: {
-        minimum?: number;
-        maximum?: number
-    };
+    valueSpec: NumberPropertySpecification;
     style: Partial<StyleSpecification>;
     styleSpec: StyleReference;
     arrayIndex: number;
@@ -34,6 +32,7 @@ export default function validateNumber(options: NumberValidatorOptions): Validat
         let specMin = valueSpec.minimum;
         if (Array.isArray(valueSpec.minimum)) {
             const i = options.arrayIndex;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             specMin = valueSpec.minimum[i];
         }
         if (value < specMin) {
@@ -45,6 +44,7 @@ export default function validateNumber(options: NumberValidatorOptions): Validat
         let specMax = valueSpec.maximum;
         if (Array.isArray(valueSpec.maximum)) {
             const i = options.arrayIndex;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             specMax = valueSpec.maximum[i];
         }
         if (value > specMax) {

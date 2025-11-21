@@ -6,6 +6,7 @@ import {setupHTML} from '../../util/html_generator.js';
 import {applyOperations} from '../lib/operation-handlers.js';
 import {mapboxgl} from '../lib/mapboxgl.js';
 import {renderTestNow} from '../lib/constants.js';
+import {transformRequest} from '../lib/transform-request.js';
 
 import type {Map as MapboxMap} from '../../../src/ui/map';
 
@@ -59,7 +60,7 @@ export function parseOptions(currentFixture, style) {
         ...((style.metadata && style.metadata.test) || {})
     };
 
-    if (import.meta.env.VITE_SPRITE_FORMAT !== null && !options.spriteFormat) {
+    if (import.meta.env.VITE_SPRITE_FORMAT !== 'null' && !options.spriteFormat) {
         options.spriteFormat = import.meta.env.VITE_SPRITE_FORMAT;
     } else {
         options.spriteFormat = options.spriteFormat ?? 'icon_set';
@@ -125,7 +126,7 @@ export async function getExpectedImages(currentTestName, currentFixture) {
     // depending on platform, i.e. heatmaps use half-float textures for improved rendering where supported
     const expectedImages = await Promise.all(expectedPaths.map((path) => drawImage(expectedCanvas, expectedCtx, path)));
 
-    if (!import.meta.env.VITE_UPDATE && expectedImages.length === 0) {
+    if (import.meta.env.VITE_UPDATE === "false" && expectedImages.length === 0) {
         throw new Error(`No expected*.png files found for "${currentTestName}"; did you mean to run tests with UPDATE=true?`);
     }
 
@@ -160,8 +161,15 @@ export async function renderMap(style, options, currentTestName) {
             // ordinary instancing is enabled by default, manual is disabled
             forceManualRenderingForInstanceIDShaders: options.forceManualRenderingForInstanceIDShaders,
         },
-        worldview: options.worldview
+        worldview: options.worldview,
+        transformRequest,
+        testMode: true
     });
+
+    if (options.forceEmissiveFallback && mapRef.current) {
+        mapRef.current.painter._forceEmissiveMode = true;
+        mapRef.current.painter.emissiveMode = 'mrt-fallback';
+    }
 
     mapRef.current?.on('error', (e) => {
         errors.push({error: e.error.message, stack: e.error.stack});

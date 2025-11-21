@@ -63,9 +63,11 @@ describe('primitives', () => {
             const invProj = new Float64Array(16);
             // Note that left handed coordinate space is used where z goes towards the sky.
             // Y has to be flipped as well because it's part of the projection/camera matrix used in transform.js
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             mat4.perspective(proj, fovy, aspectRatio, zNear, zFar);
             mat4.scale(proj, proj, [1, -1, 1]);
             mat4.translate(proj, proj, [0, 0, elevation]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             mat4.rotateZ(proj, proj, rotation);
             mat4.invert(invProj, proj);
 
@@ -127,9 +129,11 @@ describe('primitives', () => {
             const invProj = new Float64Array(16);
             // Note that left handed coordinate space is used where z goes towards the sky.
             // Y has to be flipped as well because it's part of the projection/camera matrix used in transform.js
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             mat4.perspective(proj, fovy, aspectRatio, zNear, zFar);
             mat4.scale(proj, proj, [1, -1, 1]);
             mat4.translate(proj, proj, [0, 0, elevation]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             mat4.rotateZ(proj, proj, rotation);
             mat4.invert(invProj, proj);
 
@@ -158,7 +162,9 @@ describe('primitives', () => {
             ];
 
             // Round numbers to mitigate the precision loss
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             frustum.points = frustum.points.map(array => array.map(n => Math.round(n * 10) / 10));
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             frustum.planes = frustum.planes.map(array => array.map(n => Math.round(n * 1000) / 1000));
 
             const expectedFrustumPlanes = [
@@ -264,7 +270,7 @@ describe('primitives', () => {
                 expect(vec3.fromValues(0.8, 0, 0.60000050)).toEqual(point);
 
                 r.pos = vec3.fromValues(1, 1, 1);
-                r.dir = vec3.normalize([] as unknown as vec3, vec3.fromValues(-1, -1, -1));
+                r.dir = vec3.normalize([], vec3.fromValues(-1, -1, -1));
                 intersection = r.closestPointOnSphere(vec3.fromValues(0, 0, 0), 1.0, point);
                 expect(intersection).toBeTruthy();
                 expect(vec3.fromValues(0.57735026, 0.57735026, 0.57735026)).toEqual(point);

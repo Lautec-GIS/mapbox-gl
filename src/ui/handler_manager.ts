@@ -15,7 +15,7 @@ import TapDragZoomHandler from './handler/tap_drag_zoom';
 import DragPanHandler from './handler/shim/drag_pan';
 import DragRotateHandler from './handler/shim/drag_rotate';
 import TouchZoomRotateHandler from './handler/shim/touch_zoom_rotate';
-import {bindAll, extend} from '../util/util';
+import {bindAll} from '../util/util';
 import Point from '@mapbox/point-geometry';
 import assert from 'assert';
 import {vec3} from 'gl-matrix';
@@ -63,9 +63,9 @@ class TrackingEllipsoid {
     }
 
     setup(center: vec3, pointOnSurface: vec3) {
-        const centerToSurface = vec3.sub([] as unknown as vec3, pointOnSurface, center);
+        const centerToSurface = vec3.sub([], pointOnSurface, center);
         if (centerToSurface[2] < 0) {
-            this.radius = vec3.length(vec3.div([] as unknown as vec3, centerToSurface, this.constants));
+            this.radius = vec3.length(vec3.div([], centerToSurface, this.constants));
         } else {
             // The point on surface is above the center. This can happen for example when the camera is
             // below the clicked point (like a mountain) Use slightly shorter radius for less aggressive movement
@@ -80,14 +80,14 @@ class TrackingEllipsoid {
         vec3.normalize(dir, dir);
         vec3.mul(dir, dir, this.constants);
 
-        const intersection = vec3.scale([] as unknown as vec3, dir, this.radius);
+        const intersection = vec3.scale([], dir, this.radius);
 
         if (intersection[2] > 0) {
             // The intersection point is above horizon so special handling is required.
             // Otherwise direction of the movement would be inverted due to the ellipsoid shape
-            const h = vec3.scale([] as unknown as vec3, [0, 0, 1], vec3.dot(intersection, [0, 0, 1]));
-            const r = vec3.scale([] as unknown as vec3, vec3.normalize([] as unknown as vec3, [intersection[0], intersection[1], 0]), this.radius);
-            const p = vec3.add([] as unknown as vec3, intersection, vec3.scale([] as unknown as vec3, vec3.sub([] as unknown as vec3, vec3.add([] as unknown as vec3, r, h), intersection), 2));
+            const h = vec3.scale([], [0, 0, 1], vec3.dot(intersection, [0, 0, 1]));
+            const r = vec3.scale([], vec3.normalize([], [intersection[0], intersection[1], 0]), this.radius);
+            const p = vec3.add([], intersection, vec3.scale([], vec3.sub([], vec3.add([], r, h), intersection), 2));
 
             intersection[0] = p[0];
             intersection[1] = p[1];
@@ -248,6 +248,7 @@ class HandlerManager {
 
         for (const name of ['boxZoom', 'doubleClickZoom', 'tapDragZoom', 'touchPitch', 'dragRotate', 'dragPan', 'touchZoomRotate', 'scrollZoom', 'keyboard'] as const) {
             if (options.interactive && options[name]) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 map[name].enable(options[name]);
             }
         }
@@ -315,7 +316,7 @@ class HandlerManager {
     }
 
     _getMapTouches(touches: TouchList): TouchList {
-        const mapTouches = [];
+        const mapTouches: Touch[] = [];
         for (const t of touches) {
             const target = (t.target as Node);
             if (this._el.contains(target)) {
@@ -355,6 +356,7 @@ class HandlerManager {
 
             } else {
                 if (handler[eventName || e.type]) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
                     data = handler[eventName || e.type](e, points, mapTouches);
                     this.mergeHandlerResult(mergedHandlerResult, eventsInProgress, data, handlerName, inputEvent);
                     if (data && data.needsRenderFrame) {
@@ -399,7 +401,7 @@ class HandlerManager {
     mergeHandlerResult(mergedHandlerResult: HandlerResult, eventsInProgress: EventsInProgress, handlerResult: HandlerResult, name: string, e?: InputEvent | RenderFrameEvent) {
         if (!handlerResult) return;
 
-        extend(mergedHandlerResult, handlerResult);
+        Object.assign(mergedHandlerResult, handlerResult);
 
         const eventData = {handlerName: name, originalEvent: handlerResult.originalEvent || e};
 
@@ -433,8 +435,8 @@ class HandlerManager {
             if (change.pinchAround !== undefined) combined.pinchAround = change.pinchAround;
             if (change.noInertia) combined.noInertia = change.noInertia;
 
-            extend(combinedEventsInProgress, eventsInProgress);
-            extend(combinedDeactivatedHandlers, deactivatedHandlers);
+            Object.assign(combinedEventsInProgress, eventsInProgress);
+            Object.assign(combinedDeactivatedHandlers, deactivatedHandlers);
         }
 
         this._updateMapTransform(combined, combinedEventsInProgress, combinedDeactivatedHandlers);
@@ -446,12 +448,15 @@ class HandlerManager {
         const tr = map.transform;
 
         const eventStarted = (type: string) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const newEvent = combinedEventsInProgress[type];
             return newEvent && !this._eventsInProgress[type];
         };
 
         const eventEnded = (type: string) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const event = this._eventsInProgress[type];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             return event && !this._handlersById[event.handlerName].isActive();
         };
 
@@ -551,7 +556,7 @@ class HandlerManager {
             // This way the zoom interpolation can be kept linear and independent of the (possible) terrain elevation
             const pickedPosition: vec3 = aroundCoord ? toVec3(aroundCoord) : toVec3(tr.pointCoordinate3D(around));
 
-            const aroundRay = {dir: vec3.normalize([] as unknown as vec3, vec3.sub([] as unknown as vec3, pickedPosition, tr._camera.position))};
+            const aroundRay = {dir: vec3.normalize([], vec3.sub([], pickedPosition, tr._camera.position))};
             if (aroundRay.dir[2] < 0) {
                 // Special handling is required if the ray created from the cursor is heading up.
                 // This scenario is possible if user is trying to zoom towards a feature like a hill or a mountain.
@@ -583,10 +588,13 @@ class HandlerManager {
         const startEvents: EventsInProgress = {};
 
         for (const eventName in newEventsInProgress) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const {originalEvent} = newEventsInProgress[eventName];
             if (!this._eventsInProgress[eventName]) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 startEvents[`${eventName}start`] = originalEvent;
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             this._eventsInProgress[eventName] = newEventsInProgress[eventName];
         }
 
@@ -596,6 +604,7 @@ class HandlerManager {
         }
 
         for (const name in startEvents) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this._fireEvent(name as keyof MapEvents, startEvents[name]);
         }
 
@@ -604,7 +613,9 @@ class HandlerManager {
         }
 
         for (const eventName in newEventsInProgress) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const {originalEvent} = newEventsInProgress[eventName];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this._fireEvent(eventName as keyof MapEvents, originalEvent);
         }
 
@@ -612,15 +623,20 @@ class HandlerManager {
 
         let originalEndEvent;
         for (const eventName in this._eventsInProgress) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const {handlerName, originalEvent} = this._eventsInProgress[eventName];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (!this._handlersById[handlerName].isActive()) {
                 delete this._eventsInProgress[eventName];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                 originalEndEvent = deactivatedHandlers[handlerName] || originalEvent;
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 endEvents[`${eventName}end`] = originalEndEvent;
             }
         }
 
         for (const name in endEvents) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this._fireEvent(name as keyof MapEvents, endEvents[name]);
         }
 
@@ -635,8 +651,10 @@ class HandlerManager {
                 if (shouldSnapToNorth(inertialEase.bearing || this._map.getBearing())) {
                     inertialEase.bearing = 0;
                 }
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 this._map.easeTo(inertialEase, {originalEvent: originalEndEvent});
             } else {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 this._map.fire(new Event('moveend', {originalEvent: originalEndEvent}));
                 if (shouldSnapToNorth(this._map.getBearing())) {
                     this._map.resetNorth();

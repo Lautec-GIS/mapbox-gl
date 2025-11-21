@@ -1,4 +1,3 @@
-import extend from '../util/extend';
 import validateStyle from './validate_style';
 import validateObject from './validate_object';
 import ValidationError from '../error/validation_error';
@@ -31,8 +30,9 @@ export default function validateImport(options: ImportValidatorOptions): Validat
         enumerable: false
     });
 
-    let errors = validateObject(extend({}, options, {
+    let errors = validateObject(Object.assign({}, options, {
         value: importSpec,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         valueSpec: styleSpec.import
     }));
 

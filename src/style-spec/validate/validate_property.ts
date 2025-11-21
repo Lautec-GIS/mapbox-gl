@@ -7,18 +7,20 @@ import {supportsLightExpression, supportsPropertyExpression, supportsZoomExpress
 import {isGlobalPropertyConstant, isFeatureConstant, isStateConstant} from '../expression/is_constant';
 import {createPropertyExpression, isExpression} from '../expression/index';
 
+import type {Expression} from '../expression/expression';
 import type {StyleReference} from '../reference/latest';
+import type {StylePropertySpecification} from '../style-spec';
 import type {StyleSpecification, LayerSpecification} from '../types';
 
 export type PropertyValidatorOptions = {
     key: string;
     value: unknown;
-    valueSpec: unknown;
+    valueSpec?: StylePropertySpecification;
     style: Partial<StyleSpecification>;
     styleSpec: StyleReference;
-    objectKey: string;
+    objectKey?: string;
     layerType: string;
-    layer: LayerSpecification;
+    layer?: Partial<LayerSpecification>;
 };
 
 export default function validateProperty(options: PropertyValidatorOptions, propertyType: string): ValidationError[] {
@@ -28,27 +30,24 @@ export default function validateProperty(options: PropertyValidatorOptions, prop
     const styleSpec = options.styleSpec;
     const value = options.value;
     const propertyKey = options.objectKey;
-    const layerSpec = styleSpec[`${propertyType}_${options.layerType}`];
+    const layerSpec = styleSpec[`${propertyType}_${options.layerType}`] as Record<string, StylePropertySpecification> | undefined;
 
     if (!layerSpec) return [];
 
     const useThemeMatch = propertyKey.match(/^(.*)-use-theme$/);
     if (useThemeMatch && layerSpec[useThemeMatch[1]]) {
-        if (isExpression(value)) {
+        if (isExpression(deepUnbundle(value))) {
             const errors: ValidationError[] = [];
             return errors.concat(validate({
-                key: options.key,
+                key,
                 value,
                 valueSpec: {
-                    "type": "string",
-                    "expression": {
-                        "interpolated": false,
-                        "parameters": [
-                            "zoom",
-                            "feature"
-                        ]
+                    type: 'string',
+                    expression: {
+                        interpolated: false,
+                        parameters: ['zoom', 'feature']
                     },
-                    "property-type": "data-driven"
+                    'property-type': 'data-driven'
                 },
                 style,
                 styleSpec,
@@ -57,6 +56,7 @@ export default function validateProperty(options: PropertyValidatorOptions, prop
                 propertyKey
             }));
         }
+
         return validate({
             key,
             value,
@@ -71,6 +71,7 @@ export default function validateProperty(options: PropertyValidatorOptions, prop
         return validate({
             key,
             value,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             valueSpec: styleSpec.transition,
             style,
             styleSpec
@@ -104,8 +105,10 @@ export default function validateProperty(options: PropertyValidatorOptions, prop
         if (supportsPropertyExpression(valueSpec) && (supportsLightExpression(valueSpec) || supportsZoomExpression(valueSpec))) {
             // Performance related style spec limitation: zoom and light expressions are not allowed for e.g. trees.
             const expression = createPropertyExpression(deepUnbundle(value), valueSpec);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const expressionObj = (expression.value as any).expression || (expression.value as any)._styleExpression.expression;
+
+            const expressionValue = expression.value as {expression?: Expression} | {_styleExpression?: {expression?: Expression}};
+            const expressionObj = ('expression' in expressionValue && expressionValue.expression) ||
+                                  ('_styleExpression' in expressionValue && expressionValue._styleExpression && expressionValue._styleExpression.expression);
 
             if (expressionObj && !isGlobalPropertyConstant(expressionObj, ['measure-light'])) {
                 if (propertyKey !== 'model-emissive-strength' || (!isFeatureConstant(expressionObj) || !isStateConstant(expressionObj))) {

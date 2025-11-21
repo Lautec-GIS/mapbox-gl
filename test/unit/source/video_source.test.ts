@@ -2,16 +2,19 @@
 // @ts-nocheck
 import {describe, test, expect} from '../../util/vitest';
 import VideoSource from '../../../src/source/video_source';
-import {extend} from '../../../src/util/util';
 
 function createSource(options) {
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     const c = (options && options.video) || window.document.createElement('video');
 
-    options = extend({coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]]}, options);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    options = Object.assign({coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]]}, options);
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
     const source = new VideoSource('id', options, {send() {}}, options.eventedParent);
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     source.video = c;
     return source;
 }

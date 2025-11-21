@@ -154,8 +154,10 @@ function distToSegmentSquared(p: Point, v: Point, w: Point): number {
 
 // point in polygon ray casting algorithm
 function multiPolygonContainsPoint(rings: MultiPolygon, p: Point) {
-    let c = false,
-        ring, p1, p2;
+    let c = false;
+    let ring: Polygon;
+    let p1: Point;
+    let p2: Point;
 
     for (let k = 0; k < rings.length; k++) {
         ring = rings[k];

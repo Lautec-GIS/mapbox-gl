@@ -55,7 +55,29 @@ type PerformanceMarkOptions = {
 let fullLoadFinished = false;
 let placementTime = 0;
 
+export type PerformanceMeasureDevToolsColor =
+  "primary" | "primary-light" | "primary-dark"
+  | "secondary" | "secondary-light" | "secondary-dark"
+  | "tertiary" | "tertiary-light" | "tertiary-dark"
+  | "error";
+
+// To ensure there is not overlap in zones, use worker name or 'Main' as track and actual track name as trackgroup
+function trackNameOrDefault() {
+    return (isWorker(self) && self.name) ? `${self.name}` : "Main";
+}
+
+let performanceUtilsGroupsMask: number = 0;
+
 export const PerformanceUtils = {
+    GROUP_NONE: 0,
+    GROUP_COMMON: 1 << 1,
+    GROUP_RENDERING: 1 << 2,
+    GROUP_RENDERING_DETAILED: 1 << 3,
+
+    now() {
+        return performance.now();
+    },
+
     mark(marker: PerformanceMarker, markOptions?: PerformanceMarkOptions) {
         performance.mark(marker, markOptions);
 
@@ -63,6 +85,57 @@ export const PerformanceUtils = {
             fullLoadFinished = true;
         }
     },
+
+    // Bitmask to enable profiling groups
+    // e.g. PerformanceUtils.GROUP_COMMON | PerformanceUtils.GROUP_RENDERING
+    setEnabledGroupsMask(mask: number) {
+        performanceUtilsGroupsMask = mask;
+    },
+
+    enabledGroupsMask(): number {
+        return performanceUtilsGroupsMask;
+    },
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    measureWithDetails(grpMask: number, name: string, track: string, startTime: number, properties?: any[][], color?: PerformanceMeasureDevToolsColor) {
+        if ((grpMask & performanceUtilsGroupsMask) === 0) return;
+        performance.measure(name, {start: startTime, detail: {
+            devtools: {
+                trackGroup: track,
+                track: trackNameOrDefault(),
+                properties,
+                color
+            }
+        }});
+    },
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    markWithDetails(grpMask: number, name: string, properties?: any[][], color?: PerformanceMeasureDevToolsColor) {
+        if ((grpMask & performanceUtilsGroupsMask) === 0) return;
+        performance.mark(name, {
+            detail: {
+                devtools: {
+                    dataType: "marker",
+                    color,
+                    properties,
+                }
+            }
+        });
+    },
+
+    // Based on console.timeStamp()
+    // Records timing measures to DevTools performance panel only
+    // Low overhead, but not recorded on Chrome timeline.
+    measureLowOverhead(grpMask: number,
+                label: string,
+                  start?: string | number,
+                  end?: string | number,
+                  trackName?: string) {
+        if ((grpMask & performanceUtilsGroupsMask) === 0) return;
+        // @ts-expect-error: TS2554 Chrome extension of console.timeStamp
+        console.timeStamp(label, start, end !== undefined ? end : performance.now(), trackNameOrDefault());
+    },
+
     measure(name: string, begin?: string, end?: string) {
         performance.measure(name, begin, end);
     },
@@ -74,8 +147,17 @@ export const PerformanceUtils = {
             name
         };
     },
-    endMeasure(m: PerformanceMark) {
-        performance.measure(m.name, m.mark);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    endMeasure(m: PerformanceMark, properties?: any[][]) {
+        performance.measure(m.name, {
+            start: m.mark,
+            detail: {
+                devtools: {
+                    track: trackNameOrDefault(),
+                    properties
+                }
+            }
+        });
     },
     recordPlacementTime(time: number) {
         // Ignore placementTimes during loading
@@ -101,6 +183,7 @@ export const PerformanceUtils = {
         performance.clearMeasures('fullLoadTime');
 
         for (const marker in LivePerformanceMarkers) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             performance.clearMarks(LivePerformanceMarkers[marker]);
         }
     },
@@ -113,6 +196,7 @@ export const PerformanceUtils = {
 
         const measures = performance.getEntriesByType('measure');
         for (const measure of measures) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             metrics[measure.name] = (metrics[measure.name] || 0) + measure.duration;
         }
 
@@ -123,6 +207,7 @@ export const PerformanceUtils = {
 
     getWorkerPerformanceMetrics(): WorkerPerformanceMetrics {
         const entries = performance.getEntries().map((entry: PerformanceEntry & PerformanceMarkOptions) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const result: PerformanceEntry & PerformanceMarkOptions = entry.toJSON();
             if (entry.detail) Object.assign(result, {detail: entry.detail});
             return result;

@@ -241,13 +241,10 @@ export class LngLatBounds {
             // noop
         } else if (ne) {
             this.setSouthWest((sw as LngLatLike)).setNorthEast(ne);
-            // @ts-expect-error - TS2339 - Property 'length' does not exist on type '[number, number, number, number] | LngLatLike | [LngLatLike, LngLatLike]'.
-        } else if (sw.length === 4) {
-            const bounds = (sw as [number, number, number, number]);
-            this.setSouthWest([bounds[0], bounds[1]]).setNorthEast([bounds[2], bounds[3]]);
+        } else if (Array.isArray(sw) && sw.length === 4) {
+            this.setSouthWest([sw[0], sw[1]]).setNorthEast([sw[2], sw[3]]);
         } else {
-            const bounds = (sw as [LngLatLike, LngLatLike]);
-            this.setSouthWest(bounds[0]).setNorthEast(bounds[1]);
+            this.setSouthWest(sw[0] as LngLatLike).setNorthEast(sw[1] as LngLatLike);
         }
     }
 
@@ -297,7 +294,8 @@ export class LngLatBounds {
     extend(obj: LngLatLike | LngLatBoundsLike): this {
         const sw = this._sw,
             ne = this._ne;
-        let sw2, ne2;
+        let sw2: LngLat | undefined;
+        let ne2: LngLat | undefined;
 
         if (obj instanceof LngLat) {
             sw2 = obj;

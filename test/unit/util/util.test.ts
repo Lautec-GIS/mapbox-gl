@@ -2,16 +2,22 @@
 // @ts-nocheck
 import Point from '@mapbox/point-geometry';
 import {describe, test, expect} from '../../util/vitest';
-import {mapValue, degToRad, radToDeg, easeCubicInOut, getAABBPointSquareDist, furthestTileCorner, keysDifference, extend, pick, uniqueId, bindAll, asyncAll, clamp, smoothstep, wrap, bezier, mapObject, filterObject, deepEqual, clone, arraysIntersect, isCounterClockwise, parseCacheControl, uuid, validateUuid, nextPowerOfTwo, isPowerOfTwo, bufferConvexPolygon, prevPowerOfTwo, shortestAngle, _resetSafariCheckForTest, isSafariWithAntialiasingBug} from '../../../src/util/util';
+import {mapValue, degToRad, radToDeg, easeCubicInOut, getAABBPointSquareDist, furthestTileCorner, keysDifference, pick, uniqueId, bindAll, asyncAll, clamp, smoothstep, wrap, bezier, mapObject, filterObject, deepEqual, clone, arraysIntersect, isCounterClockwise, parseCacheControl, uuid, validateUuid, nextPowerOfTwo, isPowerOfTwo, bufferConvexPolygon, prevPowerOfTwo, shortestAngle, _resetSafariCheckForTest, isSafariWithAntialiasingBug} from '../../../src/util/util';
 
 const EPSILON = 1e-8;
 
 function pointsetEqual(actual, expected) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(actual.length).toEqual(expected.length);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     for (let i = 0; i < actual.length; i++) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         const p1 = actual[i];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         const p2 = expected[i];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(Math.abs(p1.x - p2.x) < EPSILON).toBeTruthy();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(Math.abs(p1.y - p2.y) < EPSILON).toBeTruthy();
     }
 }
@@ -23,7 +29,7 @@ describe('util', () => {
     expect(easeCubicInOut(1)).toEqual(1);
     expect(keysDifference({a: 1}, {})).toEqual(['a']);
     expect(keysDifference({a: 1}, {a: 1})).toEqual([]);
-    expect(extend({a: 1}, {b: 2})).toEqual({a: 1, b: 2});
+    expect(Object.assign({a: 1}, {b: 2})).toEqual({a: 1, b: 2});
     expect(pick({a: 1, b: 2, c: 3}, ['a', 'c'])).toEqual({a: 1, c: 3});
     expect(pick({a: 1, b: 2, c: 3}, ['a', 'c', 'd'])).toEqual({a: 1, c: 3});
     expect(typeof uniqueId() === 'number').toBeTruthy();
@@ -197,6 +203,7 @@ describe('util', () => {
 
     test('asyncAll', () => {
         let expectResult = 1;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
         asyncAll([], (callback) => { callback(); }, () => {
             expect('immediate callback').toBeTruthy();
         });
@@ -244,8 +251,11 @@ describe('util', () => {
                 lol: ["cat", 2]
             }
         };
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const b = JSON.parse(JSON.stringify(a));
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const c = JSON.parse(JSON.stringify(a));
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         c.bar.lol[0] = "z";
 
         expect(deepEqual(a, b)).toBeTruthy();
@@ -383,6 +393,7 @@ describe('util', () => {
     test('isSafariWithAntialiasingBug', () => {
         const isSafariWithAntialiasingBugReset = (scope) => {
             _resetSafariCheckForTest();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const result = isSafariWithAntialiasingBug(scope);
             _resetSafariCheckForTest();
             return result;

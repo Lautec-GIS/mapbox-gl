@@ -9,15 +9,16 @@ import {latFromMercatorY, lngFromMercatorX} from '../../../src/geo/mercator_coor
 import EXTENT from '../../../src/style-spec/data/extent';
 import {convertModelMatrixForGlobe, queryGeometryIntersectsProjectedAabb} from '../../util/model_util';
 import Tiled3dModelBucket from '../../data/bucket/tiled_3d_model_bucket';
+import Feature from '../../../src/util/vectortile_to_geojson';
+import {type Feature as ExpressionEvalFeature, type FeatureState} from '../../../src/style-spec/expression/index';
+import ModelSource from '../../source/model_source';
 
-import type {vec3} from 'gl-matrix';
-import type {Transitionable, Transitioning, PossiblyEvaluated, PropertyValue, ConfigOptions} from '../../../src/style/properties';
+import type {Layout, Transitionable, Transitioning, PossiblyEvaluated, PropertyValue, ConfigOptions} from '../../../src/style/properties';
 import type Point from '@mapbox/point-geometry';
-import type {LayerSpecification} from '../../../src/style-spec/types';
+import type {LayerSpecification, ModelLayerSpecification} from '../../../src/style-spec/types';
 import type {PaintProps, LayoutProps} from './model_style_layer_properties';
 import type {BucketParameters, Bucket} from '../../../src/data/bucket';
-import type {TilespaceQueryGeometry} from '../../../src/style/query_geometry';
-import type {FeatureState} from '../../../src/style-spec/expression/index';
+import type {QueryGeometry, TilespaceQueryGeometry} from '../../../src/style/query_geometry';
 import type Transform from '../../../src/geo/transform';
 import type ModelManager from '../../render/model_manager';
 import type {ModelNode} from '../../data/model';
@@ -26,15 +27,21 @@ import type {CanonicalTileID} from '../../../src/source/tile_id';
 import type {LUT} from "../../../src/util/lut";
 import type {EvaluationFeature} from '../../../src/data/evaluation_feature';
 import type {ProgramName} from '../../../src/render/program';
+import type {QueryResult} from '../../../src/source/query_features';
+import type SourceCache from '../../../src/source/source_cache';
 
 class ModelStyleLayer extends StyleLayer {
     override type: 'model';
 
+    override _unevaluatedLayout: Layout<LayoutProps>;
+    override layout: PossiblyEvaluated<LayoutProps>;
+
     override _transitionablePaint: Transitionable<PaintProps>;
     override _transitioningPaint: Transitioning<PaintProps>;
     override paint: PossiblyEvaluated<PaintProps>;
-    override layout: PossiblyEvaluated<LayoutProps>;
+
     modelManager: ModelManager;
+    layer: ModelLayerSpecification;
 
     constructor(layer: LayerSpecification, scope: string, lut: LUT | null, options?: ConfigOptions | null) {
         const properties = {
@@ -42,6 +49,7 @@ class ModelStyleLayer extends StyleLayer {
             paint: getPaintProperties()
         };
         super(layer, properties, scope, lut, options);
+        this.layer = layer as ModelLayerSpecification;
         this._stats = {numRenderedVerticesInShadowPass: 0, numRenderedVerticesInTransparentPass: 0};
     }
 
@@ -77,6 +85,81 @@ class ModelStyleLayer extends StyleLayer {
         return (bucket instanceof Tiled3dModelBucket) ? EXTENT - 1 : 0;
     }
 
+    override queryRenderedFeatures(
+        queryGeometry: QueryGeometry,
+        sourceCache: SourceCache,
+        transform: Transform
+    ): QueryResult {
+        const source = sourceCache.getSource<ModelSource>();
+        if (!source || !(source instanceof ModelSource)) return {};
+        const modelSource: ModelSource = source;
+
+        const result: QueryResult = {};
+        result[this.id] = [];
+        const layerResult = result[this.id];
+
+        let modelFeatureIndex = 0;
+        for (const model of modelSource.models) {
+            const modelFeatureState = sourceCache.getFeatureState(this.sourceLayer, model.id);
+
+            const modelFeatureForEval: ExpressionEvalFeature = {
+                type: 'Unknown',
+                id: model.id,
+                properties: model.featureProperties
+            };
+            const rotation = this.paint.get('model-rotation').evaluate(modelFeatureForEval, modelFeatureState);
+            const scale = this.paint.get('model-scale').evaluate(modelFeatureForEval, modelFeatureState);
+            const translation = this.paint.get('model-translation').evaluate(modelFeatureForEval, modelFeatureState);
+            const elevationReference = this.paint.get('model-elevation-reference');
+            const shouldFollowTerrainSlope = elevationReference === 'ground';
+            const shouldApplyElevation = elevationReference === 'ground';
+
+            let matrix: mat4 = [];
+            calculateModelMatrix(matrix,
+                                         model,
+                                         transform,
+                                         model.position,
+                                         rotation,
+                                         scale,
+                                         translation,
+                                         shouldApplyElevation,
+                                         shouldFollowTerrainSlope,
+                                         false);
+
+            if (transform.projection.name === 'globe') {
+                matrix = convertModelMatrixForGlobe(matrix, transform);
+            }
+            const worldViewProjection = mat4.multiply([], transform.projMatrix, matrix);
+
+            const projectedQueryGeometry = queryGeometry.isPointQuery() ? queryGeometry.screenBounds : queryGeometry.screenGeometry;
+
+            const depth = queryGeometryIntersectsProjectedAabb(projectedQueryGeometry, transform, worldViewProjection, model.aabb);
+            if (depth != null) {
+                const modelFeature: Feature = new Feature(undefined, 0, 0, 0, model.id);
+                modelFeature.layer = this.layer;
+                // Use unsafe assignment for now, due to restriction of GeoJSON/Feature properties to number, string and boolean.
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+                modelFeature.properties = structuredClone(model.featureProperties) as any;
+                modelFeature.properties['layer'] = this.id;
+                modelFeature.properties['uri'] = model.uri;
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+                modelFeature.properties['orientation'] = model.orientation as any;
+                modelFeature.sourceLayer = this.sourceLayer;
+                modelFeature.geometry = {
+                    type: 'Point',
+                    coordinates: [model.position.lng, model.position.lat]
+                };
+                modelFeature.state = modelFeatureState;
+                modelFeature.source = this.source;
+                layerResult.push({featureIndex: modelFeatureIndex, feature: modelFeature, intersectionZ: depth});
+            }
+
+            ++modelFeatureIndex;
+        }
+
+        return result;
+    }
+
     override queryIntersectsFeature(
         queryGeometry: TilespaceQueryGeometry,
         feature: VectorTileFeature,
@@ -99,7 +182,7 @@ class ModelStyleLayer extends StyleLayer {
                 const model = modelManager.getModel(modelId, this.scope);
                 if (!model) return false;
 
-                let matrix: mat4 = mat4.create();
+                let matrix: mat4 = [];
                 const position = new LngLat(0, 0);
                 const id = bucket.canonical;
                 let minDepth = Number.MAX_VALUE;
@@ -108,9 +191,9 @@ class ModelStyleLayer extends StyleLayer {
                     const offset = instanceOffset * 16;
 
                     const va = instances.instancedDataArray.float32;
-                    const translation: vec3 = [va[offset + 4], va[offset + 5], va[offset + 6]];
-                    const pointX = va[offset];
-                    const pointY = va[offset + 1] | 0; // point.y stored in integer part
+                    const translation: [number, number, number] = [va[offset + 4], va[offset + 5], va[offset + 6]];
+                    const pointX = Math.floor(va[offset]); // point.x stored in integer part
+                    const pointY = Math.floor(va[offset + 1]); // point.y stored in integer part
 
                     tileToLngLat(id, position, pointX, pointY);
 
@@ -127,7 +210,7 @@ class ModelStyleLayer extends StyleLayer {
                     if (transform.projection.name === 'globe') {
                         matrix = convertModelMatrixForGlobe(matrix, transform);
                     }
-                    const worldViewProjection = mat4.multiply([] as unknown as mat4, transform.projMatrix, matrix);
+                    const worldViewProjection = mat4.multiply([], transform.projMatrix, matrix);
                     // Collision checks are performed in screen space. Corners are in ndc space.
                     const screenQuery = queryGeometry.queryGeometry;
                     const projectedQueryGeometry = screenQuery.isPointQuery() ? screenQuery.screenBounds : screenQuery.screenGeometry;
@@ -155,9 +238,13 @@ class ModelStyleLayer extends StyleLayer {
     }
 
     _isPropertyZoomDependent(name: string): boolean {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const prop = this._transitionablePaint._values[name];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         return prop != null && prop.value != null &&
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             prop.value.expression != null &&
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             prop.value.expression instanceof ZoomDependentExpression;
     }
 
@@ -168,7 +255,7 @@ class ModelStyleLayer extends StyleLayer {
     }
 }
 
-function tileToLngLat(id: CanonicalTileID, position: LngLat, pointX: number, pointY: number) {
+export function tileToLngLat(id: CanonicalTileID, position: LngLat, pointX: number, pointY: number) {
     const tileCount = 1 << id.z;
     position.lat = latFromMercatorY((pointY / EXTENT + id.y) / tileCount);
     position.lng = lngFromMercatorX((pointX / EXTENT + id.x) / tileCount);
@@ -202,7 +289,7 @@ export function loadMatchingModelFeature(bucket: Tiled3dModelBucket, featureInde
     const projectedQueryGeometry = screenQuery.isPointQuery() ? screenQuery.screenBounds : screenQuery.screenGeometry;
 
     const checkNode = function (n: ModelNode) {
-        const worldViewProjectionForNode = mat4.multiply([] as unknown as mat4, modelMatrix, n.matrix);
+        const worldViewProjectionForNode = mat4.multiply([] as unknown as mat4, modelMatrix, n.globalMatrix);
         mat4.multiply(worldViewProjectionForNode, transform.expandedFarZProjMatrix, worldViewProjectionForNode);
         for (let i = 0; i < n.meshes.length; ++i) {
             const mesh = n.meshes[i];

@@ -22,6 +22,7 @@ const mockDispatcher = wrapDispatcher({
 });
 
 function createSource(options, {transformCallback, customAccessToken} = {}) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
     const source = new VectorTileSource('id', options, mockDispatcher, options.eventedParent);
 
     source.onAdd({
@@ -29,11 +30,13 @@ function createSource(options, {transformCallback, customAccessToken} = {}) {
         getScaleFactor() { return 1; },
         transform: {showCollisionBoxes: false},
         _getMapId: () => 1,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         _requestManager: new RequestManager(transformCallback, customAccessToken),
         style: {
             clearSource: () => {},
             getLut: () => { return null; },
             getBrightness: () => { return 0.0; },
+            getIndoorVectorTileOptions: () => { return null; },
         }
     });
 
@@ -83,6 +86,7 @@ describe('VectorTileSource', () => {
             '/source.json': () => new Response(JSON.stringify(sourceFixture))
         });
         const transformSpy = vi.fn((url) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             return {url};
         });
 
@@ -117,8 +121,10 @@ describe('VectorTileSource', () => {
         });
         const source = createSource({url: "/source.json", eventedParent: evented});
         source.on('data', withAsync((e, doneRef) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (e.sourceDataType === 'metadata') {
                 if (!dataloadingFired) expect.unreachable();
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 doneRef.resolve();
             }
         }));
@@ -166,13 +172,16 @@ describe('VectorTileSource', () => {
                 maxzoom: 10,
                 attribution: "Mapbox",
                 tiles: ["http://example.com/{z}/{x}/{y}.png"],
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 scheme
             });
 
             source.dispatcher = wrapDispatcher({
                 send: withAsync((type, params, _, __, ___, doneRef) => {
                     expect(type).toEqual('loadTile');
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     expect(expectedURL).toEqual(params.request.url);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     doneRef.resolve();
                 })
             });
@@ -194,6 +203,7 @@ describe('VectorTileSource', () => {
         test(`remote scheme "${scheme}"`, async () => {
             const {wait, withAsync} = doneAsync();
             mockFetch({
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 '/source.json': () => new Response(JSON.stringify({...sourceFixture, scheme}))
             });
 
@@ -202,16 +212,19 @@ describe('VectorTileSource', () => {
             source.dispatcher = wrapDispatcher({
                 send(type, params) {
                     expect(type).toEqual('loadTile');
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     expect(expectedURL).toEqual(params.request.url);
                 }
             });
 
             source.on('data', withAsync((e, doneRef) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 if (e.sourceDataType === 'metadata') {
                     expect(source.scheme).toEqual(scheme);
                     source.loadTile({
                         tileID: new OverscaledTileID(10, 0, 10, 5, 5)
                     }, () => {});
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     doneRef.resolve();
                 }
             }));
@@ -279,6 +292,7 @@ describe('VectorTileSource', () => {
         source.dispatcher = wrapDispatcher({
             send(type, params, cb) {
                 events.push(type);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                 if (cb) setTimeout(() => cb(), 0);
                 return 1;
             }
@@ -290,6 +304,7 @@ describe('VectorTileSource', () => {
                     tileID: new OverscaledTileID(10, 0, 10, 5, 5),
                     state: 'loading',
                     loadVectorData() {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         this.state = 'loaded';
                         events.push('tileLoaded');
                     },
@@ -297,8 +312,9 @@ describe('VectorTileSource', () => {
                 };
                 source.loadTile(tile, () => {});
                 expect(tile.state).toEqual('loading');
-                source.loadTile(tile, withAsync((_, doneRef) => {
+                source.loadTile(tile, withAsync((_, __, doneRef) => {
                     expect(events).toStrictEqual(['loadTile', 'tileLoaded', 'enforceCacheSizeLimit', 'reloadTile', 'tileLoaded']);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     doneRef.resolve();
                 }));
             }
@@ -328,6 +344,7 @@ describe('VectorTileSource', () => {
             maxzoom: 22,
             attribution: "Mapbox",
             tiles: ["http://example.com/{z}/{x}/{y}.png"],
+            // eslint-disable-next-line camelcase
             extra_bounds: [
                 [-18.716583, 34.608345, 48.080292, 73.128931],  // Europe/Northern Africa region
                 [122.871094, 26.431228, 158.730469, 46.800059], // East Asia region
@@ -391,7 +408,9 @@ describe('VectorTileSource', () => {
         });
         source.dispatcher = wrapDispatcher({
             send(type, params, cb) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(params.request.collectResourceTiming).toBeTruthy();
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                 setTimeout(() => cb(), 0);
 
                 // do nothing for cache size check dispatch

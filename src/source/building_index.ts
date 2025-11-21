@@ -1,5 +1,4 @@
 import EXTENT from '../style-spec/data/extent';
-import {PerformanceUtils} from '../util/performance';
 
 import type FillExtrusionBucket from '../data/bucket/fill_extrusion_bucket';
 import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
@@ -66,8 +65,6 @@ class BuildingIndex {
 
     updateZOffset(symbolBucket: SymbolBucket, tileID: OverscaledTileID) {
         // prepare lookup from bucket to overlapping buckets of all building layers.
-        const m = PerformanceUtils.beginMeasure("updateZOffset");
-
         this.currentBuildingBuckets = [];
         for (const l of this.layers) {
             const layer = l.layer;
@@ -115,8 +112,6 @@ class BuildingIndex {
             symbolBucket.zOffsetBuffersNeedUpload = true;
             symbolBucket.zOffsetSortDirty = true;
         }
-
-        PerformanceUtils.endMeasure(m);
     }
 
     _mapCoordToOverlappingTile(
@@ -141,8 +136,8 @@ class BuildingIndex {
     }
 
     _getHeightAtTileOffset(tid: OverscaledTileID, x: number, y: number): number {
-        let availableHeight;
-        let maxFillExtrusionHeight;
+        let availableHeight: number | undefined;
+        let maxFillExtrusionHeight: number | undefined;
         // use FE data when landmark height is not available. Instead of assuming order, process
         // fill extrusions before landmarks
         for (let i = 0; i < this.layers.length; ++i) {
@@ -164,7 +159,6 @@ class BuildingIndex {
             maxFillExtrusionHeight = Math.max(heightData.height * verticalScale, maxFillExtrusionHeight || 0);
         }
         if (maxFillExtrusionHeight !== undefined) {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
             return maxFillExtrusionHeight;
         }
 

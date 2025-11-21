@@ -2,7 +2,6 @@
 // it's registered as a serializable class on the main thread
 import '../data/mrt_data';
 import RasterTileSource from './raster_tile_source';
-import {extend} from '../util/util';
 import {RGBAImage} from '../util/image';
 import {ErrorEvent} from '../util/evented';
 import {ResourceType} from '../util/ajax';
@@ -14,6 +13,7 @@ import {getPointLonLat} from '../data/mrt/mrt.query';
 import LngLat from '../geo/lng_lat';
 import browser from '../util/browser';
 import {makeFQID} from '../util/fqid';
+import {getExpiryDataFromHeaders} from '../util/util';
 
 import type RasterArrayTile from './raster_array_tile';
 import type Texture from '../render/texture';
@@ -71,7 +71,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         this.partial = true;
         this._loadTilePending = {};
         this._loadTileLoaded = {};
-        this._options = extend({type: 'raster-array'}, options);
+        this._options = Object.assign({type: 'raster-array'}, options);
     }
 
     triggerRepaint(tile: RasterArrayTile) {
@@ -105,7 +105,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         tile.requestParams = request;
         if (!tile.actor) tile.actor = this.dispatcher.getActor();
 
-        const done = (error?: AJAXError | null, data?: MapboxRasterTile, cacheControl?: string, expires?: string) => {
+        const done = (error?: AJAXError | null, data?: MapboxRasterTile, responseHeaders?: Headers) => {
             delete tile.request;
 
             if (tile.aborted) {
@@ -121,7 +121,8 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
             }
 
             if (this.map._refreshExpiredTiles && data) {
-                tile.setExpiryData({cacheControl, expires});
+                const expiryData = getExpiryDataFromHeaders(responseHeaders);
+                tile.setExpiryData(expiryData);
             }
 
             if (this.partial && tile.state !== 'expired') {
@@ -139,9 +140,11 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
 
         if (this.partial) {
             // Load only the tile header in the main thread
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             tile.request = tile.fetchHeader(undefined, done.bind(this));
         } else {
             // Load and parse the entire tile in Worker
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             tile.request = tile.actor.send('loadTile', params, done.bind(this), undefined, true);
         }
     }
@@ -242,15 +245,18 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         } else if (layer instanceof RasterParticleStyleLayer) {
             layerBand = layer.paint.get('raster-particle-array-band');
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const band = layerBand || this.getInitialBand(sourceLayer);
         if (band == null) return;
 
         if (!tile.textureDescriptorPerLayer.get(layer.id)) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.prepareTile(tile, sourceLayer, layer.id, band);
             return;
         }
 
         // Fallback to previous texture even if update is needed
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         if (tile.updateNeeded(layer.id, band) && !fallbackToPrevious) return;
 
         const textureDescriptor = tile.textureDescriptorPerLayer.get(layer.id);
@@ -356,7 +362,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
             partial: false
         };
 
-        tile.actor.send('loadTile', requestParams, (error: AJAXError | null, data?: MapboxRasterTile, cacheControl?: string, expires?: string) => {
+        tile.actor.send('loadTile', requestParams, (error: AJAXError | null, data?: MapboxRasterTile, responseHeaders?: Headers) => {
             if (error) {
                 this._loadTilePending[tile.uid].forEach(cb => cb(error, null));
                 delete this._loadTilePending[tile.uid];
@@ -370,7 +376,8 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
             }
 
             if (this.map._refreshExpiredTiles && data) {
-                tile.setExpiryData({cacheControl, expires});
+                const expiryData = getExpiryDataFromHeaders(responseHeaders);
+                tile.setExpiryData(expiryData);
             }
 
             tile._mrt = data;

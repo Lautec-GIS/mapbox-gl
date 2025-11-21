@@ -5,9 +5,9 @@ const exported = {
 
 export default exported;
 
-let glForTesting;
+let glForTesting: WebGL2RenderingContext | null;
 let webpCheckComplete = false;
-let webpImgTest;
+let webpImgTest: HTMLImageElement | undefined;
 let webpImgTestOnloadComplete = false;
 
 /**

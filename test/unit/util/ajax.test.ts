@@ -122,6 +122,74 @@ describe('ajax', () => {
         });
     });
 
+    test('makeRequest gets correct headers when using fetch', async () => {
+        // eslint-disable-next-line @typescript-eslint/require-await
+        vi.spyOn(window, 'fetch').mockImplementation(async () => {
+            return new window.Response('{"foo": "bar"}', {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-random-header': 'random-value'
+                }
+            });
+        });
+
+        await new Promise(resolve => {
+            getJSON({url: ''}, (error, body, headers) => {
+                expect(headers.get('X-random-header')).toEqual('random-value');
+                expect(headers.get('Content-Type')).toEqual('application/json');
+                resolve();
+            });
+        });
+    });
+
+    test('makeRequest gets correct headers when using XMLHttpRequest', async () => {
+        vi.spyOn(window, 'XMLHttpRequest').mockImplementation(function () {
+            const responseHeadersRef: {current: Record<string, string>} = {
+                current: {}
+            };
+            const requestHeadersRef: {current: Record<string, string>} = {
+                current: {}
+            };
+
+            this.open = () => {
+                this.readyState = 1;
+                this.onreadystatechange?.(new Event("readystatechange"));
+            };
+            this.getAllResponseHeaders = () => {
+                return Object.entries(responseHeadersRef.current)
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join("\r\n");
+            };
+            this.setRequestHeader = (key, value) => {
+                requestHeadersRef.current[key] = value;
+            };
+            this.send = () => {
+                setTimeout(() => {
+                    this.readyState = 4;
+                    this.status = 200;
+                    this.response = JSON.stringify({ok: true});
+                    this.responseText = JSON.stringify({ok: true});
+                    responseHeadersRef.current = {
+                        'Content-Type': 'application/json',
+                        'X-random-header': 'random-value'
+                    };
+
+                    this.onload?.(new Event("load"));
+                }, 0);
+            };
+        });
+
+        await new Promise(resolve => {
+            getJSON({url: 'file://random'}, (error, body, headers) => {
+                expect(error).toBeNull();
+                expect(headers.get('X-random-header')).toEqual('random-value');
+                expect(headers.get('Content-Type')).toEqual('application/json');
+                resolve();
+            });
+        });
+    });
+
     test('postData, 204(no content): no error', async () => {
         // eslint-disable-next-line @typescript-eslint/require-await
         vi.spyOn(window, 'fetch').mockImplementation(async () => {
@@ -225,14 +293,19 @@ describe('ajax', () => {
         expect(serverRequests.length).toEqual(maxRequests);
 
         // cancel the first request to let the queued request start
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         requests[0].cancel();
         expect(serverRequests.length).toEqual(maxRequests + 1);
 
         // abort the previously queued request and confirm that it is aborted
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const queuedRequest = serverRequests[serverRequests.length - 1];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(queuedRequest.url).toMatch(queuedURL);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(queuedRequest.signal.aborted).toEqual(false);
         queued.cancel();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(queuedRequest.signal.aborted).toEqual(true);
     });
 
@@ -241,6 +314,7 @@ describe('ajax', () => {
 
         await new Promise(resolve => {
             vi.spyOn(window, 'fetch').mockImplementation((req) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 expect(req.headers.get('accept').includes('image/webp')).toBeTruthy();
                 resolve();
             });

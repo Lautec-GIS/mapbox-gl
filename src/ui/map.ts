@@ -1,5 +1,5 @@
 import {version} from '../../package.json';
-import {asyncAll, deepEqual, extend, bindAll, warnOnce, uniqueId, isSafariWithAntialiasingBug} from '../util/util';
+import {asyncAll, deepEqual, bindAll, warnOnce, uniqueId, isSafariWithAntialiasingBug} from '../util/util';
 import browser from '../util/browser';
 import * as DOM from '../util/dom';
 import {getImage, ResourceType} from '../util/ajax';
@@ -13,7 +13,9 @@ import {
     postStyleLoadEvent,
     AUTH_ERR_MSG,
     storeAuthState,
-    removeAuthState
+    removeAuthState,
+    postStyleWithAppearanceEvent,
+    postAddedAppearanceEvent
 } from '../util/mapbox';
 import Style from '../style/style';
 import IndoorManager from '../style/indoor_manager';
@@ -43,8 +45,7 @@ import {Debug} from '../util/debug';
 import config from '../util/config';
 import {isFQID} from '../util/fqid';
 import defaultLocale from './default_locale';
-import {TrackedParameters} from '../tracked-parameters/tracked_parameters';
-import {TrackedParametersMock} from '../tracked-parameters/tracked_parameters_base';
+import {DevTools} from './devtools';
 import {InteractionSet} from './interactions';
 import {ImageId} from '../style-spec/expression/types/image_id';
 
@@ -93,12 +94,12 @@ import type {
     ConfigSpecification,
     SchemaSpecification,
     ColorThemeSpecification,
+    TerrainSpecificationUpdate,
 } from '../style-spec/types';
 import type {Source, SourceClass} from '../source/source';
 import type {EasingOptions} from './camera';
 import type {ContextOptions} from '../gl/context';
 import type {GeoJSONFeature, FeaturesetDescriptor, TargetFeature, TargetDescriptor} from '../util/vectortile_to_geojson';
-import type {ITrackedParameters} from '../tracked-parameters/tracked_parameters_base';
 import type {Callback} from '../types/callback';
 import type {Interaction} from './interactions';
 import type {SpriteFormat} from '../render/image_manager';
@@ -435,7 +436,7 @@ const defaultOptions = {
  * @see [Example: Check if Mapbox GL JS is supported](https://docs.mapbox.com/mapbox-gl-js/example/check-for-support/)
  */
 export class Map extends Camera {
-    style: Style;
+    style?: Style;
     indoor: IndoorManager;
     painter: Painter;
 
@@ -572,7 +573,6 @@ export class Map extends Camera {
     touchPitch: TouchPitchHandler;
 
     _contextCreateOptions: ContextOptions;
-    _tp: ITrackedParameters;
 
     // Current frame id, iterated on each render
     _frameId: number;
@@ -584,7 +584,7 @@ export class Map extends Camera {
 
         const initialOptions = options;
 
-        options = extend({}, defaultOptions, options);
+        options = Object.assign({}, defaultOptions, options);
 
         if (options.minZoom != null && options.maxZoom != null && options.minZoom > options.maxZoom) {
             throw new Error(`maxZoom must be greater than or equal to minZoom`);
@@ -633,7 +633,7 @@ export class Map extends Camera {
         this._markers = [];
         this._popups = [];
         this._mapId = uniqueId();
-        this._locale = extend({}, defaultLocale, options.locale);
+        this._locale = Object.assign({}, defaultLocale, options.locale);
         this._clickTolerance = options.clickTolerance;
         this._cooperativeGestures = options.cooperativeGestures;
         this._performanceMetricsCollection = options.performanceMetricsCollection;
@@ -700,31 +700,20 @@ export class Map extends Camera {
 
         this._setupContainer();
 
-        Debug.run(() => {
-            if (options.devtools) {
-                this._tp = new TrackedParameters(this);
-            }
-        });
-        if (!this._tp) {
-            this._tp = new TrackedParametersMock();
-        }
+        if (options.devtools) DevTools.addTo(this);
 
-        this._tp.registerParameter(this, ["Debug"], "showOverdrawInspector");
-        this._tp.registerParameter(this, ["Debug"], "showTileBoundaries");
-        this._tp.registerParameter(this, ["Debug"], "showParseStatus");
-        this._tp.registerParameter(this, ["Debug"], "repaint");
-        this._tp.registerParameter(this, ["Debug"], "showTileAABBs");
-        this._tp.registerParameter(this, ["Debug"], "showPadding");
-        this._tp.registerParameter(this, ["Debug"], "showCollisionBoxes", {noSave: true});
-        this._tp.registerParameter(this.transform, ["Debug"], "freezeTileCoverage", {noSave: true}, () => {
-            this._update();
-        });
-        this._tp.registerParameter(this, ["Debug", "Wireframe"], "showTerrainWireframe");
-        this._tp.registerParameter(this, ["Debug", "Wireframe"], "showLayers2DWireframe");
-        this._tp.registerParameter(this, ["Debug", "Wireframe"], "showLayers3DWireframe");
-        this._tp.registerParameter(this, ["Scaling"], "_scaleFactor", {min: 0.1, max: 10.0, step: 0.1}, () => {
-            this.setScaleFactor(this._scaleFactor);
-        });
+        DevTools.addParameter(this, 'showOverdrawInspector', 'Debug');
+        DevTools.addParameter(this, 'showTileBoundaries', 'Debug');
+        DevTools.addParameter(this, 'showParseStatus', 'Debug');
+        DevTools.addParameter(this, 'repaint', 'Debug');
+        DevTools.addParameter(this, 'showTileAABBs', 'Debug');
+        DevTools.addParameter(this, 'showPadding', 'Debug');
+        DevTools.addParameter(this, 'showCollisionBoxes', 'Debug', {}, () => this._update());
+        DevTools.addParameter(this.transform, 'freezeTileCoverage', 'Debug', {}, () => this._update());
+        DevTools.addParameter(this, 'showTerrainWireframe', 'Debug');
+        DevTools.addParameter(this, 'showLayers2DWireframe', 'Debug');
+        DevTools.addParameter(this, 'showLayers3DWireframe', 'Debug');
+        DevTools.addParameter(this, '_scaleFactor', 'Scaling', {label: 'scaleFactor', min: 0.1, max: 10.0, step: 0.1}, () => this.setScaleFactor(this._scaleFactor));
 
         this._setupPainter();
         if (this.painter === undefined) {
@@ -763,8 +752,6 @@ export class Map extends Camera {
             this.setProjection(options.projection);
         }
 
-        this.indoor = new IndoorManager(this);
-
         const hashName = (typeof options.hash === 'string' && options.hash) || undefined;
         if (options.hash) this._hash = (new Hash(hashName)).addTo(this);
         // don't set position from options if set through hash
@@ -784,7 +771,7 @@ export class Map extends Camera {
             const bounds = options.bounds;
             if (bounds) {
                 this.resize();
-                this.fitBounds(bounds, extend({}, options.fitBoundsOptions, {duration: 0}));
+                this.fitBounds(bounds, Object.assign({}, options.fitBoundsOptions, {duration: 0}));
             }
         }
 
@@ -801,6 +788,8 @@ export class Map extends Camera {
                 this.jumpTo((this.style.stylesheet as unknown));
             }
             this._postStyleLoadEvent();
+            this._postStyleWithAppearanceEvent();
+            this._setupIndoor();
         });
 
         this.on('data', (event) => {
@@ -1253,7 +1242,7 @@ export class Map extends Camera {
     setScaleFactor(scaleFactor: number): this {
         this._scaleFactor = scaleFactor;
         this.painter.scaleFactor = scaleFactor;
-        this._tp.refreshUI();
+        DevTools.refresh();
 
         this._scaleFactorChanged = true;
 
@@ -1493,6 +1482,7 @@ export class Map extends Camera {
 
     _updateProjection(projection: ProjectionSpecification): this {
         let projectionHasChanged;
+        const oldMercatorFromTransition = this.transform.mercatorFromTransition;
 
         if (projection.name === 'globe' && this.transform.zoom >= GLOBE_ZOOM_THRESHOLD_MAX) {
             projectionHasChanged = this.transform.setMercatorFromTransition();
@@ -1502,7 +1492,11 @@ export class Map extends Camera {
 
         this.style.applyProjectionUpdate();
 
-        if (projectionHasChanged) {
+        // If we were in a transition state but the new projection is not globe
+        // we need to ensure that we cleaned the globe projection tiles cache
+        const mercatorWasInTransition = this.transform.getProjection().name === 'mercator' && oldMercatorFromTransition !== this.transform.mercatorFromTransition;
+
+        if (projectionHasChanged || mercatorWasInTransition) {
             this.painter.clearBackgroundTiles();
             this.style.clearSources();
 
@@ -1795,6 +1789,7 @@ export class Map extends Camera {
         this._delegatedListeners[type].push(delegatedListener);
 
         for (const event in delegatedListener.delegates) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.on(event as T, delegatedListener.delegates[event]);
         }
 
@@ -1857,6 +1852,7 @@ export class Map extends Camera {
         const delegatedListener = this._createDelegatedListener(type as MapEventType, targets, listener);
 
         for (const event in delegatedListener.delegates) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this.once(event as T, delegatedListener.delegates[event]);
         }
 
@@ -1905,6 +1901,7 @@ export class Map extends Camera {
                 const delegatedListener = listeners[i];
                 if (delegatedListener.listener === listener && areTargetsEqual(delegatedListener.targets, targets)) {
                     for (const event in delegatedListener.delegates) {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                         this.off(event as T, delegatedListener.delegates[event]);
                     }
                     listeners.splice(i, 1);
@@ -1977,6 +1974,8 @@ export class Map extends Camera {
      * rectangle, even if the highway extends into other tiles, and the portion of the highway within each map tile
      * will be returned as a separate feature. Similarly, a point feature near a tile boundary may appear in multiple
      * tiles due to tile buffering.
+     *
+     * For model layers, id or a property "id" is required to be specified per feature in the source.
      *
      * @example
      * // Find all features at a point
@@ -2306,7 +2305,7 @@ export class Map extends Camera {
      * });
      */
     setStyle(style: StyleSpecification | string | null, options?: SetStyleOptions): this {
-        options = extend({}, {localIdeographFontFamily: this._localIdeographFontFamily, localFontFamily: this._localFontFamily}, options);
+        options = Object.assign({}, {localIdeographFontFamily: this._localIdeographFontFamily, localFontFamily: this._localFontFamily}, options);
 
         const diffNeeded =
             options.diff !== false &&
@@ -2358,7 +2357,7 @@ export class Map extends Camera {
         if (style) {
             // Move SetStyleOptions's `config` property to
             // StyleOptions's `initialConfig` for internal use
-            const styleOptions: StyleOptions = extend({}, options);
+            const styleOptions: StyleOptions = Object.assign({}, options);
             if (options && options.config) {
                 styleOptions.initialConfig = options.config;
                 delete styleOptions.config;
@@ -2833,9 +2832,7 @@ export class Map extends Camera {
         return this.style.listImages().map((image) => image.name);
     }
 
-    /** @section Models
-     * @private
-     */
+    /** @section Models */
 
     /**
      * Add a model to the style. This model can be displayed on the map like any other model in the style
@@ -2858,8 +2855,6 @@ export class Map extends Camera {
      *         "model-id": "tree"
      *     }
      *});
-     *
-     * @private
      */
     addModel(id: string, url: string) {
         this._lazyInitEmptyStyle();
@@ -2877,8 +2872,6 @@ export class Map extends Camera {
      * // Check if a model with the ID 'tree' exists in
      * // the style.
      * const treeModelExists = map.hasModel('tree');
-     *
-     * @private
      */
     hasModel(id: string): boolean {
         if (!id) {
@@ -2898,24 +2891,20 @@ export class Map extends Camera {
      * // If an model with the ID 'tree' exists in
      * // the style, remove it.
      * if (map.hasModel('tree')) map.removeModel('tree');
-     *
-     * @private
      */
     removeModel(id: string) {
         this.style.removeModel(id);
     }
 
     /**
-    * Returns an Array of strings containing the IDs of all models currently available in the map.
-    * This includes both models from the style and any models that have been added at runtime using {@link Map#addModel}.
-    *
-    * @returns {Array<string>} An Array of strings containing the names of all model IDs currently available in the map.
-    *
-    * @example
-    * const allModels = map.listModels();
-    *
-    * @private
-    */
+     * Returns an Array of strings containing the IDs of all models currently available in the map.
+     * This includes both models from the style and any models that have been added at runtime using {@link Map#addModel}.
+     *
+     * @returns {Array<string>} An Array of strings containing the names of all model IDs currently available in the map.
+     *
+     * @example
+     * const allModels = map.listModels();
+     */
     listModels(): Array<string> {
         return this.style.listModels();
     }
@@ -3146,6 +3135,7 @@ export class Map extends Camera {
      */
     addImport(importSpecification: ImportSpecification, beforeId?: string | null): this {
         this.style.addImport(importSpecification, beforeId)
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             .catch((e) => this.fire(new ErrorEvent(new Error('Failed to add import', e))));
 
         return this;
@@ -3508,6 +3498,36 @@ export class Map extends Camera {
         return this.style.getLayoutProperty(layerId, name);
     }
 
+    /**
+     * Sets the value of a layout or paint property in the specified style layer.
+     *
+     * @param {string} layerId The ID of the layer to set the layout or paint property in.
+     * @param {string} name The name of the layout or paint property to set.
+     * @param {*} value The value of the layout or paint property. Must be of a type appropriate for the property, as defined in the [Mapbox Style Specification](https://www.mapbox.com/mapbox-gl-style-spec/).
+     * @param {Object} [options] Options object.
+     * @param {boolean} [options.validate=true] Whether to check if `value` conforms to the Mapbox GL Style Specification. Disabling validation is a performance optimization that should only be used if you have previously validated the values you will be passing to this function.
+     * @returns {Map} Returns itself to allow for method chaining.
+     * @example
+     * map.setLayerProperty('my-layer', 'visibility', 'none');
+     */
+    setLayerProperty<T extends keyof (LayoutSpecification | PaintSpecification)>(
+        layerId: string,
+        name: T,
+        value: LayoutSpecification[T] | PaintSpecification[T],
+        options: StyleSetterOptions = {},
+    ): this {
+        if (!this._isValidId(layerId)) {
+            return this;
+        }
+
+        if (name === 'appearances') {
+            this._postAddingAppearancesToStyleEvent();
+        }
+
+        this.style.setLayerProperty(layerId, name, value, options);
+        return this._update(true);
+    }
+
     /** @section Style properties */
 
     /**
@@ -3750,7 +3770,7 @@ export class Map extends Camera {
      * // update the exaggeration for the existing terrain
      * map.setTerrain({'exaggeration': 2});
      */
-    setTerrain(terrain?: TerrainSpecification | null): this {
+    setTerrain(terrain?: TerrainSpecification | TerrainSpecificationUpdate | null): this {
         this._lazyInitEmptyStyle();
         if (!terrain && this.transform.projection.requiresDraping) {
             this.style.setTerrainForDraping();
@@ -4109,6 +4129,10 @@ export class Map extends Camera {
         this.indoor.selectFloor(floorId);
     }
 
+    _setIndoorActiveFloorsVisibility(activeFloorsVisible: boolean) {
+        this.indoor.setActiveFloorsVisibility(activeFloorsVisible);
+    }
+
     _addIndoorControl() {
         if (!this._indoorControl) {
             this._indoorControl = new IndoorControl();
@@ -4138,7 +4162,9 @@ export class Map extends Camera {
             const transformMatrix = window.getComputedStyle(el).transform;
             if (transformMatrix && transformMatrix !== 'none') {
                 transformValues = transformMatrix.match(/matrix.*\((.+)\)/)[1].split(', ');
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                 if (transformValues[0] && transformValues[0] !== '0' && transformValues[0] !== '1') transformScaleWidth = transformValues[0];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                 if (transformValues[3] && transformValues[3] !== '0' && transformValues[3] !== '1') transformScaleHeight = transformValues[3];
             }
             el = el.parentElement;
@@ -4156,6 +4182,27 @@ export class Map extends Camera {
                 'Please ensure your page includes mapbox-gl.css, as described ' +
                 'in https://www.mapbox.com/mapbox-gl-js/api/.');
         }
+    }
+
+    _setupIndoor() {
+        if (!this.style.isIndoorEnabled()) {
+            return;
+        }
+
+        this.indoor = new IndoorManager(this.style);
+
+        this.on('load', () => {
+            this._addIndoorControl();
+            this.indoor._updateUI(this.transform.zoom, this.transform.center, this.transform.getBounds());
+
+            this.on('move', () => {
+                this.indoor._updateUI(this.transform.zoom, this.transform.center, this.transform.getBounds());
+            });
+
+            this.on('idle', () => {
+                this.indoor._updateUI(this.transform.zoom, this.transform.center, this.transform.getBounds());
+            });
+        });
     }
 
     _setupContainer() {
@@ -4226,7 +4273,7 @@ export class Map extends Camera {
     }
 
     _setupPainter() {
-        const attributes = extend({}, supported.webGLContextAttributes, {
+        const attributes = Object.assign({}, supported.webGLContextAttributes, {
             failIfMajorPerformanceCaveat: this._failIfMajorPerformanceCaveat,
             preserveDrawingBuffer: this._preserveDrawingBuffer,
             antialias: this._antialias || false
@@ -4241,7 +4288,7 @@ export class Map extends Camera {
 
         storeAuthState(gl, true);
 
-        this.painter = new Painter(gl, this._contextCreateOptions, this.transform, this._scaleFactor, this._tp, this._worldview);
+        this.painter = new Painter(gl, this._contextCreateOptions, this.transform, this._scaleFactor, this._worldview);
         this.on('data', (event) => {
             if (event.dataType === 'source') {
                 this.painter.setTileLoadedFlag(true);
@@ -4253,11 +4300,13 @@ export class Map extends Camera {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _contextLost(event: any) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         event.preventDefault();
         if (this._frame) {
             this._frame.cancel();
             this._frame = null;
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.fire(new Event('webglcontextlost', {originalEvent: event}));
     }
 
@@ -4273,11 +4322,13 @@ export class Map extends Camera {
             this.style.clearSources();
         }
         this._update();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.fire(new Event('webglcontextrestored', {originalEvent: event}));
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _onMapScroll(event: any): boolean | null | undefined {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (event.target !== this._container) return;
 
         // Revert any scroll which would move the canvas outside of the view
@@ -4763,6 +4814,18 @@ export class Map extends Camera {
         });
     }
 
+    _postStyleWithAppearanceEvent() {
+        if (!this.style.globalId || !this.style.hasAppearances()) {
+            return;
+        }
+
+        postStyleWithAppearanceEvent(this._requestManager._customAccessToken);
+    }
+
+    _postAddingAppearancesToStyleEvent() {
+        postAddedAppearanceEvent(this._requestManager._customAccessToken);
+    }
+
     _updateTerrain() {
         // Recalculate if enabled/disabled and calculate elevation cover. As camera is using elevation tiles before
         // render (and deferred update after zoom recalculation), this needs to be called when removing terrain source.
@@ -4839,7 +4902,9 @@ export class Map extends Camera {
         if (this.style) {
             this.style.destroy();
         }
-        this.indoor.destroy();
+        if (this.indoor) {
+            this.indoor.destroy();
+        }
         this.painter.destroy();
         if (this.handlers) this.handlers.destroy();
         this.handlers = undefined;
@@ -4957,7 +5022,7 @@ export class Map extends Camera {
     set showTileBoundaries(value: boolean) {
         if (this._showTileBoundaries === value) return;
         this._showTileBoundaries = value;
-        this._tp.refreshUI();
+        DevTools.refresh();
         this._update();
     }
 
@@ -4979,7 +5044,7 @@ export class Map extends Camera {
     set showParseStatus(value: boolean) {
         if (this._showParseStatus === value) return;
         this._showParseStatus = value;
-        this._tp.refreshUI();
+        DevTools.refresh();
         this._update();
     }
 
@@ -5000,7 +5065,7 @@ export class Map extends Camera {
     set showTerrainWireframe(value: boolean) {
         if (this._showTerrainWireframe === value) return;
         this._showTerrainWireframe = value;
-        this._tp.refreshUI();
+        DevTools.refresh();
         this._update();
     }
 
@@ -5021,7 +5086,7 @@ export class Map extends Camera {
     set showLayers2DWireframe(value: boolean) {
         if (this._showLayers2DWireframe === value) return;
         this._showLayers2DWireframe = value;
-        this._tp.refreshUI();
+        DevTools.refresh();
         this._update();
     }
 
@@ -5042,7 +5107,7 @@ export class Map extends Camera {
     set showLayers3DWireframe(value: boolean) {
         if (this._showLayers3DWireframe === value) return;
         this._showLayers3DWireframe = value;
-        this._tp.refreshUI();
+        DevTools.refresh();
         this._update();
     }
 
@@ -5077,7 +5142,7 @@ export class Map extends Camera {
     set showPadding(value: boolean) {
         if (this._showPadding === value) return;
         this._showPadding = value;
-        this._tp.refreshUI();
+        DevTools.refresh();
         this._update();
     }
 
@@ -5096,8 +5161,8 @@ export class Map extends Camera {
     set showCollisionBoxes(value: boolean) {
         if (this._showCollisionBoxes === value) return;
         this._showCollisionBoxes = value;
-        this._tp.refreshUI();
-        if (value) {
+        DevTools.refresh();
+        if (this.style && value) {
             // When we turn collision boxes on we have to generate them for existing tiles
             // When we turn them off, there's no cost to leaving existing boxes in place
             this.style._generateCollisionBoxes();
@@ -5123,7 +5188,7 @@ export class Map extends Camera {
     set showOverdrawInspector(value: boolean) {
         if (this._showOverdrawInspector === value) return;
         this._showOverdrawInspector = value;
-        this._tp.refreshUI();
+        DevTools.refresh();
         this._update();
     }
 
@@ -5141,7 +5206,7 @@ export class Map extends Camera {
     set repaint(value: boolean) {
         if (this._repaint !== value) {
             this._repaint = value;
-            this._tp.refreshUI();
+            DevTools.refresh();
             this.triggerRepaint();
         }
     }
@@ -5159,7 +5224,7 @@ export class Map extends Camera {
     set showTileAABBs(value: boolean) {
         if (this._showTileAABBs === value) return;
         this._showTileAABBs = value;
-        this._tp.refreshUI();
+        DevTools.refresh();
         if (!value) { Debug.clearAabbs(); return; }
         this._update();
     }

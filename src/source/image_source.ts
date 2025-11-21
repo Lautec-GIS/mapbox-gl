@@ -48,7 +48,7 @@ type ImageSourceTexture = {
 function basisToPoints(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number) {
     const m: mat3 = [x1, y1, 1, x2, y2, 1, x3, y3, 1];
     const s: vec3 = [x4, y4, 1];
-    const ma = mat3.adjoint([] as unknown as mat3, m);
+    const ma = mat3.adjoint([], m);
     const [sx, sy, sz] = vec3.transformMat3(s, s, ma);
     return mat3.multiply(m, m, [sx, 0, 0, 0, sy, 0, 0, 0, sz]);
 }
@@ -56,14 +56,14 @@ function basisToPoints(x1: number, y1: number, x2: number, y2: number, x3: numbe
 function getTileToTextureTransformMatrix(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number) {
     const a = basisToPoints(0, 0, 1, 0, 1, 1, 0, 1);
     const b = basisToPoints(x1, y1, x2, y2, x3, y3, x4, y4);
-    const adjB = mat3.adjoint([] as unknown as mat3, b);
+    const adjB = mat3.adjoint([], b);
     return mat3.multiply(a, a, adjB);
 }
 
 function getTextureToTileTransformMatrix(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number) {
     const a = basisToPoints(0, 0, 1, 0, 1, 1, 0, 1);
     const b = basisToPoints(x1, y1, x2, y2, x3, y3, x4, y4);
-    const adjA = mat3.adjoint([] as unknown as mat3, a);
+    const adjA = mat3.adjoint([], a);
     return mat3.multiply(b, b, adjA);
 }
 
@@ -159,7 +159,7 @@ function sortTriangles(centerLatitudes: number[], indices: TriangleIndexArray): 
         return centerLatitudes[idx1] - centerLatitudes[idx2];
     });
 
-    const sortedCenterLatitudes = [];
+    const sortedCenterLatitudes: number[] = [];
     const sortedIndices = new TriangleIndexArray();
 
     for (let i = 0; i < triangleIndexes.length; i++) {
@@ -171,7 +171,6 @@ function sortTriangles(centerLatitudes: number[], indices: TriangleIndexArray): 
         sortedIndices.emplaceBack(indices.uint16[i0], indices.uint16[i1], indices.uint16[i2]);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return [sortedCenterLatitudes, sortedIndices];
 }
 
@@ -301,6 +300,7 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
         this._loaded = loaded || false;
         this.fire(new Event('dataloading', {dataType: 'source'}));
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         this.url = this.options.url;
         if (!this.url) {
             if (newCoordinates) {
@@ -380,10 +380,12 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
         if (!options.url) {
             return this;
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (this._imageRequest && options.url !== this.options.url) {
             this._imageRequest.cancel();
             this._imageRequest = null;
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         this.options.url = options.url;
         this.load(options.coordinates, this._loaded);
         return this;
@@ -621,7 +623,7 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
                 const x = Math.round((point.lng - minLng) / lngDiff * EXTENT);
                 const y = Math.round((point.lat - minLat) / latDiff * EXTENT);
                 const imagePoint = transformToImagePoint(tilePoint);
-                const uv = vec3.transformMat3([] as unknown as vec3, [imagePoint[0], imagePoint[1], 1], toUV);
+                const uv = vec3.transformMat3([], [imagePoint[0], imagePoint[1], 1], toUV);
                 const u = Math.round(uv[0] / uv[2] * EXTENT);
                 const v = Math.round(uv[1] / uv[2] * EXTENT);
                 elevatedGlobeVertexArray.emplaceBack(x, y, u, v);
@@ -659,10 +661,15 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
             const processTriangle = (i0: number, i1: number, i2: number) => {
                 indices.emplaceBack(i0, i1, i2);
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const l0 = verticesLongitudes[i0];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const l1 = verticesLongitudes[i1];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const l2 = verticesLongitudes[i2];
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 const minLongitude = Math.min(Math.min(l0, l1), l2);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 const maxLongitude = Math.max(Math.max(l0, l1), l2);
                 const diff = maxLongitude - minLongitude;
                 if (diff > this.maxLongitudeTriangleSize) {
@@ -689,8 +696,10 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
                 }
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             [elevatedGlobeTrianglesCenterLongitudes, indices] = sortTriangles(elevatedGlobeTrianglesCenterLongitudes, indices);
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             this.elevatedGlobeTrianglesCenterLongitudes = elevatedGlobeTrianglesCenterLongitudes;
             this.elevatedGlobeIndexBuffer = context.createIndexBuffer(indices);
         }
@@ -741,6 +750,7 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
     serialize(): any {
         return {
             type: 'image',
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
             url: this.options.url,
             coordinates: this.coordinates
         };
@@ -760,11 +770,11 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
 
         // Normalizing longitude so that abs(normalizedLongitude - desiredLongitude) <= 180
         const normalizeLongitudeTo = (longitude: number, desiredLongitude: number) => {
-            const diff = Math.round((desiredLongitude - longitude) / 360.);
-            return longitude + diff * 360.;
+            const diff = Math.round((desiredLongitude - longitude) / 360.0);
+            return longitude + diff * 360.0;
         };
 
-        let gapLongitude = normalizeLongitudeTo(longitude + 180., longitudes[0]);
+        let gapLongitude = normalizeLongitudeTo(longitude + 180.0, longitudes[0]);
         const ret = new SegmentVector();
 
         const addTriangleRange = (triangleOffset: number, triangleCount: number) => {
@@ -782,7 +792,7 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
         // +0.01 - just to be sure that we don't draw "bad" triangles because of calculation errors
         const distanceToDrop = 0.51 * this.maxLongitudeTriangleSize;
         assert(distanceToDrop > 0);
-        assert(distanceToDrop < 180.);
+        assert(distanceToDrop < 180.0);
 
         if (Math.abs(longitudes[0] - gapLongitude) <= distanceToDrop) {
             const minIdx = upperBound(longitudes, 0, longitudes.length, gapLongitude + distanceToDrop);
@@ -790,14 +800,14 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
                 // Rotated 90 degrees, and one side is almost zero?
                 return ret;
             }
-            const maxIdx = lowerBound(longitudes, minIdx + 1, longitudes.length, gapLongitude + 360. - distanceToDrop);
+            const maxIdx = lowerBound(longitudes, minIdx + 1, longitudes.length, gapLongitude + 360.0 - distanceToDrop);
             const count = maxIdx - minIdx;
             addTriangleRange(minIdx, count);
             return ret;
         }
 
         if (gapLongitude < longitudes[0]) {
-            gapLongitude += 360.;
+            gapLongitude += 360.0;
         }
 
         // Looking for the range inside or in the end of our triangles array to skip
@@ -841,7 +851,7 @@ export function getCoordinatesCenterTileID(coords: Array<MercatorCoordinate>): C
     const dx = maxX - minX;
     const dy = maxY - minY;
     const dMax = Math.max(dx, dy);
-    const zoom = Math.max(0, Math.floor(-Math.log(dMax) / Math.LN2));
+    const zoom = Math.max(0, Math.floor(-Math.log2(dMax)));
     const tilesAtZoom = Math.pow(2, zoom);
 
     let x = Math.floor((minX + maxX) / 2 * tilesAtZoom);

@@ -14,16 +14,17 @@ import {mockFetch, getPNGResponse} from '../../util/network';
 import ImageSource from '../../../src/source/image_source';
 import {Evented} from '../../../src/util/evented';
 import Transform from '../../../src/geo/transform';
-import {extend} from '../../../src/util/util';
 import browser from '../../../src/util/browser';
 import {OverscaledTileID} from '../../../src/source/tile_id';
 import Context from '../../../src/gl/context';
 
 function createSource(options) {
-    options = extend({
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    options = Object.assign({
         coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]]
     }, options);
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
     const source = new ImageSource('id', options, {send() {}}, options.eventedParent);
     return source;
 }
@@ -34,10 +35,12 @@ class StubMap extends Evented {
     constructor() {
         super();
         this.painter = {};
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         this.painter.context = new Context(canvas.getContext('webgl2'));
         this.transform = new Transform();
         this._requestManager = {
             transformRequest: (url) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 return {url};
             }
         };
@@ -72,7 +75,9 @@ describe('ImageSource', () => {
         });
         const source = createSource({url: '/image.png'});
         source.on('dataloading', withAsync((e, doneRef) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(e.dataType).toEqual('source');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             doneRef.resolve();
         }));
         source.onAdd(new StubMap());
@@ -85,10 +90,13 @@ describe('ImageSource', () => {
         });
         const source = createSource({url: '/image.png'});
         const map = new StubMap();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const spy = vi.spyOn(map._requestManager, 'transformRequest');
         source.onAdd(map);
         expect(spy).toHaveBeenCalledTimes(1);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0]).toEqual('/image.png');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][1]).toEqual('Image');
     });
 
@@ -99,14 +107,19 @@ describe('ImageSource', () => {
         });
         const source = createSource({url: '/image.png'});
         const map = new StubMap();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const spy = vi.spyOn(map._requestManager, 'transformRequest');
         source.onAdd(map);
         expect(spy).toHaveBeenCalledTimes(1);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][0]).toEqual('/image.png');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[0][1]).toEqual('Image');
         source.updateImage({url: '/image2.png'});
         expect(spy).toHaveBeenCalledTimes(2);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0]).toEqual('/image2.png');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][1]).toEqual('Image');
     });
 
@@ -117,10 +130,14 @@ describe('ImageSource', () => {
         const source = createSource({url: '/image.png'});
         const map = new StubMap();
         source.onAdd(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const beforeSerialized = source.serialize();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(beforeSerialized.coordinates).toEqual([[0, 0], [1, 0], [1, 1], [0, 1]]);
         source.setCoordinates([[0, 0], [-1, 0], [-1, -1], [0, -1]]);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const afterSerialized = source.serialize();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(afterSerialized.coordinates).toEqual([[0, 0], [-1, 0], [-1, -1], [0, -1]]);
     });
 
@@ -133,13 +150,19 @@ describe('ImageSource', () => {
         const source = createSource({url: '/image.png'});
         const map = new StubMap();
         source.onAdd(map);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const beforeSerialized = source.serialize();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(beforeSerialized.coordinates).toEqual([[0, 0], [1, 0], [1, 1], [0, 1]]);
 
         source.on('data', withAsync((e, doneRef) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (e.dataType === 'source' && e.sourceDataType === 'metadata') {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const afterSerialized = source.serialize();
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 expect(afterSerialized.coordinates).toEqual([[0, 0], [-1, 0], [-1, -1], [0, -1]]);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 doneRef.resolve();
             }
         }));
@@ -157,8 +180,10 @@ describe('ImageSource', () => {
         });
         const source = createSource({url: '/image.png'});
         source.on('data', withAsync((e, doneRef) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (e.dataType === 'source' && e.sourceDataType === 'content') {
                 expect(typeof source.tileID == 'object').toBeTruthy();
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 doneRef.resolve();
             }
         }));
@@ -173,7 +198,9 @@ describe('ImageSource', () => {
         });
         const source = createSource({url: '/image.png'});
         source.on('data', withAsync((e, doneRef) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (e.dataType === 'source' && e.sourceDataType === 'metadata') {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 doneRef.resolve();
             }
         }));
@@ -187,9 +214,13 @@ describe('ImageSource', () => {
         });
         const source = createSource({url: '/image.png'});
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const serialized = source.serialize();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(serialized.type).toEqual('image');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(serialized.url).toEqual('/image.png');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(serialized.coordinates).toEqual([[0, 0], [1, 0], [1, 1], [0, 1]]);
     });
 
@@ -298,15 +329,19 @@ describe('ImageSource', () => {
         });
         const source = createSource({url: '/notfound.png'});
         const map = new StubMap();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const spy = vi.spyOn(map._requestManager, 'transformRequest');
         source.onAdd(map);
         const {error} = await waitFor(source, 'error');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(error.status).toBe(404);
         expect(source.image).toBeFalsy();
         source.updateImage({url: '/image2.png'});
         await waitFor(source, 'data');
         expect(spy).toHaveBeenCalledTimes(2);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][0]).toEqual('/image2.png');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(spy.mock.calls[1][1]).toEqual('Image');
     });
 });

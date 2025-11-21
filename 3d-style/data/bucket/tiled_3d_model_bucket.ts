@@ -29,8 +29,9 @@ import type FeatureIndex from '../../../src/data/feature_index';
 import type {GridIndex} from '../../../src/types/grid-index';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {FeatureStates} from '../../../src/source/source_state';
-import type {FeatureState} from '../../../src/style-spec/expression/index';
+import type {FeatureState, GlobalProperties} from '../../../src/style-spec/expression/index';
 import type {PossiblyEvaluatedValue} from '../../../src/style/properties';
+import type {ImageId} from '../../../src/style-spec/expression/types/image_id';
 
 const lookup = new Float32Array(512 * 512);
 const passLookup = new Uint8Array(512 * 512);
@@ -54,7 +55,7 @@ function addAABBsToGridIndex(node: ModelNode, key: number, grid: GridIndex) {
     if (node.meshes) {
         for (const mesh of node.meshes) {
             if (mesh.aabb.min[0] === Infinity) continue;
-            const meshAabb = Aabb.applyTransform(mesh.aabb, node.matrix);
+            const meshAabb = Aabb.applyTransform(mesh.aabb, node.globalMatrix);
             grid.insert(key, meshAabb.min[0], meshAabb.min[1], meshAabb.max[0], meshAabb.max[1]);
         }
     }
@@ -118,7 +119,7 @@ export class Tiled3dModelFeature {
             const aabb = new Aabb([Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]);
             for (const mesh of this.node.meshes) {
                 if (this.node.lightMeshIndex !== i) {
-                    mesh.transformedAabb = Aabb.applyTransformFast(mesh.aabb, this.node.matrix);
+                    mesh.transformedAabb = Aabb.applyTransformFast(mesh.aabb, this.node.globalMatrix);
                     aabb.encapsulate(mesh.transformedAabb);
                 }
                 i++;
@@ -151,6 +152,7 @@ class Tiled3dModelBucket implements Bucket {
     states: FeatureStates;
     filter: FeatureFilter | null;
     worldview: string | undefined;
+    hasAppearances: boolean | null;
     constructor(
         layers: Array<ModelStyleLayer>,
         nodes: Array<ModelNode>,
@@ -192,6 +194,7 @@ class Tiled3dModelBucket implements Bucket {
             featureIndex.featureIndexArray.emplaceBack(this.nodesInfo.length - 1, 0 /*sourceLayerIndex*/, featureIndex.bucketLayerIDs.length - 1, 0);
         }
         this.states = {};
+        this.hasAppearances = null;
     }
 
     updateFootprints(id: UnwrappedTileID, footprints: Array<TileFootprint>) {
@@ -205,6 +208,9 @@ class Tiled3dModelBucket implements Bucket {
                 id
             });
         }
+    }
+
+    updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
     }
 
     update(states: FeatureStates) {
@@ -303,6 +309,7 @@ class Tiled3dModelBucket implements Bucket {
         for (const nodeInfo of nodesInfo) {
             if (!nodeInfo.node.meshes) continue;
             const evaluationFeature = nodeInfo.feature;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             const state = states && states[evaluationFeature.id];
             if (deepEqual(state, nodeInfo.state)) continue;
             nodeInfo.state = structuredClone(state);
@@ -592,22 +599,23 @@ class Tiled3dModelBucket implements Bucket {
         hidden: boolean;
         verticalScale: number;
     } | null | undefined {
-        const candidates = [];
+        const candidates: number[] = [];
 
         const tmpVertex = [0, 0, 0];
 
-        const nodeInverse = mat4.identity([] as unknown as mat4);
+        const nodeInverse = mat4.identity([]);
 
         for (const nodeInfo of this.getNodesInfo()) {
             assert(nodeInfo.node.meshes.length > 0);
             const mesh = nodeInfo.node.meshes[0];
             const meshAabb = mesh.transformedAabb;
             if (x < meshAabb.min[0] || y < meshAabb.min[1] || x > meshAabb.max[0] || y > meshAabb.max[1]) continue;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             if (nodeInfo.node.hidden === true) return {height: Infinity, maxHeight: nodeInfo.feature.properties["height"], hidden: false, verticalScale: nodeInfo.evaluatedScale[2]};
 
             assert(mesh.heightmap);
 
-            mat4.invert(nodeInverse, nodeInfo.node.matrix);
+            mat4.invert(nodeInverse, nodeInfo.node.globalMatrix);
             tmpVertex[0] = x;
             tmpVertex[1] = y;
             vec3.transformMat4(tmpVertex as [number, number, number], tmpVertex as [number, number, number], nodeInverse);
@@ -620,12 +628,13 @@ class Tiled3dModelBucket implements Bucket {
                 // unpopulated cell. If it is in the building footprint, return undefined height
                 nodeInfo.node.footprint.grid.query(new Point(x, y), new Point(x, y), candidates);
                 if (candidates.length > 0) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     return {height: undefined, maxHeight: nodeInfo.feature.properties["height"], hidden: nodeInfo.hiddenByReplacement, verticalScale: nodeInfo.evaluatedScale[2]};
                 }
                 continue;
             }
             if (nodeInfo.hiddenByReplacement) return; // better luck with the next source
-            return {height: heightValue, maxHeight: nodeInfo.feature.properties["height"], hidden: false, verticalScale: nodeInfo.evaluatedScale[2]};
+            return {height: heightValue, maxHeight: nodeInfo.feature.properties["height"] as number, hidden: false, verticalScale: nodeInfo.evaluatedScale[2]};
         }
     }
 }
@@ -664,7 +673,7 @@ function addPBRVertex(vertexArray: FeatureVertexArray, color: number, colorMix: 
     const emissionMultiplierValueStart = clamp(heightBasedEmissionMultiplierParams[2], 0, 1);
     const emissionMultiplierValueFinish = clamp(heightBasedEmissionMultiplierParams[3], 0, 1);
 
-    let a3, b0, b1, b2;
+    let a3: number, b0: number, b1: number, b2: number;
 
     if (emissionMultiplierStart !== emissionMultiplierFinish && zMax !== zMin &&
         emissionMultiplierFinish !== emissionMultiplierStart) {
@@ -701,10 +710,8 @@ function updateNodeFeatureVertices(nodeInfo: Tiled3dModelFeature, doorLightChang
         if (!mesh.featureData) continue;
         // initialize featureArray
         mesh.featureArray = new FeatureVertexArray();
-        // @ts-expect-error - TS2339 - Property 'length' does not exist on type 'ArrayBufferView'.
         mesh.featureArray.reserve(mesh.featureData.length);
         let pendingDoorLightUpdate = doorLightChanged;
-        // @ts-expect-error - TS2488 - Type 'ArrayBufferView' must have a '[Symbol.iterator]()' method that returns an iterator.
         for (const feature of mesh.featureData) {
             // V1 and V2 tiles have a different bit structure
             // In V2, meshopt compression forces to use values less than 2^24 to not lose any information

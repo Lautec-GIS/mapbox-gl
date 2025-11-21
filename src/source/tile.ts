@@ -31,7 +31,7 @@ import type RasterParticleState from '../render/raster_particle_state';
 import type FeatureIndex from '../data/feature_index';
 import type {Bucket} from '../data/bucket';
 import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
-import type {WorkerSourceVectorTileResult} from './worker_source';
+import type {WorkerSourceVectorTileResult, WorkerSourceVectorTileCallback} from './worker_source';
 import type Actor from '../util/actor';
 import type DEMData from '../data/dem_data';
 import type {AlphaImage, SpritePositions} from '../util/image';
@@ -68,7 +68,7 @@ export type TileState =
 
 export type ExpiryData = {
     cacheControl?: string;
-    expires?: string;
+    expires?: Date | string;
 };
 
 // a tile bounds outline used for getting reprojected tile geometry in non-mercator projections
@@ -92,7 +92,7 @@ const BOUNDS_FEATURE = (() => {
  * Returns a matrix that can be used to convert from tile coordinates to viewport pixel coordinates.
  */
 function getPixelPosMatrix(transform: Transform, tileID: OverscaledTileID) {
-    const t = mat4.fromScaling([] as unknown as mat4, [transform.width * 0.5, -transform.height * 0.5, 1]);
+    const t = mat4.fromScaling([], [transform.width * 0.5, -transform.height * 0.5, 1]);
     mat4.translate(t, t, [1, -1, 0]);
     mat4.multiply(t, t, transform.calculateProjMatrix(tileID.toUnwrapped()));
     return Float32Array.from(t);
@@ -121,19 +121,15 @@ class Tile {
     lineAtlasTexture: Texture | null | undefined;
     glyphAtlasImage: AlphaImage | null | undefined;
     glyphAtlasTexture: Texture | null | undefined;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expirationTime: any;
+    expirationTime: number | null;
     expiredRequestCount: number;
     state: TileState;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    timeAdded: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    fadeEndTime: any;
+    timeAdded: number | null;
+    fadeEndTime: number | null;
     collisionBoxArray: CollisionBoxArray | null | undefined;
     redoWhenDone: boolean;
     showCollisionBoxes: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    placementSource: any;
+    placementSource: unknown;
     actor: Actor | null | undefined;
     vtLayers: {
         [_: string]: VectorTileLayer;
@@ -152,11 +148,11 @@ class Tile {
     needsDEMTextureUpload: boolean | null | undefined;
     request: Cancelable | null | undefined;
     texture: Texture | null | undefined | UserManagedTexture;
+    emissiveTexture: Texture | null | undefined | UserManagedTexture;
     hillshadeFBO: Framebuffer | null | undefined;
     demTexture: Texture | null | undefined;
     refreshedUponExpiration: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    reloadCallback: any;
+    reloadCallback: WorkerSourceVectorTileCallback | null | undefined;
     resourceTiming: Array<PerformanceResourceTiming> | null | undefined;
     queryPadding: number;
     rasterParticleState: RasterParticleState | null | undefined;
@@ -182,6 +178,7 @@ class Tile {
     _tileDebugTextIndexBuffer: IndexBuffer;
     _globeTileDebugTextBuffer: VertexBuffer | null | undefined;
     _lastUpdatedBrightness: number | null | undefined;
+    _hasAppearances: boolean | null;
 
     worldview: string | undefined;
 
@@ -220,6 +217,7 @@ class Tile {
         }
 
         this.worldview = worldview;
+        this._hasAppearances = null;
     }
 
     registerFadeDuration(duration: number) {
@@ -426,11 +424,41 @@ class Tile {
         return this.buckets[layer.fqid];
     }
 
-    upload(context: Context) {
+    upload(context: Context, painter?: Painter) {
         for (const id in this.buckets) {
             const bucket = this.buckets[id];
             if (bucket.uploadPending()) {
-                bucket.upload(context);
+                let featureStates: FeatureStates = {};
+                let availableImages: ImageId[] = [];
+                let globalProperties = {
+                    zoom: 0,
+                    pitch: 0,
+                    brightness: 0,
+                    worldview: ""
+                };
+
+                if (painter) {
+                    if (painter.style) {
+                        availableImages = painter.style.listImages();
+
+                        const bucketLayer = bucket.layers[0];
+                        const sourceLayerId = bucketLayer['sourceLayer'] || '_geojsonTileLayer';
+                        const sourceCache = painter.style.getLayerSourceCache(bucketLayer);
+
+                        if (sourceCache) {
+                            featureStates = sourceCache._state.getState(sourceLayerId, undefined) as FeatureStates;
+                        }
+                    }
+
+                    globalProperties = {
+                        zoom: painter.transform.zoom || 0,
+                        pitch: painter.transform.pitch || 0,
+                        brightness: painter.style.getBrightness() || 0,
+                        worldview: painter.worldview || ""
+                    };
+                }
+
+                bucket.upload(context, this.tileID.canonical, featureStates, availableImages, globalProperties);
             }
         }
 
@@ -462,14 +490,29 @@ class Tile {
             return;
         }
         const brightness = painter.style.getBrightness();
-        if (!this._lastUpdatedBrightness && !brightness) {
+        if (this._hasAppearances === null) {
+            this._hasAppearances = this.hasAppearances(painter);
+        }
+        if (!this._lastUpdatedBrightness && !brightness && !this._hasAppearances) {
             return;
         }
-        if (this._lastUpdatedBrightness && brightness && Math.abs(this._lastUpdatedBrightness - brightness) < 0.001) {
+        if (!this._hasAppearances && this._lastUpdatedBrightness && brightness && Math.abs(this._lastUpdatedBrightness - brightness) < 0.001) {
             return;
         }
         this.updateBuckets(painter, this._lastUpdatedBrightness !== brightness);
         this._lastUpdatedBrightness = brightness;
+    }
+
+    // Evaluate maximum query padding required for all buckets of this tile
+    evaluateQueryRenderedFeaturePadding() {
+        let maxRadius = 0;
+        for (const bucketId in this.buckets) {
+            const bucket = this.buckets[bucketId];
+            if (bucket.evaluateQueryRenderedFeaturePadding) {
+                maxRadius = Math.max(maxRadius, bucket.evaluateQueryRenderedFeaturePadding());
+            }
+        }
+        return maxRadius;
     }
 
     // Queries non-symbol features rendered for this tile.
@@ -502,6 +545,8 @@ class Tile {
             return {};
         }
 
+        const maxFeatureQueryRadius = this.evaluateQueryRenderedFeaturePadding();
+
         const pixelPosMatrix = getPixelPosMatrix(sourceCacheTransform, this.tileID);
 
         return this.latestFeatureIndex.query(
@@ -512,7 +557,8 @@ class Tile {
                 transform,
                 availableImages,
                 tileTransform: this.tileTransform,
-                worldview: this.worldview
+                worldview: this.worldview,
+                queryRadius: maxFeatureQueryRadius
             }
         );
     }
@@ -633,11 +679,20 @@ class Tile {
         this.updateBuckets(painter);
     }
 
+    hasAppearances(painter: Painter) {
+        for (const id in this.buckets) {
+            if (!painter.style.hasLayer(id)) continue;
+            const bucket = this.buckets[id];
+            const hasAppearances = bucket.layers.some(layer => layer.appearances && layer.appearances.length > 0);
+            if (hasAppearances) return true;
+        }
+        return false;
+    }
+
     updateBuckets(painter: Painter, isBrightnessChanged?: boolean) {
         if (!this.latestFeatureIndex) return;
         if (!painter.style) return;
 
-        const vtLayers = this.latestFeatureIndex.loadVTLayers();
         const availableImages = painter.style.listImages();
         const brightness = painter.style.getBrightness();
 
@@ -648,7 +703,6 @@ class Tile {
             const bucketLayer = bucket.layers[0];
             // Buckets are grouped by common source-layer
             const sourceLayerId = bucketLayer['sourceLayer'] || '_geojsonTileLayer';
-            const sourceLayer = vtLayers[sourceLayerId];
             const sourceCache = painter.style.getLayerSourceCache(bucketLayer);
 
             let sourceLayerStates: FeatureStates = {};
@@ -658,10 +712,21 @@ class Tile {
 
             const imagePositions: SpritePositions = this.imageAtlas ? Object.fromEntries(this.imageAtlas.patternPositions) : {};
             const withStateUpdates = Object.keys(sourceLayerStates).length > 0 && !isBrightnessChanged;
+            bucket.hasAppearances = bucket.layers.some(layer => layer.appearances && layer.appearances.length > 0);
             const layers = withStateUpdates ? bucket.stateDependentLayers : bucket.layers;
-            const updatesWithoutStateDependentLayers = withStateUpdates && !bucket.stateDependentLayers.length;
-            if (!updatesWithoutStateDependentLayers || isBrightnessChanged) {
+            if ((withStateUpdates && bucket.stateDependentLayers.length !== 0) || isBrightnessChanged) {
+                const vtLayers = this.latestFeatureIndex.loadVTLayers();
+                const sourceLayer = vtLayers[sourceLayerId];
                 bucket.update(sourceLayerStates, sourceLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness);
+            }
+            if ((withStateUpdates && bucket.stateDependentLayers.length !== 0) || isBrightnessChanged || bucket.hasAppearances) {
+                const globalProperties = {
+                    zoom: painter.transform.zoom,
+                    pitch: painter.transform.pitch,
+                    brightness: painter.style.getBrightness() || 0,
+                    worldview: painter.worldview
+                };
+                bucket.updateAppearances(this.tileID.canonical, sourceLayerStates, availableImages, globalProperties);
             }
             if (bucket instanceof LineBucket || bucket instanceof FillBucket) {
                 if (painter._terrain && painter._terrain.enabled && sourceCache && bucket.uploadPending()) {
@@ -779,16 +844,23 @@ class Tile {
             boundsIndices = new TriangleIndexArray();
 
             for (const {x, y} of boundsLine) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 boundsVertices.emplaceBack(x, y, 0, 0);
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             const indices = earcut(boundsVertices.int16.subarray(0, boundsVertices.length * 4), undefined, 4);
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             for (let i = 0; i < indices.length; i += 3) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 boundsIndices.emplaceBack(indices[i], indices[i + 1], indices[i + 2]);
             }
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this._tileBoundsBuffer = context.createVertexBuffer(boundsVertices, boundsAttributes.members);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this._tileBoundsIndexBuffer = context.createIndexBuffer(boundsIndices);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
         this._tileBoundsSegments = SegmentVector.simpleSegment(0, 0, boundsVertices.length, boundsIndices.length);
     }
 
@@ -806,7 +878,9 @@ class Tile {
             worldToECEFMatrix = mat4.invert(new Float64Array(16), transform.globeMatrix);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this._makeGlobeTileDebugBorderBuffer(context, id, transform, normalizationMatrix, worldToECEFMatrix, phase);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this._makeGlobeTileDebugTextBuffer(context, id, transform, normalizationMatrix, worldToECEFMatrix, phase);
     }
 
@@ -844,10 +918,10 @@ class Tile {
             mercatorX = (mercatorX - camX) * tr._pixelsPerMercatorPixel + camX;
             mercatorY = (mercatorY - camY) * tr._pixelsPerMercatorPixel + camY;
             const mercatorPos: vec3 = [mercatorX * tr.worldSize, mercatorY * tr.worldSize, 0];
-            vec3.transformMat4(mercatorPos, mercatorPos, worldToECEFMatrix as unknown as mat4);
+            vec3.transformMat4(mercatorPos, mercatorPos, worldToECEFMatrix);
             ecef = interpolateVec3(ecef, mercatorPos, phase);
         }
-        const gp = vec3.transformMat4(ecef, ecef, normalizationMatrix as unknown as mat4);
+        const gp = vec3.transformMat4(ecef, ecef, normalizationMatrix);
         return gp;
     }
 
@@ -1012,6 +1086,11 @@ class Tile {
         if (!preserveTexture && this.texture && this.texture instanceof Texture) {
             this.texture.destroy();
             delete this.texture;
+        }
+
+        if (this.emissiveTexture && this.emissiveTexture instanceof Texture) {
+            this.emissiveTexture.destroy();
+            delete this.emissiveTexture;
         }
 
         if (this.hillshadeFBO) {

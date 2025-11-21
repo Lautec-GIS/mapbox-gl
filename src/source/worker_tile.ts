@@ -21,6 +21,7 @@ import {ElevationFeatures} from '../../3d-style/elevation/elevation_feature';
 import {HD_ELEVATION_SOURCE_LAYER, PROPERTY_ELEVATION_ID} from '../../3d-style/elevation/elevation_constants';
 import {ElevationPortalGraph} from '../../3d-style/elevation/elevation_graph';
 import {ImageId} from '../style-spec/expression/types/image_id';
+import {parseIndoorData} from '../render/indoor_parser';
 
 import type {VectorTile} from '@mapbox/vector-tile';
 import type {CanonicalTileID} from './tile_id';
@@ -43,6 +44,7 @@ import type {RasterizedImageMap, ImageRasterizationTasks} from '../render/image_
 import type {StringifiedImageId} from '../style-spec/expression/types/image_id';
 import type {StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
 import type {StyleModelMap} from '../style/style_mode';
+import type {IndoorTileOptions} from '../style/indoor_data';
 
 type RasterizationStatus = {iconsPending: boolean, patternsPending: boolean};
 class WorkerTile {
@@ -69,6 +71,7 @@ class WorkerTile {
     tileTransform: TileTransform;
     brightness: number;
     scaleFactor: number;
+    indoor: IndoorTileOptions | null;
 
     status: 'parsing' | 'done';
     data: VectorTile;
@@ -104,6 +107,7 @@ class WorkerTile {
         this.tessellationStep = params.tessellationStep;
         this.scaleFactor = params.scaleFactor;
         this.worldview = params.worldview;
+        this.indoor = params.indoor;
     }
 
     parse(data: VectorTile, layerIndex: StyleLayerIndex, availableImages: ImageId[], availableModels: StyleModelMap, actor: Actor, callback: WorkerSourceVectorTileCallback) {
@@ -131,11 +135,19 @@ class WorkerTile {
             availableImages,
             brightness: this.brightness,
             scaleFactor: this.scaleFactor,
-            elevationFeatures: undefined
+            elevationFeatures: undefined,
+            activeFloors: undefined
         };
+
+        if (this.indoor) {
+            const activeFloorsVisible = this.indoor.indoorState.activeFloorsVisible;
+            const indoorData = parseIndoorData(data, this.indoor, actor);
+            options.activeFloors = activeFloorsVisible ? indoorData.activeFloors : undefined;
+        }
 
         const asyncBucketLoads: Promise<unknown>[] = [];
         const layerFamilies = layerIndex.familiesBySource[this.source];
+
         for (const sourceLayerId in layerFamilies) {
             const sourceLayer = data.layers[sourceLayerId];
             if (!sourceLayer) {
@@ -174,26 +186,27 @@ class WorkerTile {
 
             const sourceLayerIndex = sourceLayerCoder.encode(sourceLayerId);
             const features = [];
+
+            const localizable = this.localizableLayerIds && this.localizableLayerIds.has(sourceLayerId);
+
             let elevationDependency = false;
             for (let index = 0, currentFeatureIndex = 0; index < sourceLayer.length; index++) {
                 const feature = sourceLayer.feature(index);
                 const id = featureIndex.getId(feature, sourceLayerId);
+                const worldview = feature.properties ? feature.properties.worldview : null;
 
                 // Handle feature localization based on the map worldview:
                 // 1. If the feature layer is localizable, check if it has a 'worldview' property
                 // 2. Check if the feature worldview is 'all' (visible in all worldviews) or matches the current map worldview
                 // 3. Mark the feature with '$localized' property or skip it otherwise
-                if (this.localizableLayerIds && this.localizableLayerIds.has(sourceLayerId)) {
-                    const worldview = feature.properties ? feature.properties.worldview : null;
-                    if (this.worldview && typeof worldview === 'string') {
-                        if (worldview === 'all') {
-                            feature.properties['$localized'] = true;
-                        } else if (worldview.split(',').includes(this.worldview)) {
-                            feature.properties['$localized'] = true;
-                            feature.properties['worldview'] = this.worldview;
-                        } else {
-                            continue; // Skip features that don't match the current worldview
-                        }
+                if (localizable && this.worldview && typeof worldview === 'string') {
+                    if (worldview === 'all') {
+                        feature.properties['$localized'] = true;
+                    } else if (worldview.split(',').includes(this.worldview)) {
+                        feature.properties['$localized'] = true;
+                        feature.properties['worldview'] = this.worldview;
+                    } else {
+                        continue; // Skip features that don't match the current worldview
                     }
                 }
 
@@ -225,6 +238,7 @@ class WorkerTile {
                 recalculateLayers(family, this.zoom, options.brightness, availableImages, this.worldview);
 
                 // @ts-expect-error: Type 'TypedStyleLayer' doesn't have a 'createBucket' method in all of its subtypes
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
                 const bucket: Bucket = buckets[layer.id] = layer.createBucket({
                     index: featureIndex.bucketLayerIDs.length,
                     layers: family,
@@ -239,7 +253,8 @@ class WorkerTile {
                     projection: this.projection.spec,
                     tessellationStep: this.tessellationStep,
                     styleDefinedModelURLs: availableModels,
-                    worldview: this.worldview
+                    worldview: this.worldview,
+                    localizable
                 });
 
                 assert(this.tileTransform.projection.name === this.projection.name);
@@ -247,9 +262,11 @@ class WorkerTile {
 
                 let bucketPromise = bucket.prepare ? bucket.prepare() : null;
                 if (bucketPromise != null) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                     bucketPromise = bucketPromise.then(() => bucket.populate(features, options, this.tileID.canonical, this.tileTransform));
                     asyncBucketLoads.push(bucketPromise);
                 } else {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                     bucket.populate(features, options, this.tileID.canonical, this.tileTransform);
                 }
             }
@@ -286,7 +303,7 @@ class WorkerTile {
                         iconMap: null,
                         glyphPositions: null
                     });
-                    PerformanceUtils.endMeasure(m);
+                    PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
                 } else if (glyphMap && iconMap && patternMap) {
                     const m = PerformanceUtils.beginMeasure('parseTile2');
                     const glyphAtlas = new GlyphAtlas(glyphMap);
@@ -357,7 +374,7 @@ class WorkerTile {
                     imageAtlas,
                     brightness: options.brightness
                 });
-                PerformanceUtils.endMeasure(m);
+                PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
             };
 
             if (!this.extraShadowCaster) {
@@ -426,6 +443,7 @@ class WorkerTile {
                     }
                 }
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 const evaluatedPortals = ElevationPortalGraph.evaluate(unevaluatedPortals);
 
                 // Pass evaluated portals back to buckets and construct a separate acceleration structure
@@ -439,7 +457,7 @@ class WorkerTile {
                 }
             }
 
-            PerformanceUtils.endMeasure(m);
+            PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
 
             maybePrepare();
         };
@@ -451,6 +469,18 @@ class WorkerTile {
         } else {
             prepareTile();
         }
+    }
+
+    updateParameters(params: WorkerSourceVectorTileRequest) {
+        this.scaleFactor = params.scaleFactor;
+        this.showCollisionBoxes = params.showCollisionBoxes;
+        this.projection = params.projection;
+        this.brightness = params.brightness;
+        this.tileTransform = tileTransform(params.tileID.canonical, params.projection);
+        this.extraShadowCaster = params.extraShadowCaster;
+        this.lut = params.lut;
+        this.worldview = params.worldview;
+        this.indoor = params.indoor;
     }
 
     rasterizeIfNeeded(actor: Actor, outputMap: StyleImageMap<StringifiedImageVariant> | undefined, tasks: ImageRasterizationTasks, callback: () => void) {

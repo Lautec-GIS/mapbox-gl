@@ -1,5 +1,5 @@
 import styleSpec from '../style-spec/reference/latest';
-import {extend, smoothstep} from '../util/util';
+import {smoothstep} from '../util/util';
 import {Evented} from '../util/evented';
 import {validateStyle, validateFog, emitValidationErrors} from './validate_style';
 import {Properties, Transitionable, PossiblyEvaluated, DataConstantProperty} from './properties';
@@ -8,6 +8,8 @@ import {number as interpolate, array as vecInterpolate} from '../style-spec/util
 import {globeToMercatorTransition} from '../geo/projection/globe_util';
 import EXTENT from '../style-spec/data/extent';
 
+import type {mat4, vec3} from 'gl-matrix';
+import type {Validator} from './validate_style';
 import type {Frustum} from '../util/primitives';
 import type {OverscaledTileID} from '../source/tile_id';
 import type Color from '../style-spec/util/color';
@@ -18,7 +20,7 @@ import type LngLat from '../geo/lng_lat';
 import type Transform from '../geo/transform';
 import type {StyleSetterOptions} from '../style/style';
 import type {FogState} from './fog_helpers';
-import type {mat4, vec3} from 'gl-matrix';
+import type {StylePropertySpecification} from '../style-spec/style-spec';
 
 type Props = {
     ["range"]: DataConstantProperty<[number, number]>;
@@ -32,6 +34,8 @@ type Props = {
     ["star-intensity"]: DataConstantProperty<number>;
     ["vertical-range"]: DataConstantProperty<[number, number]>;
 };
+
+const fogReference = styleSpec.fog as Record<string, StylePropertySpecification>;
 
 class Fog extends Evented {
     _transitionable: Transitionable<Props>;
@@ -48,16 +52,16 @@ class Fog extends Evented {
         super();
 
         const fogProperties: Properties<Props> = new Properties({
-            "range": new DataConstantProperty(styleSpec.fog.range),
-            "color": new DataConstantProperty(styleSpec.fog.color),
+            "range": new DataConstantProperty(fogReference.range),
+            "color": new DataConstantProperty(fogReference.color),
             "color-use-theme": new DataConstantProperty({"type": "string", "property-type": "data-constant", "default": "default"}),
-            "high-color": new DataConstantProperty(styleSpec.fog["high-color"]),
+            "high-color": new DataConstantProperty(fogReference["high-color"]),
             "high-color-use-theme": new DataConstantProperty({"type": "string", "property-type": "data-constant", "default": "default"}),
-            "space-color": new DataConstantProperty(styleSpec.fog["space-color"]),
+            "space-color": new DataConstantProperty(fogReference["space-color"]),
             "space-color-use-theme": new DataConstantProperty({"type": "string", "property-type": "data-constant", "default": "default"}),
-            "horizon-blend": new DataConstantProperty(styleSpec.fog["horizon-blend"]),
-            "star-intensity": new DataConstantProperty(styleSpec.fog["star-intensity"]),
-            "vertical-range": new DataConstantProperty(styleSpec.fog["vertical-range"]),
+            "horizon-blend": new DataConstantProperty(fogReference["horizon-blend"]),
+            "star-intensity": new DataConstantProperty(fogReference["star-intensity"]),
+            "vertical-range": new DataConstantProperty(fogReference["vertical-range"]),
         });
 
         this._transitionable = new Transitionable(fogProperties, scope, new Map(configOptions));
@@ -96,16 +100,14 @@ class Fog extends Evented {
             return;
         }
 
-        const properties = extend({}, fog);
-        for (const name of Object.keys(styleSpec.fog)) {
-            // Fallback to use default style specification when the properties wasn't set
+        const properties = Object.assign({}, fog);
+        for (const name of Object.keys(fogReference)) {
             if (properties[name] === undefined) {
-                properties[name] = styleSpec.fog[name].default;
+                properties[name] = fogReference[name].default;
             }
         }
 
         this._options = properties;
-        // @ts-expect-error - TS2345 - Argument of type 'FogSpecification' is not assignable to parameter of type 'PropertyValueSpecifications<Props>'.
         this._transitionable.setTransitionOrValue(this._options, configOptions);
     }
 
@@ -173,7 +175,6 @@ class Fog extends Evented {
     }
 
     updateConfig(configOptions?: ConfigOptions | null) {
-        // @ts-expect-error - TS2345 - Argument of type 'FogSpecification' is not assignable to parameter of type 'PropertyValueSpecifications<Props>'.
         this._transitionable.setTransitionOrValue(this._options, new Map(configOptions));
     }
 
@@ -190,8 +191,7 @@ class Fog extends Evented {
     }
 
     _validate(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        validate: any,
+        validate: Validator,
         value: unknown,
         options?: {
             validate?: boolean;
@@ -201,7 +201,8 @@ class Fog extends Evented {
             return false;
         }
 
-        return emitValidationErrors(this, validate.call(validateStyle, extend({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        return emitValidationErrors(this, validate.call(validateStyle, Object.assign({
             value,
             style: {glyphs: true, sprite: true},
             styleSpec

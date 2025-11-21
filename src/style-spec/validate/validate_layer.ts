@@ -1,14 +1,16 @@
 import ValidationError from '../error/validation_error';
 import {unbundle} from '../util/unbundle_jsonlint';
+import validateArray from './validate_array';
 import validateObject from './validate_object';
 import validateFilter from './validate_filter';
+import validateAppearance, {type AppearanceValidatorOptions} from './validate_appearance';
 import validatePaintProperty from './validate_paint_property';
 import validateLayoutProperty from './validate_layout_property';
 import validateSpec from './validate';
-import extend from '../util/extend';
 import {isObject, isString} from '../util/get_type';
 
 import type {StyleReference} from '../reference/latest';
+import type {PropertyValidatorOptions} from './validate_property';
 import type {StyleSpecification, LayerSpecification, GeoJSONSourceSpecification} from '../types';
 
 type LayerValidatorOptions = {
@@ -64,9 +66,11 @@ export default function validateLayer(options: LayerValidatorOptions): Validatio
         if (!parent) {
             if (typeof ref === 'string')
                 errors.push(new ValidationError(key, layer.ref, `ref layer "${ref}" not found`));
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         } else if (parent.ref) {
             errors.push(new ValidationError(key, layer.ref, 'ref cannot reference another ref layer'));
         } else {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             type = unbundle(parent.type) as string;
         }
     } else if (!(type === 'background' || type === 'sky' || type === 'slot')) {
@@ -101,6 +105,7 @@ export default function validateLayer(options: LayerValidatorOptions): Validatio
     errors = errors.concat(validateObject({
         key,
         value: layer,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         valueSpec: styleSpec.layer,
         style: options.style,
         styleSpec: options.styleSpec,
@@ -114,6 +119,7 @@ export default function validateLayer(options: LayerValidatorOptions): Validatio
                 return validateSpec({
                     key: `${key}.type`,
                     value: layer.type,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     valueSpec: styleSpec.layer.type,
                     style: options.style,
                     styleSpec: options.styleSpec,
@@ -122,7 +128,7 @@ export default function validateLayer(options: LayerValidatorOptions): Validatio
                 });
             },
             filter(options) {
-                return validateFilter(extend({layerType: type}, options));
+                return validateFilter(Object.assign({layerType: type}, options));
             },
             layout(options) {
                 return validateObject({
@@ -133,8 +139,8 @@ export default function validateLayer(options: LayerValidatorOptions): Validatio
                     style: options.style,
                     styleSpec: options.styleSpec,
                     objectElementValidators: {
-                        '*'(options) {
-                            return validateLayoutProperty(extend({layerType: type}, options));
+                        '*'(options: PropertyValidatorOptions) {
+                            return validateLayoutProperty(Object.assign({layerType: type}, options));
                         }
                     }
                 });
@@ -148,11 +154,39 @@ export default function validateLayer(options: LayerValidatorOptions): Validatio
                     style: options.style,
                     styleSpec: options.styleSpec,
                     objectElementValidators: {
-                        '*'(options) {
-                            return validatePaintProperty(extend({layerType: type, layer}, options));
+                        '*'(options: PropertyValidatorOptions) {
+                            return validatePaintProperty(Object.assign({layerType: type, layer}, options));
                         }
                     }
                 });
+            },
+            appearances(options) {
+                const validationErrors = validateArray({
+                    key: options.key,
+                    value: options.value,
+
+                    valueSpec: options.valueSpec,
+                    style: options.style,
+                    styleSpec: options.styleSpec,
+                    arrayElementValidator: (options) => validateAppearance(Object.assign({layerType: type, layer}, options) as AppearanceValidatorOptions)
+                });
+                // Check non-repeated names on a given layer
+                const appearances = Array.isArray(options.value) ? options.value : [];
+                const dedupedNames = new Set<string>();
+                appearances.forEach((a, index) => {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    const name: string | undefined = unbundle(a.name) as string | undefined;
+                    if (name) {
+                        if (dedupedNames.has(name)) {
+                            const layerId = unbundle((layer as LayerSpecification).id) as string;
+                            validationErrors.push(new ValidationError(options.key, name, `Duplicated appearance name "${name}" for layer "${layerId}"`));
+                        } else {
+                            dedupedNames.add(name);
+                        }
+                    }
+                });
+
+                return validationErrors;
             }
         }
     }));

@@ -56,6 +56,34 @@
   "glyphs": "local://glyphs/{fontstack}/{range}.pbf",
   "layers": [
     {
+      "id": "icon-default-emission",
+      "type": "symbol",
+      "source": "mapbox",
+      "source-layer": "poi_label",
+      "layout": {
+        "icon-image": "{maki}-12",
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "icon-occlusion-opacity": [
+          "match",
+          [
+            "get",
+            "maki"
+          ],
+          [
+            "restaurant"
+          ],
+          0.7,
+          [
+            "cafe"
+          ],
+          0.25,
+          1
+        ]
+      }
+    },
+    {
       "id": "background",
       "type": "background",
       "paint": {
@@ -91,34 +119,6 @@
         "fill-extrusion-height": [
           "get",
           "height"
-        ]
-      }
-    },
-    {
-      "id": "icon-default-emission",
-      "type": "symbol",
-      "source": "mapbox",
-      "source-layer": "poi_label",
-      "layout": {
-        "icon-image": "{maki}-12",
-        "symbol-placement": "point"
-      },
-      "paint": {
-        "icon-occlusion-opacity": [
-          "match",
-          [
-            "get",
-            "maki"
-          ],
-          [
-            "restaurant"
-          ],
-          0.7,
-          [
-            "cafe"
-          ],
-          0.25,
-          1
         ]
       }
     }

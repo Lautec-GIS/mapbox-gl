@@ -18,6 +18,7 @@ describe('ModelManager', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
@@ -43,9 +44,11 @@ describe('ModelManager', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         modelManager.loadModel = vi.fn((id, url) => Promise.resolve({id, url}));
 
         modelManager.addModel('model', 'https://www.example.com/', 'basemap');
@@ -60,9 +63,11 @@ describe('ModelManager', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         modelManager.loadModel = vi.fn((id, url) => Promise.resolve({id, url}));
 
         modelManager.addModel('model', 'https://www.example.com/', 'basemap');
@@ -77,9 +82,11 @@ describe('ModelManager', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         modelManager.loadModel = vi.fn((id, url) => Promise.resolve({id, url}));
 
         modelManager.addModel('model', 'https://www.example.com/', 'basemap');
@@ -94,6 +101,7 @@ describe('ModelManager', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
@@ -129,6 +137,7 @@ describe('ModelManager', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
@@ -159,6 +168,7 @@ describe('ModelManager', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
@@ -178,13 +188,15 @@ describe('ModelManager', () => {
         modelManager.addModelsFromBucket(['https://www.example.com/1', 'https://www.example.com/2', 'https://www.example.com/3'], 'basemap');
     });
 
-    test('#reloadModels', async () => {
+    test('#reloadModels', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         modelManager.loadModel = vi.fn((id, url) => Promise.resolve({id, url}));
 
         modelManager.addModel('model', 'https://www.example.com/', 'basemap');
@@ -201,13 +213,15 @@ describe('ModelManager', () => {
         expect(modelManager.models['basemap']['model2'].numReferences).toBe(1);
     });
 
-    test('#destroy', async () => {
+    test('#destroy', () => {
         const {modelManager, eventedParent} = createModelManager();
 
         eventedParent.on('error', ({error}) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
             expect.unreachable(error.message);
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         modelManager.loadModel = vi.fn((id, url) => Promise.resolve({id, url}));
 
         modelManager.addModel('model', 'https://www.example.com/', '');

@@ -16,7 +16,10 @@ import {getProjection} from '../../../src/geo/projection/index';
 import vectorStub from '../../fixtures/mbsv5-6-18-23.vector.pbf?arraybuffer';
 import glyphData from '../../fixtures/fontstack-glyphs.json';
 
+import type {BucketPart} from '../../../src/symbol/placement';
+
 // Load a point feature from fixture tile.
+// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
 const vt = new VectorTile(new Protobuf(vectorStub));
 const feature = vt.layers.place_label.feature(10);
 
@@ -31,6 +34,7 @@ const stacks = {'Test': glyphData};
 const glyphPositions = {'Test': {}};
 const glyphPositonMap = glyphPositions['Test'];
 for (const id in glyphData.glyphs) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     glyphPositonMap[id] = glyphData.glyphs[id].rect;
 }
 
@@ -51,6 +55,7 @@ test('SymbolBucket', () => {
     // add feature from bucket A
     bucketA.populate([{feature}], options);
     const bucketAData = performSymbolLayout(bucketA, stacks, glyphPositions, null, null, null, null, null, null, projection);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     postRasterizationSymbolLayout(bucketA as SymbolBucket, bucketAData, null, null, null, null, projection, null, null, {});
 
     const tileA = new Tile(tileID, 512, 0, painter);
@@ -61,6 +66,7 @@ test('SymbolBucket', () => {
     // add same feature from bucket B
     bucketB.populate([{feature}], options);
     const bucketBData = performSymbolLayout(bucketB, stacks, glyphPositions, null, null, null, null, null, null, projection);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     postRasterizationSymbolLayout(bucketB as SymbolBucket, bucketBData, null, null, null, null, projection, null, null, {});
     const tileB = new Tile(tileID, 512, 0, painter);
     tileB.buckets = {test: bucketB};
@@ -69,7 +75,8 @@ test('SymbolBucket', () => {
     crossTileSymbolIndex.addLayer(bucketA.layers[0], [tileA, tileB], 0.0, projection);
 
     const place = (layer, tile) => {
-        const parts: Array<any> = [];
+        const parts: BucketPart[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         placement.getBucketParts(parts, layer, tile, false);
         for (const part of parts) {
             placement.placeLayerBucketPart(part, new Set(), false);
@@ -101,6 +108,7 @@ test('SymbolBucket integer overflow', () => {
 
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         console.warn.mock.calls[0][0]
     ).toMatch(/Too many glyphs being rendered in a tile./);
 });

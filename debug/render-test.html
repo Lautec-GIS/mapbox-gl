@@ -3,28 +3,36 @@
 
 <head>
     <title>Mapbox GL JS debug page</title>
-    <meta charset='utf-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=no'>
-    <link rel='stylesheet' href='../dist/mapbox-gl.css' />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../dist/mapbox-gl.css" />
     <style>
         #map {outline: 1px solid #ccc;}
     </style>
 </head>
 
 <body>
-    <div id='map'></div>
+    <div id="map"></div>
 
-    <script src='../dist/mapbox-gl-dev.js'></script>
-    <script src='../debug/access_token_generated.js'></script>
-    <script type='module'>
-        import {renderTestNow} from 'http://localhost:9966/test/integration/lib/constants.js';
-        import {applyOperations} from 'http://localhost:9966/test/integration/lib/operation-handlers.js';
+    <script src="../dist/mapbox-gl-dev.js"></script>
+    <script type="module">
+        import {getAccessToken} from './access_token_generated.js';
+
+        mapboxgl.accessToken = getAccessToken();
+        import {renderTestNow} from '../test/integration/lib/constants.js';
+        import {applyOperations} from '../test/integration/lib/operation-handlers.js';
+        import {transformRequest as baseTransformRequest} from '../test/integration/lib/transform-request.js';
+
+        function transformRequest(url, resourceTypeEnum) {
+            const req = baseTransformRequest(url, resourceTypeEnum);
+            return {url: req.url.replace(location.origin, `${location.origin}/test/integration/`)};
+        }
 
         async function fetchStyle() {
             let test = new URLSearchParams(location.search).get('test');
             if (!test) test = prompt('test name:', 'text-writing-mode/line_label/mixed-multiline-horizontal-mode');
 
-            const response = await fetch(`http://localhost:9966/test/integration/render-tests/${test}/style.json`);
+            const response = await fetch(`../test/integration/render-tests/${test}/style.json`);
             const style = await response.json();
 
             return style;
@@ -91,13 +99,6 @@
         container.style.width = width + 'px';
         container.style.height = height + 'px';
 
-        const transformRequest = url => ({url:
-            url
-                .replace('local://mapbox-gl-styles/', 'http://localhost:9966/node_modules/mapbox-gl-styles/')
-                .replace('local://mvt-fixtures/', 'http://localhost:9966/node_modules/@mapbox/mvt-fixtures/')
-                .replace('local://', 'http://localhost:9966/test/integration/')
-        });
-
         const map = window.map = new mapboxgl.Map({
             container,
             style,
@@ -135,6 +136,10 @@
         if (options.showPadding) map.showPadding = true;
         if (options.collisionDebug) map.showCollisionBoxes = true;
         if (options.fadeDuration) map._isInitialLoad = false;
+        if (options.forceEmissiveFallback) {
+            map.painter._forceEmissiveMode = true;
+            map.painter.emissiveMode = 'mrt-fallback';
+        }
 
         map.repaint = true;
 
