@@ -29,9 +29,7 @@ const ResourceType = {
 
 export {ResourceType};
 
-if (typeof Object.freeze == 'function') {
-    Object.freeze(ResourceType);
-}
+Object.freeze(ResourceType);
 
 /**
  * A `RequestParameters` object to be returned from Map.options.transformRequest callbacks.
@@ -93,6 +91,10 @@ export class AJAXError extends Error {
     override toString(): string {
         return `${this.name}: ${this.message} (${this.status}): ${this.url}`;
     }
+}
+
+export function isHttpNotFound(err: Error): boolean {
+    return typeof err === 'object' && err !== null && 'status' in err && err.status === 404;
 }
 
 // Ensure that we're sending the correct referrer from blob URL worker bundles.
@@ -157,13 +159,11 @@ function makeFetchRequest(requestParameters: RequestParameters, callback: Respon
             } else {
                 return callback(new AJAXError(response.statusText, response.status, requestParameters.url));
             }
-        }).catch(error => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        }).catch((error: Error) => {
             if (error.name === 'AbortError') {
                 // silence expected AbortError
                 return;
             }
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             callback(new Error(`${error.message} ${requestParameters.url}`));
         });
     };
@@ -185,8 +185,7 @@ function makeFetchRequest(requestParameters: RequestParameters, callback: Respon
             }
             complete = true;
             callback(null, result, response.headers);
-        }).catch(err => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+        }).catch((err: Error) => {
             if (!aborted) callback(new Error(err.message));
         });
     };
@@ -229,8 +228,7 @@ function makeXMLHttpRequest(requestParameters: RequestParameters, callback: Resp
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                     data = JSON.parse(xhr.response);
                 } catch (err) {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-                    return callback(err);
+                    return callback(err as Error);
                 }
             }
             const headersObject = new Headers();
@@ -251,22 +249,11 @@ function makeXMLHttpRequest(requestParameters: RequestParameters, callback: Resp
 }
 
 export const makeRequest = function (requestParameters: RequestParameters, callback: ResponseCallback<unknown>): Cancelable {
-    // We're trying to use the Fetch API if possible. However, in some situations we can't use it:
-    // - Safari exposes AbortController, but it doesn't work actually abort any requests in
-    //   older versions (see https://bugs.webkit.org/show_bug.cgi?id=174980#c2). In this case,
-    //   we dispatch the request to the main thread so that we can get an accurate referrer header.
-    // - Requests for resources with the file:// URI scheme don't work with the Fetch API either. In
-    //   this case we unconditionally use XHR on the current thread since referrers don't matter.
-    if (!isFileURL(requestParameters.url)) {
-        if (self.fetch && self.Request && self.AbortController && Request.prototype.hasOwnProperty('signal')) {
-            return makeFetchRequest(requestParameters, callback);
-        }
-        if (isWorker(self) && self.worker.actor) {
-            const queueOnMainThread = true;
-            return self.worker.actor.send('getResource', requestParameters, callback, undefined, queueOnMainThread);
-        }
+    // file:// URLs don't work with the Fetch API, use XHR instead
+    if (isFileURL(requestParameters.url)) {
+        return makeXMLHttpRequest(requestParameters, callback);
     }
-    return makeXMLHttpRequest(requestParameters, callback);
+    return makeFetchRequest(requestParameters, callback);
 };
 
 export const getJSON = function (requestParameters: RequestParameters, callback: ResponseCallback<unknown>): Cancelable {
@@ -280,6 +267,29 @@ export const getArrayBuffer = function (
     return makeRequest(Object.assign(requestParameters, {type: 'arrayBuffer'}), callback);
 };
 
+export async function makeAsyncRequest<T>(
+    requestParameters: RequestParameters,
+    signal?: AbortSignal
+): Promise<T> {
+    if (signal && signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+    }
+
+    return new Promise((resolve, reject) => {
+        const cancelable = makeRequest(requestParameters, (err, data) => {
+            if (err) reject(err);
+            else resolve(data as T);
+        });
+
+        if (signal) {
+            signal.addEventListener('abort', () => {
+                cancelable.cancel();
+                reject(new DOMException('Aborted', 'AbortError'));
+            }, {once: true});
+        }
+    });
+}
+
 export const postData = function (requestParameters: RequestParameters, callback: ResponseCallback<string>): Cancelable {
     return makeRequest(Object.assign(requestParameters, {method: 'POST'}), callback);
 };
@@ -292,24 +302,6 @@ function sameOrigin(url: string) {
     const a: HTMLAnchorElement = document.createElement('a');
     a.href = url;
     return a.protocol === location.protocol && a.host === location.host;
-}
-
-const transparentPngUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQYV2NgAAIAAAUAAarVyFEAAAAASUVORK5CYII=';
-
-function arrayBufferToImage(data: ArrayBuffer, callback: Callback<HTMLImageElement>) {
-    const img: HTMLImageElement = new Image();
-    img.onload = () => {
-        callback(null, img);
-        URL.revokeObjectURL(img.src);
-        // prevent image dataURI memory leak in Safari;
-        // but don't free the image immediately because it might be uploaded in the next frame
-        // https://github.com/mapbox/mapbox-gl-js/issues/10226
-        img.onload = null;
-        requestAnimationFrame(() => { img.src = transparentPngUrl; });
-    };
-    img.onerror = () => callback(new Error('Could not load image. Please make sure to use a supported image type such as PNG or JPEG. Note that SVGs are not supported.'));
-    const blob: Blob = new Blob([new Uint8Array(data)], {type: 'image/png'});
-    img.src = data.byteLength ? URL.createObjectURL(blob) : transparentPngUrl;
 }
 
 function arrayBufferToImageBitmap(data: ArrayBuffer, callback: Callback<ImageBitmap>) {
@@ -331,7 +323,7 @@ resetImageRequestQueue();
 
 export const getImage = function (
     requestParameters: RequestParameters,
-    callback: ResponseCallback<HTMLImageElement | ImageBitmap>,
+    callback: ResponseCallback<ImageBitmap>,
 ): Cancelable {
     if (webpSupported.supported) {
         if (!requestParameters.headers) {
@@ -346,7 +338,6 @@ export const getImage = function (
             requestParameters,
             callback,
             cancelled: false,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             cancel() { this.cancelled = true; }
         };
         // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
@@ -383,11 +374,7 @@ export const getImage = function (
         if (err) {
             callback(err);
         } else if (data) {
-            if (self.createImageBitmap) {
-                arrayBufferToImageBitmap(data, (err, imgBitmap) => callback(err, imgBitmap, headers));
-            } else {
-                arrayBufferToImage(data, (err, img) => callback(err, img, headers));
-            }
+            arrayBufferToImageBitmap(data, (err, imgBitmap) => callback(err, imgBitmap, headers));
         }
     });
 

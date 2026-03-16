@@ -218,7 +218,7 @@ class StyleLayer extends Evented {
 
     possiblyEvaluateVisibility() {
         if (!this._unevaluatedLayout._values.visibility) {
-            // Early return for layers which don't have a visibility property, like clip-layer
+            // Early return for layers which don't have a visibility property.
             return;
         }
         // @ts-expect-error - TS2322 - Type 'unknown' is not assignable to type '"none" | "visible"'. | TS2345 - Argument of type '{ zoom: number; }' is not assignable to parameter of type 'EvaluationParameters'.
@@ -445,6 +445,10 @@ class StyleLayer extends Evented {
         return this._featureFilter.needFeature;
     }
 
+    dynamicFilterNeedsGeometry(): boolean {
+        return this._featureFilter.needGeometry;
+    }
+
     getLayerRenderingStats(): LayerRenderingStats | null | undefined {
         return this._stats;
     }
@@ -482,6 +486,7 @@ class StyleLayer extends Evented {
         _pixelPosMatrix: Float32Array,
         _elevationHelper: DEMSampler | null | undefined,
         _layoutVertexArrayOffset: number,
+        scope: string | undefined
         // @ts-expect-error - TS2355 - A function whose declared type is neither 'undefined', 'void', nor 'any' must return a value.
     ): boolean | number {}
 }

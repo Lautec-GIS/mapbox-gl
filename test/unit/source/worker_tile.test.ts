@@ -30,6 +30,15 @@ function createWrapper() {
     }]});
 }
 
+function createActor() {
+    return {
+        send: vi.fn((_, __, callback) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+            callback(null, {});
+        })
+    };
+}
+
 test('WorkerTile#parse', () => {
     const layerIndex = new StyleLayerIndex([{
         id: 'test',
@@ -38,7 +47,8 @@ test('WorkerTile#parse', () => {
     }]);
 
     const tile = createWorkerTile();
-    tile.parse(createWrapper(), layerIndex, [], [], {}, (err, result) => {
+    const actor = createActor();
+    tile.parse(createWrapper(), layerIndex, [], [], actor, (err, result) => {
         expect(err).toBeFalsy();
         expect(result.buckets[0]).toBeTruthy();
     });
@@ -53,7 +63,8 @@ test('WorkerTile#parse skips hidden layers', () => {
     }]);
 
     const tile = createWorkerTile();
-    tile.parse(createWrapper(), layerIndex, [], [], {}, (err, result) => {
+    const actor = createActor();
+    tile.parse(createWrapper(), layerIndex, [], [], actor, (err, result) => {
         expect(err).toBeFalsy();
         expect(result.buckets.length).toEqual(0);
     });
@@ -68,7 +79,8 @@ test('WorkerTile#parse skips layers without a corresponding source layer', () =>
     }]);
 
     const tile = createWorkerTile();
-    tile.parse({layers: {}}, layerIndex, [], [], {}, (err, result) => {
+    const actor = createActor();
+    tile.parse({layers: {}}, layerIndex, [], [], actor, (err, result) => {
         expect(err).toBeFalsy();
         expect(result.buckets.length).toEqual(0);
     });
@@ -93,7 +105,8 @@ test('WorkerTile#parse warns once when encountering a v1 vector tile layer', () 
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const tile = createWorkerTile();
-    tile.parse(data, layerIndex, [], [], {}, (err) => {
+    const actor = createActor();
+    tile.parse(data, layerIndex, [], [], actor, (err) => {
         expect(err).toBeFalsy();
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(console.warn.mock.calls[0][0]).toMatch(/does not use vector tile spec v2/);
@@ -117,9 +130,10 @@ test('WorkerTile#parse adds $localized property and filters features based on th
             isEmpty: () => false
         }));
 
+    const actor = createActor();
     // no worldview
     // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => createWorkerTile({worldview: null}).parse(vt, layerIndex, [], [], {}, resolve));
+    await new Promise((resolve) => createWorkerTile({worldview: null}).parse(vt, layerIndex, [], [], actor, resolve));
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const allFeatures = bucketPopulateSpy.mock.lastCall[0];
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -137,7 +151,7 @@ test('WorkerTile#parse adds $localized property and filters features based on th
 
     // worldview: 'US'
     // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => createWorkerTile({worldview: 'US', localizableLayerIds: new Set(['_geojsonTileLayer'])}).parse(vt, layerIndex, [], [], {}, resolve));
+    await new Promise((resolve) => createWorkerTile({worldview: 'US', localizableLayerIds: new Set(['_geojsonTileLayer'])}).parse(vt, layerIndex, [], [], actor, resolve));
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const usFeatures = bucketPopulateSpy.mock.lastCall[0];
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access

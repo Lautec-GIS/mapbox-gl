@@ -9,11 +9,11 @@ import browser from '../util/browser';
 import {OverscaledTileID} from './tile_id';
 import SourceFeatureState from './source_state';
 import {mercatorXfromLng} from '../geo/mercator_coordinate';
+import {isHttpNotFound} from '../util/ajax';
 
 import type {CanonicalTileID} from './tile_id';
 import type Context from '../gl/context';
 import type {vec3} from 'gl-matrix';
-import type {AJAXError} from '../util/ajax';
 import type {ISource, Source} from './source';
 import type {SourceSpecification} from '../style-spec/types';
 import type {Map as MapboxMap} from '../ui/map';
@@ -52,6 +52,8 @@ class SourceCache extends Evented {
     _maxTileCacheSize?: number;
     _paused: boolean;
     _isRaster: boolean;
+    _supportsFading: boolean;
+    _isRasterElevatedOverTerrain: boolean;
     _shouldReloadOnResume: boolean;
     _coveredTiles: Partial<Record<number | string, boolean>>;
     transform: Transform;
@@ -96,7 +98,7 @@ class SourceCache extends Evented {
 
         this._source = source;
         this._tiles = {};
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
         this._cache = new TileCache(0, this._unloadTile.bind(this));
         this._timers = {};
         this._cacheTimers = {};
@@ -109,11 +111,23 @@ class SourceCache extends Evented {
         this._coveredTiles = {};
         this._shadowCasterTiles = {};
         this._state = new SourceFeatureState();
+
+        // Sources that use tiled raster data
         this._isRaster =
             this._source.type === 'raster' ||
-            this._source.type === 'raster-dem' || this._source.type === 'raster-array' ||
-            // @ts-expect-error - TS2339 - Property '_dataType' does not exist on type 'VideoSource | ImageSource | CanvasSource | CustomSource<ImageBitmap | HTMLCanvasElement | HTMLImageElement | ImageData>'.
-            (this._source.type === 'custom' && this._source._dataType === 'raster');
+            this._source.type === 'raster-dem' ||
+            this._source.type === 'raster-array' ||
+            (this._source.type === 'custom' && '_dataType' in this._source && this._source._dataType === 'raster');
+
+        // Sources that use fade transitions between zoom levels
+        this._supportsFading =
+            this._source.type === 'raster' ||
+            this._source.type === 'raster-array' ||
+            this._source.type === 'image' ||
+            this._source.type === 'video' ||
+            this._source.type === 'custom';
+
+        this._isRasterElevatedOverTerrain = false;
     }
 
     onAdd(map: MapboxMap) {
@@ -257,17 +271,15 @@ class SourceCache extends Evented {
             tile.state = state;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this._loadTile(tile, this._tileLoaded.bind(this, tile, id, state));
     }
 
-    _tileLoaded(tile: Tile, id: number, previousState: TileState, err?: AJAXError | null, data?: LoadVectorTileResult | null) {
+    _tileLoaded(tile: Tile, id: number, previousState: TileState, err?: Error | null, data?: LoadVectorTileResult | null) {
         if (err) {
             tile.state = 'errored';
-            if (err.status !== 404) this._source.fire(new ErrorEvent(err, {tile}));
-            // If the requested tile is missing, try to load the parent tile
-            // to use it as an overscaled tile instead of the missing one.
-            else {
+            if (isHttpNotFound(err)) {
+                // If the requested tile is missing, try to load the parent tile
+                // to use it as an overscaled tile instead of the missing one.
                 // Fire a `data` event with an `error` source data type to trigger map render
                 this._source.fire(new Event('data', {dataType: 'source', sourceDataType: 'error', sourceId: this._source.id, tile}));
 
@@ -284,6 +296,8 @@ class SourceCache extends Evented {
                 } else {
                     this.update(this.transform);
                 }
+            } else {
+                this._source.fire(new ErrorEvent(err, {tile}));
             }
             return;
         }
@@ -585,15 +599,15 @@ class SourceCache extends Evented {
             });
 
             if (this._source.hasTile) {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
                 const hasTile = this._source.hasTile.bind(this._source);
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+
                 idealTileIDs = idealTileIDs.filter((coord) => hasTile(coord));
             }
         }
 
         if (idealTileIDs.length > 0 && this.transform.projection.name !== 'globe' &&
-            !this.usedForTerrain && !isRasterType(this._source.type)) {
+            !this.usedForTerrain && !this._supportsFading) {
             // compute desired max zoom level
             const coveringZoom = transform.coveringZoomLevel({
                 tileSize: tileSize || this._source.tileSize,
@@ -613,7 +627,11 @@ class SourceCache extends Evented {
                 }
             } else if (this.castsShadows && directionalLight) {
                 // find shadowCasterTiles
-                const shadowCasterTileIDs = transform.extendTileCover(idealTileIDs, idealZoom, directionalLight);
+                // Start adding shadow caster extra tiles on zoom 16 to reduce the number of tiles in zoom 15.
+                // With this we eliminate extra shadows requests on zoom 15 at the price of a small (tiny)
+                // visual deffect.
+                const SHADOWS_MIN_ZOOM_EXTRA_TILES = 16.0;
+                const shadowCasterTileIDs = transform.extendTileCover(idealTileIDs, idealZoom, directionalLight, SHADOWS_MIN_ZOOM_EXTRA_TILES);
                 for (const id of shadowCasterTileIDs) {
                     this._shadowCasterTiles[id.key] = true;
                     idealTileIDs.push(id);
@@ -626,16 +644,17 @@ class SourceCache extends Evented {
         // parent or child tiles that are *already* loaded.
         const retain = this._updateRetainedTiles(idealTileIDs);
 
-        if (isRasterType(this._source.type) && idealTileIDs.length !== 0) {
+        if (this._supportsFading && idealTileIDs.length !== 0) {
             const parentsForFading: Partial<Record<string | number, OverscaledTileID>> = {};
             const fadingTiles: Record<string, OverscaledTileID> = {};
+            const now = browser.now();
             const ids = Object.keys(retain);
             for (const id of ids) {
                 const tileID = retain[id];
                 assert(tileID.key === +id);
 
                 const tile = this._tiles[id];
-                if (!tile || (tile.fadeEndTime && tile.fadeEndTime <= browser.now())) continue;
+                if (!tile || (tile.fadeEndTime !== undefined && tile.fadeEndTime <= now)) continue;
 
                 // if the tile is loaded but still fading in, find parents to cross-fade with it
                 const parentTile = this.findLoadedParent(tileID, Math.max(tileID.overscaledZ - SourceCache.maxOverzooming, this._source.minzoom));
@@ -869,7 +888,6 @@ class SourceCache extends Evented {
                 new RasterArrayTile(tileID, size, this.transform.tileZoom, painter, this._isRaster) :
                 new Tile(tileID, size, this.transform.tileZoom, painter, this._isRaster, this._source.worldview);
 
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             this._loadTile(tile, this._tileLoaded.bind(this, tile, tileID.key, tile.state));
         }
 
@@ -1069,10 +1087,11 @@ class SourceCache extends Evented {
             return true;
         }
 
-        if (isRasterType(this._source.type)) {
+        if (this._supportsFading) {
+            const now = browser.now();
             for (const id in this._tiles) {
                 const tile = this._tiles[id];
-                if (tile.fadeEndTime !== undefined && tile.fadeEndTime >= browser.now()) {
+                if (tile.fadeEndTime !== undefined && tile.fadeEndTime >= now) {
                     return true;
                 }
             }
@@ -1199,10 +1218,6 @@ function compareTileId(a: OverscaledTileID, b: OverscaledTileID): number {
     const aWrap = Math.abs(a.wrap * 2) - +(a.wrap < 0);
     const bWrap = Math.abs(b.wrap * 2) - +(b.wrap < 0);
     return a.overscaledZ - b.overscaledZ || bWrap - aWrap || b.canonical.y - a.canonical.y || b.canonical.x - a.canonical.x;
-}
-
-function isRasterType(type: string): boolean {
-    return type === 'raster' || type === 'image' || type === 'video' || type === 'custom';
 }
 
 function tileBoundsX(id: CanonicalTileID, wrap: number): [number, number] {

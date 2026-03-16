@@ -10,7 +10,7 @@ import type Feature from '../util/vectortile_to_geojson';
 import type {FeatureFilter} from '../style-spec/feature_filter/index';
 import type {Map as MapboxMap} from './map';
 import type {FilterSpecification} from '../style-spec/types';
-import type {TargetDescriptor, FeaturesetDescriptor} from '../util/vectortile_to_geojson';
+import type {TargetDescriptor} from '../util/vectortile_to_geojson';
 import type {MapEvents, MapInteractionEventType, MapMouseEvent} from './events';
 
 /**
@@ -108,11 +108,11 @@ export class InteractionSet {
         this.delegatedInteractions = new Map();
         this.typeById = new Map(); // keep track of each id type for easy removal
         this.filters = new Map(); // cache compiled filter expressions for each interaction
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
         this.handleType = this.handleType.bind(this);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
         this.handleMove = this.handleMove.bind(this);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
         this.handleOut = this.handleOut.bind(this);
         this.hoveredFeatures = new Map();
         this.prevHoveredFeatures = new Map();

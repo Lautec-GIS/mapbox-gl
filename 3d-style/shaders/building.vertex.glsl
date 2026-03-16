@@ -35,7 +35,6 @@ uniform mat4 u_light_matrix_0;
 uniform mat4 u_light_matrix_1;
 out highp vec4 v_pos_light_view_0;
 out highp vec4 v_pos_light_view_1;
-out float v_depth_shadows;
 #endif
 
 #ifdef FLOOD_LIGHT
@@ -79,7 +78,7 @@ void main() {
     v_normal = vec3(u_normal_matrix * vec4(a_normal_3f, 0.0));
 
     float hidden = 0.0;
-    
+    float depth_offset = 0.0;
 #ifdef BUILDING_FAUX_FACADE
     v_faux_facade = a_faux_facade_data.x;
     if (v_faux_facade > 0.0) {
@@ -103,6 +102,9 @@ void main() {
 
         v_faux_color_emissive = decode_color(faux_facade_color_emissive);
         v_faux_color_emissive.rgb = sRGBToLinear(v_faux_color_emissive.rgb);
+
+        float height = a_centroid_3.z;
+        depth_offset = min(1000.0, height) * 0.0000002;
     }
 #endif
     v_pos = a_pos_3f;
@@ -122,7 +124,6 @@ void main() {
 #endif
     v_pos_light_view_0 = u_light_matrix_0 * vec4(shadow_pos, 1.0);
     v_pos_light_view_1 = u_light_matrix_1 * vec4(shadow_pos, 1.0);
-    v_depth_shadows = gl_Position.w;
 #endif
 
 #ifdef FOG
@@ -130,4 +131,5 @@ void main() {
 #endif
 
     gl_Position = mix(u_matrix * vec4(v_pos, 1), AWAY, hidden);
+    gl_Position.z -= depth_offset * gl_Position.w;
 }

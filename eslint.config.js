@@ -22,7 +22,7 @@ export default tseslint.config(
     ...config,
     tseslint.configs.recommendedTypeChecked,
     importX.flatConfigs.recommended,
-    jsdoc.configs['flat/recommended'],
+    jsdoc.configs['flat/recommended-typescript'],
 
     // Settings
     {
@@ -112,18 +112,6 @@ export default tseslint.config(
                     selector: 'ObjectExpression > SpreadElement',
                     message: 'Spread syntax is not allowed for object assignments. Use Object.assign() or other methods instead.',
                 }, {
-                    selector: 'AwaitExpression',
-                    message: 'Async/await syntax is not allowed.',
-                }, {
-                    selector: 'FunctionDeclaration[async=true]',
-                    message: 'Async function declarations are not allowed.',
-                }, {
-                    selector: 'FunctionExpression[async=true]',
-                    message: 'Async function expressions are not allowed.',
-                }, {
-                    selector: 'ArrowFunctionExpression[async=true]',
-                    message: 'Async arrow functions are not allowed.',
-                }, {
                     selector: 'ClassProperty[value]',
                     message: 'ClassProperty values are not allowed.',
                 }, {
@@ -132,6 +120,9 @@ export default tseslint.config(
                 }, {
                     selector: 'ChainExpression',
                     message: 'Optional chaining is now allowed.',
+                }, {
+                    selector: 'MemberExpression[object.type=\'MetaProperty\'][property.name=\'url\']',
+                    message: 'import.meta.url is not available in the UMD bundle.',
                 }
             ],
         }
@@ -145,6 +136,7 @@ export default tseslint.config(
             '@typescript-eslint/method-signature-style': 'error',
             '@typescript-eslint/consistent-type-exports': 'error',
             '@typescript-eslint/consistent-type-imports': 'error',
+            '@typescript-eslint/no-redundant-type-constituents': 'off',
             '@typescript-eslint/restrict-template-expressions': ['off', {
                 allowNever: true,
             }],
@@ -241,21 +233,18 @@ export default tseslint.config(
             // Disable JSDoc rules that are not relevant to public APIs.
             'jsdoc/check-alignment': 'off',
             'jsdoc/check-line-alignment': 'off',
-            'jsdoc/check-param-names': 'off',
             'jsdoc/multiline-blocks': 'off',
             'jsdoc/no-defaults': 'off',
-            'jsdoc/no-multi-asterisks': 'off',
             'jsdoc/no-types': 'off',
-            'jsdoc/require-description-complete-sentence': 'off',
             'jsdoc/require-jsdoc': 'off',
             'jsdoc/require-param-description': 'off',
-            'jsdoc/require-param-type': 'off',
             'jsdoc/require-param': 'off',
             'jsdoc/require-returns-check': 'off',
             'jsdoc/require-returns-description': 'off',
-            'jsdoc/require-returns-type': 'off',
             'jsdoc/require-returns': 'off',
             'jsdoc/tag-lines': 'off',
+            'jsdoc/reject-any-type': 'off',
+            'jsdoc/reject-function-type': 'off'
         }
     },
 
@@ -303,7 +292,9 @@ export default tseslint.config(
         files: [
             'test/**',
             'build/**',
-            'rollup.*'
+            'rollup.*',
+            'src/style-spec/test.js',
+            'src/style-spec/rollup.config.js',
         ],
 
         rules: {

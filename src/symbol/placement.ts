@@ -12,6 +12,7 @@ import ONE_EM from './one_em';
 import * as projection from './projection';
 import {getAnchorAlignment, WritingMode} from './shaping';
 import {evaluateVariableOffset, getAnchorJustification} from './symbol_layout';
+import toEvaluationFeature from '../data/evaluation_feature';
 import {evaluateSizeForFeature, evaluateSizeForZoom} from './symbol_size';
 import {Elevation} from '../terrain/elevation';
 
@@ -203,6 +204,7 @@ type ClippingData = {
     unwrappedTileID: UnwrappedTileID;
     dynamicFilter: FilterExpression;
     dynamicFilterNeedsFeature: boolean;
+    needGeometry: boolean;
 };
 
 type TileLayerParameters = {
@@ -252,6 +254,7 @@ export class Placement {
     };
     collisionGroups: CollisionGroups;
     prevPlacement: Placement | null | undefined;
+    lastReplacementSourceUpdateTime: number;
     zoomAtLastRecencyCheck: number;
     collisionCircleArrays: Partial<Record<number, CollisionCircleArray>>;
     buildingIndex: BuildingIndex | null | undefined;
@@ -277,6 +280,7 @@ export class Placement {
         }
 
         this.placedOrientations = {};
+        this.lastReplacementSourceUpdateTime = 0;
     }
 
     getBucketParts(results: Array<BucketPart>, styleLayer: TypedStyleLayer, tile: Tile, sortAcrossTiles: boolean, scaleFactor: number = 1) {
@@ -305,6 +309,7 @@ export class Placement {
 
         const dynamicFilter = styleLayer.dynamicFilter();
         const dynamicFilterNeedsFeature = styleLayer.dynamicFilterNeedsFeature();
+        const dynamicFilterNeedsGeometry = styleLayer.dynamicFilterNeedsGeometry();
         const pixelsToTiles = this.transform.calculatePixelsToTileUnitsMatrix(tile);
 
         const textLabelPlaneMatrix = projection.getLabelPlaneMatrixForPlacement(posMatrix,
@@ -338,7 +343,8 @@ export class Placement {
             clippingData = {
                 unwrappedTileID,
                 dynamicFilter,
-                dynamicFilterNeedsFeature
+                dynamicFilterNeedsFeature,
+                needGeometry: dynamicFilterNeedsGeometry
             };
         }
 
@@ -553,7 +559,7 @@ export class Placement {
 
                 const retainedQueryData = this.retainedQueryData[bucket.bucketInstanceId];
 
-                feature = latestFeatureIndex.loadFeature({
+                const vtFeature = latestFeatureIndex.loadFeature({
                     featureIndex: symbolInstance.featureIndex,
                     bucketIndex: retainedQueryData.bucketIndex,
                     sourceLayerIndex: retainedQueryData.sourceLayerIndex,
@@ -562,17 +568,23 @@ export class Placement {
 
                 // since we recreate the feature from raw tile data when there's a dynamic filter,
                 // we have to patch it with localization info again
-                const worldview = feature.properties ? feature.properties.worldview : null;
+                const worldview = vtFeature.properties ? vtFeature.properties.worldview : null;
                 if (bucket.localizable && bucket.worldview && typeof worldview === 'string') {
                     if (worldview === 'all') {
-                        feature.properties['$localized'] = true;
+                        vtFeature.properties['$localized'] = true;
                     } else if (worldview.split(',').includes(bucket.worldview)) {
-                        feature.properties['$localized'] = true;
-                        feature.properties['worldview'] = bucket.worldview;
+                        vtFeature.properties['$localized'] = true;
+                        vtFeature.properties['worldview'] = bucket.worldview;
                     } else {
                         return;
                     }
                 }
+
+                // If the dynamic filter contains geometry-dependent expressions (e.g. 'distance'),
+                // the raw VectorTileFeature won't have a 'geometry' property — only a loadGeometry()
+                // method — so EvaluationContext.geometry() would return null. Convert to an
+                // EvaluationFeature so the geometry is available as a plain property.
+                feature = (clippingData && clippingData.needGeometry) ? toEvaluationFeature(vtFeature, true) : vtFeature;
             }
 
             if (clippingData) {
@@ -1101,6 +1113,10 @@ export class Placement {
     }
 
     updateLayerOpacities(styleLayer: TypedStyleLayer, tiles: Array<Tile>, layerIndex: number, replacementSource?: ReplacementSource | null) {
+        if (replacementSource) {
+            this.lastReplacementSourceUpdateTime = replacementSource.updateTime;
+        }
+
         const seenCrossTileIDs = new Set();
         for (const tile of tiles) {
             const symbolBucket = tile.getBucket(styleLayer) as SymbolBucket;
@@ -1163,6 +1179,9 @@ export class Placement {
             bucket.updateReplacement(coord, replacementSource);
         }
 
+        // Reset clipped state for this bucket so stale entries from a previous frame are cleared.
+        this.collisionIndex.clearClippedSymbolsForBucket(bucket.bucketInstanceId);
+
         for (let s = 0; s < bucket.symbolInstances.length; s++) {
             const symbolInstance = bucket.symbolInstances.get(s);
             const {
@@ -1222,6 +1241,10 @@ export class Placement {
 
                     if (clippedSymbol) break;
                 }
+            }
+
+            if (clippedSymbol) {
+                this.collisionIndex.markSymbolAsClipped(bucket.bucketInstanceId, symbolInstance.featureIndex);
             }
 
             if (hasText) {
@@ -1387,8 +1410,7 @@ export class Placement {
     }
 
     hasTransitions(now: number): boolean {
-        return this.stale ||
-            now - this.lastPlacementChangeTime < this.fadeDuration;
+        return now - this.lastPlacementChangeTime < this.fadeDuration;
     }
 
     stillRecent(now: number, zoom: number): boolean {
@@ -1401,6 +1423,10 @@ export class Placement {
         this.zoomAtLastRecencyCheck = zoom;
 
         return this.commitTime + this.fadeDuration * durationAdjustment > now;
+    }
+
+    isStale(): boolean {
+        return this.stale;
     }
 
     setStale() {

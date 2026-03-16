@@ -57,6 +57,7 @@ import type {LineUniformsType, LinePatternUniformsType} from '../render/program/
 import type {CollisionUniformsType} from '../render/program/collision_program';
 import type {GlobeRasterUniformsType} from './globe_raster_program';
 import type {TerrainRasterUniformsType} from './terrain_raster_program';
+import type {RasterUniformsType} from '../render/program/raster_program';
 import type {
     FillExtrusionDepthUniformsType,
     FillExtrusionPatternUniformsType
@@ -96,12 +97,16 @@ type ElevationUniformsType =
     | HeatmapUniformsType
     | LinePatternUniformsType
     | LineUniformsType
+    | RasterUniformsType
     | SymbolUniformsType
     | TerrainRasterUniformsType;
 
 class MockSourceCache extends SourceCache {
     constructor(map: Map) {
-        const sourceSpec: SourceSpecification = {type: 'raster-dem', maxzoom: map.transform.maxZoom};
+        const sourceSpec: SourceSpecification = {
+            type: 'raster-dem',
+            maxzoom: Math.ceil(map.transform.maxZoom)
+        };
         const source = createSource('mock-dem', sourceSpec, map.style.dispatcher, map.style);
 
         super('mock-dem', source, false);
@@ -136,7 +141,7 @@ class ProxySourceCache extends SourceCache {
 
         const source = createSource('proxy', {
             type: 'geojson',
-            maxzoom: map.transform.maxZoom
+            maxzoom: Math.ceil(map.transform.maxZoom)
         }, map.style.dispatcher, map.style);
 
         super('proxy', source, false);
@@ -353,7 +358,7 @@ export class Terrain extends Elevation {
     }
 
     set style(style: Style) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
         style.on('data', this._onStyleDataEvent.bind(this));
         this._style = style;
         this._style.map.on('moveend', () => {
@@ -637,7 +642,7 @@ export class Terrain extends Elevation {
             this._setupProxiedCoordsForOrtho(sourceCache, sourcesCoords[fqid], previousProxyToSource);
             if (sourceCache.usedForTerrain) continue;
             const coordinates = sourcesCoords[fqid];
-            if (sourceCache.getSource().reparseOverscaled) {
+            if (sourceCache.getSource().reparseOverscaled || sourceCache._isRasterElevatedOverTerrain) {
                 // Do this for layers that are not rasterized to proxy tile.
                 this._assignTerrainTiles(coordinates);
             }

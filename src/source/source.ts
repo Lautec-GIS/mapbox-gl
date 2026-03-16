@@ -22,6 +22,7 @@ import type {Callback} from '../types/callback';
 import type {MapEvents} from '../ui/events';
 import type {SourceSpecification} from '../style-spec/types';
 import type {CustomSourceInterface} from '../source/custom_source';
+import type {CanvasSourceSpecification} from '../source/canvas_source';
 
 export type {Source};
 
@@ -150,7 +151,7 @@ export type SourceType = keyof typeof sourceTypes;
  */
 export const create = function (
     id: string,
-    specification: SourceSpecification | CustomSourceInterface<unknown>,
+    specification: SourceSpecification | CanvasSourceSpecification | CustomSourceInterface<unknown>,
     dispatcher: Dispatcher,
     eventedParent: Evented,
 ): Source {

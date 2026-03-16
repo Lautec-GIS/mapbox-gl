@@ -3,8 +3,9 @@ import {
     LineExtLayoutArray,
     LinePatternLayoutArray,
     LineZOffsetExtArray,
+    LineElevationGroundScaleArray,
 } from '../array_types';
-import {members as layoutAttributes, lineZOffsetAttributes} from './line_attributes';
+import {members as layoutAttributes, lineZOffsetAttributes, lineElevationGroundScaleAttributes} from './line_attributes';
 import {members as layoutAttributesExt} from './line_attributes_ext';
 import {members as layoutAttributesPattern} from './line_attributes_pattern';
 import SegmentVector from '../segment';
@@ -85,6 +86,11 @@ const COS_STRAIGHT_CORNER = Math.cos(5 * (Math.PI / 180));
 // Angle per triangle for approximating round line joins.
 const DEG_PER_TRIANGLE = 20;
 
+// Multiplier for sharpCornerOffset to determine the threshold distance where
+// cap scaling begins for elevated bevel joins. Caps are scaled down linearly
+// when segment length is below this threshold to prevent overlap artifacts.
+const CAP_SCALE_THRESHOLD_FACTOR = 4.0;
+
 type LineClips = {
     start: number;
     end: number;
@@ -99,6 +105,7 @@ type GradientTexture = {
 type LineProgressFeatures = {
     zOffset: number;
     variableWidth: number;
+    elevationGroundScale: number;
 };
 
 interface Subsegment {
@@ -121,12 +128,14 @@ class LineBucket implements Bucket {
     lineClips: LineClips | null | undefined;
     zOffsetValue: PossiblyEvaluatedValue<number>;
     variableWidthValue: PossiblyEvaluatedValue<number>;
+    elevationGroundScaleValue: PossiblyEvaluatedValue<number>;
     lineFeature: BucketFeature;
 
     e1: number;
     e2: number;
 
     patternJoinNone: boolean;
+    currentLineJoinType: string;
     segmentStart: number;
     segmentStartf32: number;
     segmentPoints: Array<number>;
@@ -155,6 +164,9 @@ class LineBucket implements Bucket {
     zOffsetVertexArray: LineZOffsetExtArray;
     zOffsetVertexBuffer: VertexBuffer;
 
+    elevationGroundScaleVertexArray: LineElevationGroundScaleArray;
+    elevationGroundScaleVertexBuffer: VertexBuffer;
+
     indexArray: TriangleIndexArray;
     indexBuffer: IndexBuffer;
 
@@ -172,6 +184,7 @@ class LineBucket implements Bucket {
     evaluationGlobals = {'zoom': 0, 'lineProgress': undefined};
 
     elevationType: ElevationType = 'none';
+    isSeaLevelReference: boolean = false;
     heightRange: Range | undefined;
 
     worldview: string;
@@ -203,6 +216,7 @@ class LineBucket implements Bucket {
         this.segments = new SegmentVector();
         this.maxLineLength = 0;
         this.zOffsetVertexArray = new LineZOffsetExtArray();
+        this.elevationGroundScaleVertexArray = new LineElevationGroundScaleArray();
         this.stateDependentLayerIds = this.layers.filter((l) => l.isStateDependent()).map((l) => l.id);
         // A vector tile is usually rendered over 128x128 terrain grid. Half of that frequency (step is EXTENT / 64)
         // should be enough since line elevation over terrain samples neighboring points.
@@ -238,6 +252,7 @@ class LineBucket implements Bucket {
             if (this.elevationType === 'offset' && elevationReference === 'none') {
                 warnOnce(`line-elevation-reference: ground is used for the layer ${this.layerIds[0]} because non-zero line-z-offset value was found.`);
             }
+            this.isSeaLevelReference = elevationReference === 'sea';
         }
 
         const crossSlope = this.layers[0].layout.get('line-cross-slope');
@@ -366,7 +381,7 @@ class LineBucket implements Bucket {
 
     }
 
-    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: ReadonlyArray<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null, worldview?: string) {
+    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: ReadonlyArray<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null, canonical?: CanonicalTileID, worldview?: string) {
         this.programConfigurations.updatePaintArrays(states, vtLayer, layers, availableImages, imagePositions, isBrightnessChanged, brightness, worldview);
     }
 
@@ -397,6 +412,10 @@ class LineBucket implements Bucket {
                 this.zOffsetVertexBuffer = context.createVertexBuffer(this.zOffsetVertexArray, lineZOffsetAttributes.members, true);
             }
 
+            if (!this.elevationGroundScaleVertexBuffer && this.elevationGroundScaleVertexArray.length > 0) {
+                this.elevationGroundScaleVertexBuffer = context.createVertexBuffer(this.elevationGroundScaleVertexArray, lineElevationGroundScaleAttributes.members, true);
+            }
+
             this.layoutVertexBuffer = context.createVertexBuffer(this.layoutVertexArray, layoutAttributes);
             this.indexBuffer = context.createIndexBuffer(this.indexArray);
         }
@@ -408,6 +427,9 @@ class LineBucket implements Bucket {
         if (!this.layoutVertexBuffer) return;
         if (this.zOffsetVertexBuffer) {
             this.zOffsetVertexBuffer.destroy();
+        }
+        if (this.elevationGroundScaleVertexBuffer) {
+            this.elevationGroundScaleVertexBuffer.destroy();
         }
         this.layoutVertexBuffer.destroy();
         this.indexBuffer.destroy();
@@ -453,6 +475,14 @@ class LineBucket implements Bucket {
         const lineWidth = paint.get('line-width').value;
         if (lineWidth.kind !== 'constant' && lineWidth.isLineProgressConstant === false) {
             this.variableWidthValue = lineWidth;
+        }
+
+        // Only set elevationGroundScaleValue for sea level reference lines with non-default value
+        if (this.isSeaLevelReference) {
+            const elevationGroundScaleExpr = layout.get('line-elevation-ground-scale').value;
+            if (elevationGroundScaleExpr.kind !== 'constant' || elevationGroundScaleExpr.value !== 0) {
+                this.elevationGroundScaleValue = elevationGroundScaleExpr;
+            }
         }
 
         if (this.elevationType === 'road') {
@@ -606,6 +636,7 @@ class LineBucket implements Bucket {
 
         const joinNone = join === 'none';
         this.patternJoinNone = this.hasPattern && joinNone;
+        this.currentLineJoinType = join;
         this.segmentStart = 0;
         this.segmentStartf32 = 0;
         this.segmentPoints = [];
@@ -882,12 +913,28 @@ class LineBucket implements Bucket {
                 this.addCurrentVertex(currentVertex, joinNormal.mult(-1), 0, 0, segment, lineProgressFeatures);
 
             } else if (currentJoin === 'bevel' || currentJoin === 'fakeround') {
-                if (lineProgressFeatures != null && prevVertex) {
-                    // Close previous segment with butt
-                    this.addCurrentVertex(currentVertex, endNormal ? endNormal : prevNormal, -1, -1, segment, lineProgressFeatures);
+                const dist = currentVertex.dist(prevVertex);
+
+                // Special handling for elevated bevel joins only
+                const isElevatedBevel = this.elevationType === 'offset' &&
+                                       currentJoin === 'bevel' &&
+                                       this.currentLineJoinType !== 'round' &&
+                                       !this.patternJoinNone;
+
+                // For elevated bevel joins at close corners, scale down rotation to prevent overlap
+                let capScale = 1.0;
+                if (isElevatedBevel && lineProgressFeatures != null && prevVertex && nextVertex) {
+                    const widthThreshold = CAP_SCALE_THRESHOLD_FACTOR * sharpCornerOffset;
+                    if (dist < widthThreshold) {
+                        capScale = Math.max(0.0, dist / widthThreshold);
+                    }
                 }
 
-                const dist = currentVertex.dist(prevVertex);
+                if (lineProgressFeatures != null && prevVertex) {
+                    // Close previous segment with butt
+                    this.addCurrentVertex(currentVertex, endNormal ? endNormal : prevNormal, -capScale, -capScale, segment, lineProgressFeatures);
+                }
+
                 const skipStraightEdges = dist <= 2 * sharpCornerOffset && currentJoin !== 'bevel';
                 const join = joinNormal.mult(lineTurnsLeft ? 1.0 : -1.0);
                 join._mult(miterLength);
@@ -937,7 +984,7 @@ class LineBucket implements Bucket {
 
                 if (lineProgressFeatures != null && nextVertex) {
                     // Start next segment with a butt
-                    this.addCurrentVertex(currentVertex, startNormal ? startNormal : nextNormal, 1, 1, segment, lineProgressFeatures);
+                    this.addCurrentVertex(currentVertex, startNormal ? startNormal : nextNormal, capScale, capScale, segment, lineProgressFeatures);
                 }
             } else if (currentJoin === 'butt') {
                 this.addCurrentVertex(currentVertex, joinNormal, 0, 0, segment, lineProgressFeatures); // butt cap
@@ -998,6 +1045,21 @@ class LineBucket implements Bucket {
             const stepY = (to.y - from.y) / steps;
             const stepZ = (to.z - from.z) / steps;
             const stepW = (to.w - from.w) / steps;
+
+            // Calculate perpendicular normal directly from segment direction for interior vertices
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            // Degenerate segment, skip tessellation
+            if (len === 0) return;
+
+            const perpX = -dy / len;
+            const perpY = dx / len;
+            const interiorLeftX = perpX;
+            const interiorLeftY = perpY;
+            const interiorRightX = -perpX;
+            const interiorRightY = -perpY;
+
             for (let i = 1; i < steps; ++i) {
                 from.x += stepX;
                 from.y += stepY;
@@ -1006,13 +1068,15 @@ class LineBucket implements Bucket {
                 stepsDistance += stepW;
                 const lpf = this.evaluateLineProgressFeatures(this.prevDistance + stepsDistance);
                 this.scaledDistance = (this.prevDistance + stepsDistance) / this.totalDistance;
-                this.addHalfVertex(from, leftX, leftY, round, false, endLeft, segment, lpf);
-                this.addHalfVertex(from, rightX, rightY, round, true, -endRight, segment, lpf);
+                // Use perpendicular extrusion for interior vertices
+                this.addHalfVertex(from, interiorLeftX, interiorLeftY, round, false, 0, segment, lpf);
+                this.addHalfVertex(from, interiorRightX, interiorRightY, round, true, 0, segment, lpf);
             }
         }
         this.lineSoFar = to.w;
         this.scaledDistance = scaledDistance;
         const lpf = this.evaluateLineProgressFeatures(this.distance);
+
         this.addHalfVertex(to, leftX, leftY, round, false, endLeft, segment, lpf);
         this.addHalfVertex(to, rightX, rightY, round, true, -endRight, segment, lpf);
     }
@@ -1032,14 +1096,25 @@ class LineBucket implements Bucket {
         if (this.variableWidthValue && this.variableWidthValue.kind !== 'constant') {
             variableWidth = this.variableWidthValue.evaluate(this.evaluationGlobals, this.lineFeature) || 0.0;
         }
+        const elevationGroundScale = this.evaluateElevationGroundScale();
         if (this.elevationType !== 'offset') {
-            return {zOffset: 0.0, variableWidth};
+            return {zOffset: 0.0, variableWidth, elevationGroundScale};
         }
         if (this.zOffsetValue.kind === 'constant') {
-            return {zOffset: this.zOffsetValue.value, variableWidth};
+            return {zOffset: this.zOffsetValue.value, variableWidth, elevationGroundScale};
         }
         const zOffset: number = this.zOffsetValue.evaluate(this.evaluationGlobals, this.lineFeature) || 0.0;
-        return {zOffset, variableWidth};
+        return {zOffset, variableWidth, elevationGroundScale};
+    }
+
+    evaluateElevationGroundScale(): number {
+        if (!this.elevationGroundScaleValue) {
+            return 0.0;
+        }
+        if (this.elevationGroundScaleValue.kind === 'constant') {
+            return this.elevationGroundScaleValue.value;
+        }
+        return this.elevationGroundScaleValue.evaluate(this.evaluationGlobals, this.lineFeature) || 0.0;
     }
 
     /**
@@ -1062,8 +1137,9 @@ class LineBucket implements Bucket {
 
         if (lineProgressFeatures != null) {
             const dropOutOfBounds = this.elevationType === 'offset';
-            const boundsMin = -10;
-            const boundsMax = EXTENT + 10;
+            const clipMargin = this.elevationType === 'offset' ? 2 : 10;
+            const boundsMin = -clipMargin;
+            const boundsMax = EXTENT + clipMargin;
             const zOffset = lineProgressFeatures.zOffset;
             const vertex = new Point4D(p.x, p.y, zOffset, this.lineSoFar);
             // tesellated chunks outside tile borders are not added.
@@ -1183,6 +1259,11 @@ class LineBucket implements Bucket {
                 lineProgressFeatures.variableWidth,
                 lineProgressFeatures.variableWidth
             );
+        }
+        // Populate elevationGroundScaleVertexArray only when the property is used
+        if (this.elevationGroundScaleValue) {
+            const elevationGroundScale = lineProgressFeatures ? lineProgressFeatures.elevationGroundScale : this.evaluateElevationGroundScale();
+            this.elevationGroundScaleVertexArray.emplaceBack(elevationGroundScale);
         }
         assert(this.zOffsetVertexArray.length === this.layoutVertexArray.length || this.elevationType !== 'offset');
     }

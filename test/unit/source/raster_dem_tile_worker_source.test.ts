@@ -2,12 +2,11 @@
 // @ts-nocheck
 import {describe, test, expect} from '../../util/vitest';
 import RasterDEMTileWorkerSource from '../../../src/source/raster_dem_tile_worker_source';
-import StyleLayerIndex from '../../../src/style/style_layer_index';
 import DEMData from '../../../src/data/dem_data';
 
 describe('loadTile', () => {
     test('loads DEM tile', () => {
-        const source = new RasterDEMTileWorkerSource(null, new StyleLayerIndex());
+        const source = new RasterDEMTileWorkerSource();
 
         source.loadTile({
             source: 'source',

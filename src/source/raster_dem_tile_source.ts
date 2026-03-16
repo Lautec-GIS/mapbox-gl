@@ -13,7 +13,6 @@ import type DEMData from '../data/dem_data';
 import type Dispatcher from '../util/dispatcher';
 import type Tile from './tile';
 import type {Callback} from '../types/callback';
-import type {TextureImage} from '../render/texture';
 import type {RasterDEMSourceSpecification} from '../style-spec/types';
 import type {WorkerSourceDEMTileRequest} from './worker_source';
 
@@ -30,12 +29,13 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
 
     override loadTile(tile: Tile, callback: Callback<undefined>) {
         const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), false, this.tileSize);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
         tile.request = getImage(this.map._requestManager.transformRequest(url, ResourceType.Tile), imageLoaded.bind(this));
 
         function imageLoaded(
+            this: RasterDEMTileSource,
             err?: Error | null,
-            img?: TextureImage | null,
+            img?: ImageBitmap | null,
             responseHeaders?: Headers,
         ) {
             delete tile.request;
@@ -47,9 +47,8 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
                 callback(err);
             } else if (img) {
                 const expiryData = getExpiryDataFromHeaders(responseHeaders);
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 if (this.map._refreshExpiredTiles) tile.setExpiryData(expiryData);
-                const transfer = ImageBitmap && img instanceof ImageBitmap && offscreenCanvasSupported();
+                const transfer = offscreenCanvasSupported();
                 // DEMData uses 1px padding. Handle cases with image buffer of 1 and 2 pxs, the rest assume default buffer 0
                 // in order to keep the previous implementation working (no validation against tileSize).
                 const buffer = (img.width - prevPowerOfTwo(img.width)) / 2;
@@ -57,37 +56,30 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
                 const padding = 1 - buffer;
                 const borderReady = padding < 1;
                 if (!borderReady && !tile.neighboringTiles) {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     tile.neighboringTiles = this._getNeighboringTiles(tile.tileID);
                 }
 
-                // @ts-expect-error - TS2345 - Argument of type 'TextureImage' is not assignable to parameter of type 'CanvasImageSource'.
                 const rawImageData = transfer ? img : browser.getImageData(img, padding);
                 const params: WorkerSourceDEMTileRequest = {
                     uid: tile.uid,
                     tileID: tile.tileID,
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     source: this.id,
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     type: this.type,
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     scope: this.scope,
                     rawImageData,
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                     encoding: this.encoding,
                     padding
                 };
 
                 if (!tile.actor || tile.state === 'expired') {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     tile.actor = this.dispatcher.getActor();
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
                     tile.actor.send('loadTile', params, done.bind(this), undefined, true);
                 }
             }
         }
 
-        function done(err?: Error | null, dem?: DEMData | null) {
+        function done(this: RasterDEMTileSource, err?: Error | null, dem?: DEMData | null) {
             if (err) {
                 tile.state = 'errored';
                 callback(err);

@@ -253,6 +253,10 @@ export const operationHandlers = {
     showCollisionBoxes(map, params, doneCb) {
         map.showCollisionBoxes = true;
         doneCb();
+    },
+    setLayerProperty(map, params, doneCb) {
+        map.setLayerProperty(...params);
+        waitForRender(map, () => map.loaded(), doneCb);
     }
 };
 

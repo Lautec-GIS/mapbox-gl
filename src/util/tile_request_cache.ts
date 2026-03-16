@@ -47,26 +47,6 @@ export function cacheClose() {
     sharedCache = undefined;
 }
 
-let responseConstructorSupportsReadableStream;
-function prepareBody(response: Response, callback: (body?: Blob | ReadableStream | null) => void) {
-    if (responseConstructorSupportsReadableStream === undefined) {
-        try {
-            new Response(new ReadableStream());
-            responseConstructorSupportsReadableStream = true;
-        } catch (e) {
-            // Edge
-            responseConstructorSupportsReadableStream = false;
-        }
-    }
-
-    if (responseConstructorSupportsReadableStream) {
-        callback(response.body);
-    } else {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
-        response.blob().then(callback).catch(e => warnOnce(e.message));
-    }
-}
-
 // https://fetch.spec.whatwg.org/#null-body-status
 function isNullBodyStatus(status: Response["status"]): boolean {
     if (status === 200 || status === 404) {
@@ -80,7 +60,7 @@ export function cachePut(request: Request, response: Response, requestTime: numb
     cacheOpen();
     if (sharedCache == null) return;
 
-    const cacheControl = parseCacheControl(response.headers.get('Cache-Control') || '');
+    const cacheControl = parseCacheControl(response.headers.get('cache-control') || '');
     if (cacheControl['no-store']) return;
 
     const options: ResponseOptions = {
@@ -95,7 +75,7 @@ export function cachePut(request: Request, response: Response, requestTime: numb
         options.headers.set('Expires', new Date(requestTime + cacheControl['max-age'] * 1000).toUTCString());
     }
 
-    const expires = options.headers.get('Expires');
+    const expires = options.headers.get('expires');
     if (!expires) return;
 
     const timeUntilExpiry = new Date(expires).getTime() - requestTime;
@@ -112,16 +92,13 @@ export function cachePut(request: Request, response: Response, requestTime: numb
         strippedURL = setQueryParameters(strippedURL, {range});
     }
 
-    prepareBody(response, body => {
-        const clonedResponse = new Response(isNullBodyStatus(response.status) ? null : body, options);
+    const clonedResponse = new Response(isNullBodyStatus(response.status) ? null : response.body, options);
 
-        cacheOpen();
-        if (sharedCache == null) return;
-        sharedCache
-            .then(cache => cache.put(strippedURL, clonedResponse))
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
-            .catch(e => warnOnce(e.message));
-    });
+    cacheOpen();
+    if (sharedCache == null) return;
+    sharedCache
+        .then(cache => cache.put(strippedURL, clonedResponse))
+        .catch((e: Error) => warnOnce(e.message));
 }
 
 export function cacheGet(
@@ -160,8 +137,8 @@ export function cacheGet(
 
 function isFresh(response: Response) {
     if (!response) return false;
-    const expires = new Date(response.headers.get('Expires') || 0);
-    const cacheControl = parseCacheControl(response.headers.get('Cache-Control') || '');
+    const expires = new Date(response.headers.get('expires') || 0);
+    const cacheControl = parseCacheControl(response.headers.get('cache-control') || '');
     return Number(expires) > Date.now() && !cacheControl['no-cache'];
 }
 
@@ -191,14 +168,11 @@ export function enforceCacheSizeLimit(limit: number) {
         .then(cache => {
             cache.keys().then(keys => {
                 for (let i = 0; i < keys.length - limit; i++) {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
-                    cache.delete(keys[i]).catch(e => warnOnce(e.message));
+                    cache.delete(keys[i]).catch((e: Error) => warnOnce(e.message));
                 }
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
-            }).catch(e => warnOnce(e.message));
+            }).catch((e: Error) => warnOnce(e.message));
         })
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
-        .catch(e => warnOnce(e.message));
+        .catch((e: Error) => warnOnce(e.message));
 }
 
 export function clearTileCache(callback?: (err?: Error | null) => void) {

@@ -5,7 +5,7 @@ import type {Icon} from '../data/usvg/usvg_pb_decoder';
 export type StyleImageData = {
     data?: RGBAImage;
     icon?: Icon;
-    version: number;
+    version?: number;
     hasRenderCallback?: boolean;
     userImage?: StyleImageInterface;
 };

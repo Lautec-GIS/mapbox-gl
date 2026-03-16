@@ -214,6 +214,7 @@ class Transform {
     _pixelsPerMercatorPixel: number;
     _nearZ: number;
     _farZ: number;
+    _nearClipOffset: number;
     _mercatorScaleRatio: number;
     _isCameraConstrained: boolean;
 
@@ -243,6 +244,7 @@ class Transform {
         this._pitch = 0;
         this._nearZ = 0;
         this._farZ = 0;
+        this._nearClipOffset = 0;
         this._unmodified = true;
         this._edgeInsets = new EdgeInsets();
         this._projMatrixCache = {};
@@ -286,6 +288,7 @@ class Transform {
         clone._pitch = this._pitch;
         clone._nearZ = this._nearZ;
         clone._farZ = this._farZ;
+        clone._nearClipOffset = this._nearClipOffset;
         clone._averageElevation = this._averageElevation;
         clone._orthographicProjectionAtLowPitch = this._orthographicProjectionAtLowPitch;
         clone._unmodified = this._unmodified;
@@ -308,6 +311,16 @@ class Transform {
         this._updateCameraOnTerrain();
         this._calcMatrices();
     }
+
+    get nearClipOffset(): number {
+        return this._nearClipOffset;
+    }
+
+    set nearClipOffset(offset: number) {
+        this._nearClipOffset = offset;
+        this._calcMatrices();
+    }
+
     get depthOcclusionForSymbolsAndCircles(): boolean {
         return this.projection.name !== 'globe' && !this.isOrthographic;
     }
@@ -655,6 +668,25 @@ class Transform {
         this._calcMatrices();
     }
 
+    equals(transform: Transform): boolean {
+        const lastElevation = this.elevation;
+        const newElevation = transform.elevation;
+        const elevationChanged = (lastElevation != null) !== (newElevation != null) ||
+                                 (lastElevation && newElevation && lastElevation.exaggeration() !== newElevation.exaggeration());
+
+        return this.width === transform.width &&
+               this.height === transform.height &&
+               this.center.lng === transform.center.lng &&
+               this.center.lat === transform.center.lat &&
+               this.zoom === transform.zoom &&
+               this.bearing === transform.bearing &&
+               this.pitch === transform.pitch &&
+               this.fov === transform.fov &&
+               this.projection.name === transform.projection.name &&
+               this._edgeInsets.equals(transform.padding) &&
+               !elevationChanged;
+    }
+
     /**
      * Computes a zoom value relative to a map plane that goes through the provided mercator position.
      *
@@ -861,7 +893,7 @@ class Transform {
      * @param {vec3} direction direction unit vector, if undefined quadrant visibility information is used
      * @returns {Array<OverscaledTileID>} a set of extension tiles
      */
-    extendTileCover(coveringTiles: Array<OverscaledTileID>, maxZoom: number, direction?: vec3): Array<OverscaledTileID> {
+    extendTileCover(coveringTiles: Array<OverscaledTileID>, maxZoom: number, direction?: vec3, minZoom?: number): Array<OverscaledTileID> {
         let out: OverscaledTileID[] = [];
         const extendDirection = direction != null;
         const extendQuadrants = !extendDirection;
@@ -882,6 +914,9 @@ class Transform {
 
             // Skip if not at the specified zoom level
             if (extendQuadrants && id.canonical.z !== maxZoom) continue;
+
+            // Skip shadow tiles below minimum zoom level
+            if (extendDirection && minZoom !== undefined && minZoom > id.canonical.z) continue;
 
             const tileId = id.canonical;
             const overscaledZ = id.overscaledZ;
@@ -2385,7 +2420,7 @@ class Transform {
             top += offset.y;
             bottom += offset.y;
 
-            cameraToClip = this._camera.getCameraToClipOrthographic(left, right, bottom, top, this._nearZ, this._farZ);
+            cameraToClip = this._camera.getCameraToClipOrthographic(left, right, bottom, top, this._nearZ + this._nearClipOffset, this._farZ);
 
             const mixValue =
                 this.pitch >= OrthographicPitchTranstionValue ? 1.0 : this.pitch / OrthographicPitchTranstionValue;

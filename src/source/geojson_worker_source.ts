@@ -10,18 +10,15 @@ import VectorTileWorkerSource from './vector_tile_worker_source';
 import {createExpression} from '../style-spec/expression/index';
 
 import type {
+    WorkerSourceOptions,
     WorkerSourceVectorTileRequest,
     WorkerSourceVectorTileCallback,
 } from '../source/worker_source';
-import type Actor from '../util/actor';
-import type StyleLayerIndex from '../style/style_layer_index';
 import type {Feature} from './geojson_wrapper';
 import type {Feature as ExpressionFeature} from '../style-spec/expression/index';
 import type {LoadVectorDataCallback} from './load_vector_tile';
 import type {RequestParameters, ResponseCallback} from '../util/ajax';
 import type {Callback} from '../types/callback';
-import type {ImageId} from '../style-spec/expression/types/image_id';
-import type {StyleModelMap} from '../style/style_mode';
 
 export type GeoJSONWorkerOptions = {
     source: string;
@@ -49,8 +46,6 @@ type ResourceTiming = Record<string, PerformanceResourceTiming[]>;
 
 export type LoadGeoJSONResult = FeatureCollectionOrFeature & {resourceTiming?: ResourceTiming};
 
-export type LoadGeoJSON = (params: LoadGeoJSONParameters, callback: ResponseCallback<LoadGeoJSONResult>) => void;
-
 export interface GeoJSONIndex {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getTile: (z: number, x: number, y: number) => any;
@@ -60,16 +55,15 @@ export interface GeoJSONIndex {
     getLeaves?: (clusterId: number, limit: number, offset: number) => Array<GeoJSON.Feature>;
 }
 
-function loadGeoJSONTile(params: WorkerSourceVectorTileRequest, callback: LoadVectorDataCallback): undefined {
+function loadGeoJSONTile(this: GeoJSONWorkerSource, params: WorkerSourceVectorTileRequest, callback: LoadVectorDataCallback): undefined {
     const canonical = params.tileID.canonical;
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (!this._geoJSONIndex) {
         callback(null, null); // we couldn't load the file
         return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const geoJSONTile = this._geoJSONIndex.getTile(canonical.z, canonical.x, canonical.y);
     if (!geoJSONTile) {
         callback(null, null); // nothing in the given tile
@@ -112,9 +106,7 @@ function loadGeoJSONTile(params: WorkerSourceVectorTileRequest, callback: LoadVe
  * The {@link WorkerSource} implementation that supports {@link GeoJSONSource}.
  * This class is designed to be easily reused to support custom source types
  * for data formats that can be parsed/converted into an in-memory GeoJSON
- * representation.  To do so, create it with
- * `new GeoJSONWorkerSource(actor, layerIndex, customLoadGeoJSONFunction)`.
- * For a full example, see [mapbox-gl-topojson](https://github.com/developmentseed/mapbox-gl-topojson).
+ * representation.
  *
  * @private
  */
@@ -123,16 +115,11 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
     _dynamicIndex: GeoJSONRT;
 
     /**
-     * @param [loadGeoJSON] Optional method for custom loading/parsing of
-     * GeoJSON based on parameters passed from the main-thread Source.
-     * See {@link GeoJSONWorkerSource#loadGeoJSON}.
      * @private
      */
-    constructor(actor: Actor, layerIndex: StyleLayerIndex, availableImages: ImageId[], availableModels: StyleModelMap, isSpriteLoaded: boolean, loadGeoJSON?: LoadGeoJSON | null, brightness?: number | null) {
-        super(actor, layerIndex, availableImages, availableModels, isSpriteLoaded, loadGeoJSONTile, brightness);
-        if (loadGeoJSON) {
-            this.loadGeoJSON = loadGeoJSON;
-        }
+    constructor(options: WorkerSourceOptions) {
+        super(options);
+        this.loadVectorData = loadGeoJSONTile;
         this._dynamicIndex = new GeoJSONRT();
     }
 
@@ -200,8 +187,7 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
                         geojsonvt(data, params.geojsonVtOptions);
 
                 } catch (err) {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-                    return callback(err);
+                    return callback(err as Error);
                 }
 
                 const result: {resourceTiming?: ResourceTiming} = {};
@@ -243,15 +229,11 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
     }
 
     /**
-     * Fetch and parse GeoJSON according to the given params.  Calls `callback`
-     * with `(err, data)`, where `data` is a parsed GeoJSON object.
+     * Fetch and parse GeoJSON according to the given params.
      *
      * GeoJSON is loaded and parsed from `params.url` if it exists, or else
      * expected as a literal (string or object) `params.data`.
      *
-     * @param params
-     * @param [params.url] A URL to the remote GeoJSON data.
-     * @param [params.data] Literal GeoJSON data. Must be provided if `params.url` is not.
      * @private
      */
     loadGeoJSON(params: LoadGeoJSONParameters, callback: ResponseCallback<FeatureCollectionOrFeature>): void {
@@ -265,8 +247,7 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
             // delay loading by one tick to hopefully let GC clean up the previous index (if present)
             setTimeout(() => {
                 try {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-                    return callback(null, JSON.parse(params.data));
+                    return callback(null, JSON.parse(params.data) as FeatureCollectionOrFeature);
                 } catch (e) {
                     return callback(new Error(`Input data given to '${params.source}' is not a valid GeoJSON object.`));
                 }
@@ -282,8 +263,7 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
         try {
             callback(null, this._geoJSONIndex.getClusterExpansionZoom(params.clusterId));
         } catch (e) {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            callback(e);
+            callback(e as Error);
         }
     }
 
@@ -293,8 +273,7 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
         try {
             callback(null, this._geoJSONIndex.getChildren(params.clusterId));
         } catch (e) {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            callback(e);
+            callback(e as Error);
         }
     }
 
@@ -306,8 +285,7 @@ class GeoJSONWorkerSource extends VectorTileWorkerSource {
         try {
             callback(null, this._geoJSONIndex.getLeaves(params.clusterId, params.limit, params.offset));
         } catch (e) {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            callback(e);
+            callback(e as Error);
         }
     }
 }

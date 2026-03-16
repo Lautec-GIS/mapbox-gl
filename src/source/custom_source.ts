@@ -213,15 +213,12 @@ class CustomSource<T> extends Evented<SourceEvents> implements ISource {
         }
 
         // @ts-expect-error - TS2339 - Property 'update' does not exist on type 'CustomSourceInterface<T>'.
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         implementation.update = this._update.bind(this);
 
         // @ts-expect-error - TS2339 - Property 'clearTiles' does not exist on type 'CustomSourceInterface<T>'.
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         implementation.clearTiles = this._clearTiles.bind(this);
 
         // @ts-expect-error - TS2339 - Property 'coveringTiles' does not exist on type 'CustomSourceInterface<T>'.
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         implementation.coveringTiles = this._coveringTiles.bind(this);
 
         Object.assign(this, pick(implementation, ['dataType', 'scheme', 'minzoom', 'maxzoom', 'tileSize', 'attribution', 'minTileCacheSize', 'maxTileCacheSize']));
@@ -272,7 +269,7 @@ class CustomSource<T> extends Evented<SourceEvents> implements ISource {
         // @ts-expect-error - TS2741 - Property 'cancel' is missing in type 'Promise<void | Awaited<T>>' but required in type 'Cancelable'.
         tile.request = Promise
             .resolve(this._implementation.loadTile({x, y, z}, {signal}))
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
             .then(tileLoaded.bind(this))
             .catch((error?: Error | DOMException | AJAXError) => {
                 // silence AbortError
@@ -283,7 +280,7 @@ class CustomSource<T> extends Evented<SourceEvents> implements ISource {
 
         tile.request.cancel = () => controller.abort();
 
-        function tileLoaded(data?: T | null) {
+        function tileLoaded(this: CustomSource<T>, data?: T | null) {
             delete tile.request;
 
             if (tile.aborted) {
@@ -303,21 +300,17 @@ class CustomSource<T> extends Evented<SourceEvents> implements ISource {
             // mark the tile as `loaded` and use an an empty image as tile data.
             // A map will render nothing in the tile’s space.
             if (data === null) {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                 const emptyImage = {width: this.tileSize, height: this.tileSize, data: null};
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-                this.loadTileData(tile, emptyImage);
+                this.loadTileData(tile, emptyImage as T);
                 tile.state = 'loaded';
                 return callback(null);
             }
 
             if (!isRaster(data)) {
                 tile.state = 'errored';
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 return callback(new Error(`Can't infer data type for ${this.id}, only raster data supported at the moment`));
             }
 
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             this.loadTileData(tile, data);
             tile.state = 'loaded';
             callback(null);
@@ -335,7 +328,7 @@ class CustomSource<T> extends Evented<SourceEvents> implements ISource {
         if (tile.texture && tile.texture instanceof Texture) {
             // Clean everything else up owned by the tile, but preserve the texture.
             // Destroy first to prevent racing with the texture cache being popped.
-            tile.destroy(true);
+            tile.destroy(false);
 
             // Save the texture to the cache
             if (tile.texture && tile.texture instanceof Texture) {

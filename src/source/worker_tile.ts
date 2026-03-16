@@ -9,7 +9,8 @@ import FillExtrusionBucket from '../data/bucket/fill_extrusion_bucket';
 import {warnOnce, mapObject} from '../util/util';
 import assert from 'assert';
 import LineAtlas from '../render/line_atlas';
-import ImageAtlas, {getImagePosition, ICON_PADDING} from '../render/image_atlas';
+import ImageAtlas, {ImageAtlasReference, getImagePosition, ICON_PADDING, sortImagesMap} from '../render/image_atlas';
+import {AtlasContentDescriptor} from '../render/atlas_content_descriptor';
 import GlyphAtlas from '../render/glyph_atlas';
 import EvaluationParameters from '../style/evaluation_parameters';
 import {OverscaledTileID} from './tile_id';
@@ -21,7 +22,7 @@ import {ElevationFeatures} from '../../3d-style/elevation/elevation_feature';
 import {HD_ELEVATION_SOURCE_LAYER, PROPERTY_ELEVATION_ID} from '../../3d-style/elevation/elevation_constants';
 import {ElevationPortalGraph} from '../../3d-style/elevation/elevation_graph';
 import {ImageId} from '../style-spec/expression/types/image_id';
-import {parseIndoorData} from '../render/indoor_parser';
+import {parseActiveFloors} from '../render/indoor_parser';
 
 import type {VectorTile} from '@mapbox/vector-tile';
 import type {CanonicalTileID} from './tile_id';
@@ -42,7 +43,7 @@ import type {GlyphMap} from '../render/glyph_manager';
 import type {ImagePositionMap} from '../render/image_atlas';
 import type {RasterizedImageMap, ImageRasterizationTasks} from '../render/image_manager';
 import type {StringifiedImageId} from '../style-spec/expression/types/image_id';
-import type {StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
+import type {ImageVariant, StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
 import type {StyleModelMap} from '../style/style_mode';
 import type {IndoorTileOptions} from '../style/indoor_data';
 
@@ -72,6 +73,8 @@ class WorkerTile {
     brightness: number;
     scaleFactor: number;
     indoor: IndoorTileOptions | null;
+    maxUniformBufferBindings: number | null | undefined;
+    maxUniformBlockSizeDwords: number | null | undefined;
 
     status: 'parsing' | 'done';
     data: VectorTile;
@@ -140,9 +143,7 @@ class WorkerTile {
         };
 
         if (this.indoor) {
-            const activeFloorsVisible = this.indoor.indoorState.activeFloorsVisible;
-            const indoorData = parseIndoorData(data, this.indoor, actor);
-            options.activeFloors = activeFloorsVisible ? indoorData.activeFloors : undefined;
+            options.activeFloors = parseActiveFloors(data, this.indoor, actor, this.canonical);
         }
 
         const asyncBucketLoads: Promise<unknown>[] = [];
@@ -235,7 +236,7 @@ class WorkerTile {
                 if (layer.maxzoom && this.zoom >= layer.maxzoom) continue;
                 if (layer.visibility === 'none') continue;
 
-                recalculateLayers(family, this.zoom, options.brightness, availableImages, this.worldview);
+                recalculateLayers(family, this.zoom, options.brightness, availableImages, this.worldview, options.activeFloors);
 
                 // @ts-expect-error: Type 'TypedStyleLayer' doesn't have a 'createBucket' method in all of its subtypes
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
@@ -254,7 +255,10 @@ class WorkerTile {
                     tessellationStep: this.tessellationStep,
                     styleDefinedModelURLs: availableModels,
                     worldview: this.worldview,
-                    localizable
+                    localizable,
+                    availableImages,
+                    maxUniformBufferBindings: this.maxUniformBufferBindings,
+                    maxUniformBlockSizeDwords: this.maxUniformBlockSizeDwords
                 });
 
                 assert(this.tileTransform.projection.name === this.projection.name);
@@ -281,6 +285,7 @@ class WorkerTile {
             let patternMap: StyleImageMap<StringifiedImageVariant>;
             let iconRasterizationTasks: ImageRasterizationTasks;
             let patternRasterizationTasks: ImageRasterizationTasks;
+            let imageVersions: Map<string, number>;
             const taskMetadata = {type: 'maybePrepare', isSymbolTile: this.isSymbolTile, zoom: this.zoom} as const;
 
             const maybePrepare = () => {
@@ -304,7 +309,7 @@ class WorkerTile {
                         glyphPositions: null
                     });
                     PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
-                } else if (glyphMap && iconMap && patternMap) {
+                } else if (glyphMap && iconMap && patternMap && imageVersions) {
                     const m = PerformanceUtils.beginMeasure('parseTile2');
                     const glyphAtlas = new GlyphAtlas(glyphMap);
 
@@ -318,7 +323,7 @@ class WorkerTile {
                     for (const key in buckets) {
                         const bucket = buckets[key];
                         if (bucket instanceof SymbolBucket) {
-                            recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages, this.worldview);
+                            recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages, this.worldview, options.activeFloors);
                             symbolLayoutData[key] =
                             performSymbolLayout(bucket,
                                     glyphMap,
@@ -330,51 +335,117 @@ class WorkerTile {
                                     this.scaleFactor,
                                     this.pixelRatio,
                                     iconRasterizationTasks,
-                                    this.worldview);
+                                    this.worldview,
+                                    availableImages);
                         }
                     }
 
                     const rasterizationStatus: RasterizationStatus = {iconsPending: true, patternsPending: true};
                     this.rasterizeIfNeeded(actor, iconMap, iconRasterizationTasks, () => {
                         rasterizationStatus.iconsPending = false;
-                        postRasterizationLayout(symbolLayoutData, glyphAtlas, rasterizationStatus, m);
+                        postRasterizationLayout(symbolLayoutData, glyphAtlas, rasterizationStatus, m, imageVersions);
                     });
                     this.rasterizeIfNeeded(actor, patternMap, patternRasterizationTasks, () => {
                         rasterizationStatus.patternsPending = false;
-                        postRasterizationLayout(symbolLayoutData, glyphAtlas, rasterizationStatus, m);
+                        postRasterizationLayout(symbolLayoutData, glyphAtlas, rasterizationStatus, m, imageVersions);
                     });
 
                 }
             };
 
-            const postRasterizationLayout = (symbolLayoutData: Record<string, SymbolBucketData>, glyphAtlas: GlyphAtlas, rasterizationStatus: RasterizationStatus, m: PerformanceMark) => {
+            const postRasterizationLayout = (symbolLayoutData: Record<string, SymbolBucketData>, glyphAtlas: GlyphAtlas, rasterizationStatus: RasterizationStatus, m: PerformanceMark, imageVersions?: Map<string, number>) => {
                 if (rasterizationStatus.iconsPending || rasterizationStatus.patternsPending) return;
-                const imageAtlas = new ImageAtlas(iconMap, patternMap, this.lut);
-                for (const key in buckets) {
-                    const bucket = buckets[key];
-                    if (key in symbolLayoutData) {
-                        postRasterizationSymbolLayout(bucket as SymbolBucket, symbolLayoutData[key], this.showCollisionBoxes, availableImages, this.tileID.canonical, this.tileZoom, this.projection, this.brightness, iconMap, imageAtlas);
-                    } else if (bucket.hasPattern &&
-                        (bucket instanceof LineBucket ||
-                            bucket instanceof FillBucket ||
-                            bucket instanceof FillExtrusionBucket)) {
-                        recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages, this.worldview);
-                        const imagePositions: SpritePositions = Object.fromEntries(imageAtlas.patternPositions);
-                        bucket.addFeatures(options, this.tileID.canonical, imagePositions, availableImages, this.tileTransform, this.brightness);
-                    }
+
+                // Check if we have any images - if not, skip atlas caching to avoid extra round-trips
+                const hasImages = iconMap.size > 0 || patternMap.size > 0;
+                const hasSymbolLayout = Object.keys(symbolLayoutData).length > 0;
+
+                // If no images and no symbol layout, we can complete synchronously
+                if (!hasImages && !hasSymbolLayout) {
+                    this.status = 'done';
+                    callback(null, {
+                        buckets: Object.values(buckets).filter(b => !b.isEmpty()),
+                        featureIndex,
+                        collisionBoxArray: this.collisionBoxArray,
+                        glyphAtlasImage: glyphAtlas.image,
+                        lineAtlas,
+                        imageAtlas: null,
+                        brightness: options.brightness
+                    });
+                    PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
+                    return;
                 }
 
-                this.status = 'done';
-                callback(null, {
-                    buckets: Object.values(buckets).filter(b => !b.isEmpty()),
-                    featureIndex,
-                    collisionBoxArray: this.collisionBoxArray,
-                    glyphAtlasImage: glyphAtlas.image,
-                    lineAtlas,
-                    imageAtlas,
-                    brightness: options.brightness
-                });
-                PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
+                const completeBucketProcessing = (imageAtlasForTransfer: ImageAtlas | ImageAtlasReference | null, positions: {iconPositions: ImagePositionMap; patternPositions: ImagePositionMap}) => {
+                    // Process buckets using positions
+                    for (const key in buckets) {
+                        const bucket = buckets[key];
+                        if (key in symbolLayoutData) {
+                            postRasterizationSymbolLayout(bucket as SymbolBucket, symbolLayoutData[key], this.showCollisionBoxes, availableImages, this.tileID.canonical, this.tileZoom, this.projection, this.brightness, iconMap, positions);
+                        } else if (bucket.hasPattern &&
+                            (bucket instanceof LineBucket ||
+                                bucket instanceof FillBucket ||
+                                bucket instanceof FillExtrusionBucket)) {
+                            recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages, this.worldview, options.activeFloors);
+                            const imagePositions: SpritePositions = Object.fromEntries(positions.patternPositions);
+                            bucket.addFeatures(options, this.tileID.canonical, imagePositions, availableImages, this.tileTransform, this.brightness);
+                        }
+                    }
+
+                    this.status = 'done';
+                    callback(null, {
+                        buckets: Object.values(buckets).filter(b => !b.isEmpty()),
+                        featureIndex,
+                        collisionBoxArray: this.collisionBoxArray,
+                        glyphAtlasImage: glyphAtlas.image,
+                        lineAtlas,
+                        imageAtlas: imageAtlasForTransfer,
+                        brightness: options.brightness
+                    });
+                    PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
+                };
+
+                // If we have images, do atlas caching
+                if (hasImages) {
+                    // Phase 1: Create descriptor and check cache on main thread BEFORE creating atlas
+                    // This ensures subsequent tiles can reuse the cached atlas from the first tile
+                    // Cache parsed variants to avoid re-parsing in AtlasContentDescriptor
+                    const variantCache = new Map<StringifiedImageVariant, ImageVariant>();
+                    const sortedIcons = sortImagesMap(iconMap, variantCache);
+                    const sortedPatterns = sortImagesMap(patternMap, variantCache);
+                    const descriptor = new AtlasContentDescriptor(sortedIcons, sortedPatterns, imageVersions, this.lut, variantCache);
+
+                    actor.send('checkAtlasCache', {descriptor, scope: this.scope}, (err: Error, cachedPositions: {iconPositions: ImagePositionMap; patternPositions: ImagePositionMap; sourceHash: number} | null) => {
+                        if (err) {
+                            warnOnce(`[Worker] Error checking atlas cache: ${err.message}`);
+                        }
+
+                        // Phase 2: Create atlas or use cached positions
+                        let imageAtlasForTransfer: ImageAtlas | ImageAtlasReference;
+                        let positions: {iconPositions: ImagePositionMap; patternPositions: ImagePositionMap};
+
+                        if (cachedPositions) {
+                            // Cache hit: Create reference for transfer, use cached positions for buckets
+                            imageAtlasForTransfer = new ImageAtlasReference(cachedPositions.sourceHash);
+                            positions = cachedPositions;
+                        } else {
+                            // Cache miss: Create full atlas, use it for both transfer and buckets
+                            const imageAtlas = new ImageAtlas(iconMap, patternMap, this.lut, imageVersions);
+                            imageAtlasForTransfer = imageAtlas;
+                            positions = imageAtlas;
+                        }
+
+                        completeBucketProcessing(imageAtlasForTransfer, positions);
+                    });
+                } else {
+                    // No images but has symbol layout (text-only symbols) - complete synchronously
+                    // Provide empty position maps for text-only symbols
+                    const emptyPositions = {
+                        iconPositions: new Map(),
+                        patternPositions: new Map()
+                    };
+                    completeBucketProcessing(null, emptyPositions);
+                }
             };
 
             if (!this.extraShadowCaster) {
@@ -391,17 +462,27 @@ class WorkerTile {
                     glyphMap = {};
                 }
 
+                // Initialize shared version map for both icons and patterns
+                // Note: If an icon and pattern share the same ID, the later response will overwrite
+                // the version. This is acceptable since icon/pattern IDs are typically distinct,
+                // and both use the same underlying image version from ImageManager.
+                imageVersions = new Map();
+
                 const images = Array.from(options.iconDependencies.keys()).map((id) => ImageId.parse(id));
                 if (images.length) {
                     const params = {images, source: this.source, scope: this.scope, tileID: this.tileID, type: 'icons'} as const;
-                    actor.send('getImages', params, (err: Error, result: StyleImageMap<StringifiedImageId>) => {
+                    actor.send('getImages', params, (err: Error, getImagesResult: {images: StyleImageMap<StringifiedImageId>; versions: Map<string, number>}) => {
                         if (error) {
                             return;
                         }
 
                         error = err;
                         iconMap = new Map();
-                        iconRasterizationTasks = this.updateImageMapAndGetImageTaskQueue(iconMap, result, options.iconDependencies);
+                        iconRasterizationTasks = this.updateImageMapAndGetImageTaskQueue(iconMap, getImagesResult.images, options.iconDependencies);
+                        // Merge versions from icons response into shared imageVersions map
+                        for (const [id, version] of getImagesResult.versions.entries()) {
+                            imageVersions.set(id, version);
+                        }
                         maybePrepare();
                     }, undefined, false, taskMetadata);
                 } else {
@@ -412,14 +493,18 @@ class WorkerTile {
                 const patterns = Array.from(options.patternDependencies.keys()).map((id) => ImageId.parse(id));
                 if (patterns.length) {
                     const params = {images: patterns, source: this.source, scope: this.scope, tileID: this.tileID, type: 'patterns'} as const;
-                    actor.send('getImages', params, (err: Error, result: StyleImageMap<StringifiedImageId>) => {
+                    actor.send('getImages', params, (err: Error, getImagesResult: {images: StyleImageMap<StringifiedImageId>; versions: Map<string, number>}) => {
                         if (error) {
                             return;
                         }
 
                         error = err;
                         patternMap = new Map();
-                        patternRasterizationTasks = this.updateImageMapAndGetImageTaskQueue(patternMap, result, options.patternDependencies);
+                        patternRasterizationTasks = this.updateImageMapAndGetImageTaskQueue(patternMap, getImagesResult.images, options.patternDependencies);
+                        // Merge versions from patterns response into shared imageVersions map
+                        for (const [id, version] of getImagesResult.versions.entries()) {
+                            imageVersions.set(id, version);
+                        }
                         maybePrepare();
                     }, undefined, false, taskMetadata);
                 } else {
@@ -531,9 +616,9 @@ class WorkerTile {
     }
 }
 
-function recalculateLayers(layers: ReadonlyArray<TypedStyleLayer>, zoom: number, brightness: number, availableImages: ImageId[], worldview: string | undefined) {
+function recalculateLayers(layers: ReadonlyArray<TypedStyleLayer>, zoom: number, brightness: number, availableImages: ImageId[], worldview: string | undefined, activeFloors: Set<string> | undefined) {
     // Layers are shared and may have been used by a WorkerTile with a different zoom.
-    const parameters = new EvaluationParameters(zoom, {brightness, worldview});
+    const parameters = new EvaluationParameters(zoom, {brightness, worldview, activeFloors});
     for (const layer of layers) {
         layer.recalculate(parameters, availableImages);
     }

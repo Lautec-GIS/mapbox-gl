@@ -25,20 +25,17 @@ const createElevation = (func, exaggeration) => {
             return true;
         },
         getAtPointOrZero(point, def) {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             return this.getAtPoint(point, def) || 0;
         },
         getAtPoint(point, def) {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             return func(point) * this.exaggeration() || def;
         },
         getForTilePoints() {
             return false;
         },
         getMinElevationBelowMSL: () => 0,
-
         exaggeration() {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             return this._exaggeration;
         }
     };
@@ -958,6 +955,45 @@ describe('Map', () => {
                 resolve();
             }, 100);
         });
+    });
+
+    test('idle for invisible layers with transitions', async () => {
+        const style = createStyle();
+        style.sources.mapbox = {
+            type: 'vector',
+            minzoom: 1,
+            maxzoom: 10,
+            tiles: ['/test/util/fixtures/{z}/{x}/{y}.pbf']
+        };
+        style.layers.push({
+            id: 'layerId',
+            type: 'circle',
+            source: 'mapbox',
+            'source-layer': 'sourceLayer',
+            layout: {
+                'visibility': 'none'
+            },
+            paint: {
+                'circle-radius': 10.0
+            }
+        });
+
+        const map = createMap({style});
+
+        await waitFor(map, "idle");
+        expect(map.idle()).toBeTruthy();
+
+        // Modify paint property while visibility is none/visible
+        // Both should result in reporting of idle state
+        map.setLayoutProperty('layerId', 'visibility', 'visible');
+        map.setPaintProperty('layerId', 'circle-radius', 20.0);
+        await waitFor(map, "idle");
+        expect(map.idle()).toBeTruthy();
+
+        map.setLayoutProperty('layerId', 'visibility', 'none');
+        map.setPaintProperty('layerId', 'circle-radius', 30.0);
+        await waitFor(map, "idle");
+        expect(map.idle()).toBeTruthy();
     });
 
     test('no render after idle event', async () => {

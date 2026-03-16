@@ -115,6 +115,7 @@ const Demo3D = function() {
 
     this.mapProjection = 'globe';
     this.orthographicProjectionAtLowPitch = false;
+    this.nearClipOffset = 0;
     this.buildingExtrusion = "extrusion";
     this.enableBuildings = true;
 
@@ -264,6 +265,11 @@ window.onload = function() {
     camera.addInput(demo3d, 'orthographicProjectionAtLowPitch').on('change', (ev) => {
         map.setCamera({'camera-projection': ev.value ? 'orthographic' : 'perspective'});
     });
+    camera.addInput(demo3d, 'nearClipOffset', {min:-1000.0, max:1000.0}).on('change', (ev) => {
+        map.setNearClipOffset(ev.value);
+    });
+
+
 
     // Sky
     const sky = gui.addFolder({title:'Sky', expanded:false});

@@ -1,30 +1,123 @@
-## 3.17.0-beta.2
+## 3.20.0
 
 ### Features and improvements ✨
 
+- Improve memory efficiency by sharing image resources for symbol layers across map tiles.
+
+### Bug fixes 🐞
+
+- Fix icons disappearing when changing the color theme.
+- Fix display of symbols added via the Appearances runtime API.
+
+## 3.19.1
+
+### Bug fixes 🐞
+
+- Removed the unused `@types/mapbox__point-geometry` package that was causing some Typescript builds to fail.
+
+## 3.19.0
+
+### Features and improvements ✨
+
+- Promote elevated lines properties to stable: `line-z-offset` and `line-elevation-reference`.
+- Add experimental `text-size-scale-range` and `icon-size-scale-range` style properties.
+- Add experimental `Map#setScaleFactor`/`Map#getScaleFactor` methods for controlling symbol layer scaling.
+- Apply global scale factor to images within `text-field`.
+- Fix z-fighting for elevated raster layers.
+- Add `raster-elevation-reference` paint property to elevate raster layers relative to ground instead of sea level.
+- Add `line-elevation-ground-scale` layout property to scale elevated lines with terrain exaggeration.
+- Use native async/await when loading models. **Note**: Please ensure GL JS is excluded from transpilation in your build setup.
+- Explicitly state minimum supported browser versions in `browserslist`.
+- Support `pitch` and `distance` expressions in filters.
+- Support incremental updates when using `setFeatureState`.
+- Add experimental `Map#setNearClipOffset`/`Map#getNearClipOffset` methods to control the near clip offset when ortohographic projections are used.
+
+### Bug fixes 🐞
+
+- Fix `RasterArrayTileSource#reload()` not working correctly.
+- Add request cancellation support to the `ModelSource`.
+- Fix flickering of aliased thin lines.
+- Fix elevated line bevel join artifacts at sharp corners.
+- Fix regressions in `NavigationControl`.
+- Fix namespace conflicts in different featuresets' selectors.
+- Recalculate layers with `visibility: none` in case properties were changed.
+- Fix bug in border update logic of `fill-extrusion` layer, overriding clip layer's behaviour.
+- Fix empty tiles on non-integer maxZoom when terrain was used.
+- Fix prototype pollution via Style JSON.
+
+## 3.18.1
+
+### Features and improvements ✨
+
+- Add support for `visibility` property in clip layers.
+- Improve `raster-color` precision for fine-grained value ranges.
+
+### Bug fixes 🐞
+
+- Fix color interpolation throwing errors in edge cases.
+- Fix appearances with no `icon-size`.
+- Fix disappearing symbols when used with elevated raster layers.
+
+## 3.18.0
+
+### Features and improvements ✨
+
+- Add `scaleFactor` support for images within `text-field`.
+- Add `showButton` option to `GeolocateControl` that allows hiding the control button.
+- Add `followUserLocation` option and `setFollowUserLocation` method to `GeolocateControl` to control whether the map follows the user's location.
+- Improve `GeolocateControl` timeout handling.
+- Add support for `text-rotate`, `text-size`, and `text-offset` properties in appearances.
+- Add `shadow-draw-before-layer` property to directional light, allowing control over shadow draw order in the layer stack.
+- Add `model-allow-density-reduction` property to model layers. (h/t @JoshuaJMoore)
+
+### Bug fixes 🐞
+
+- Fix interaction handlers not working on model layers.
+- Fix stretchable icons without `icon-text-fit` rendering with an incorrect size.
+- Fix `icon-size` not working correctly with `coalesce` expressions.
+- Fix `raster-color` interpolation when using `nearest` `raster-resampling`.
+- Fix render cut off for elevated raster-layer rendering in ortho projection range.
+- Fix symbol placement with optional and missing parts.
+- Expose all error properties for `GeolocateControl` error event (h/t @lucavb).
+- Fix an error when querying multipolygons in `dynamic: true` mode.
+- Fix `AttributionControl` links sanitization.
+- Fix appearances with no `icon-size` using the default value instead of the layout-defined one.
+- Fix updates to model source via `ModelSource.setModels` while models are still loading.
+- Fix polygon clipping precision errors causing rendering artifacts in elevated structures.
+- Preserve featuresets in `map.getStyle()` output.
+- Expose TypeScript types from `@mapbox/mapbox-gl-style-spec` for direct imports.
+
+## 3.17.0
+
+### Features and improvements ✨
+
+- Add experimental ESM support.
 - Make `line-emissive-strength` data-driven.
 - Remove experimental flag from the `extra_bounds` property of raster and vector sources.
-- Various performance improvements.
+- Remove experimental flag from `model` layer.
+- Remove experimental flag from `building` layer.
+- Improve vector icons rasterization performance.
+- Improve shadow rendering performance.
+- Improve `building` layer performance.
+- Improve shader initialization performance.
 
 ### Bug fixes 🐞
 
+- Fix polygon rendering for dynamic GeoJSON sources.
+- Fix `raster-array` layers not working on iOS < 18.4.
+- Fix a performance issue for symbol layers with zero fade duration and static camera.
+- Fix occasional WebGL texture warnings when rendering terrain.
 - Fix features not being localized in dynamic filters when a worldview is set.
+- Fix an issue with clipping models on Standard.
+- Fix an issue with models flashing on `setData`.
+- Fix an issue with incorrect scoping of models added during runtime.
+- Fix line patterns not elevating properly on HD roads.
+- Sanitize attributions in `AttributionControl`.
 - Correctly support filtered features in appearances.
 - Fix an issue occuring when expressions are used in appearances.
-
-## 3.17.0-beta.1
-
-### Features and improvements ✨
-
-- Experimental ESM support.
-- Remove experimental flag from model layer.
-- Conflate building parts together as a whole building.
-
-### Bug fixes 🐞
-
-- Fix line patterns not elevating properly on HD roads.
-- Sanitize attributions in AttributionControl.
 - Fix appearance optimization that resulted in wrong appearances being rendered.
+- Fix appearance icons not changing when feature state changed multiple times.
+- Improve TypeScript types.
 
 ## 3.16.0
 

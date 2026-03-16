@@ -1,6 +1,5 @@
 import DEMData from '../data/dem_data';
 
-import type Actor from '../util/actor';
 import type {
     WorkerSource,
     WorkerSourceTileRequest,
@@ -10,7 +9,6 @@ import type {
 } from './worker_source';
 
 class RasterDEMTileWorkerSource implements WorkerSource {
-    actor: Actor;
     offscreenCanvas: OffscreenCanvas;
     offscreenCanvasContext: OffscreenCanvasRenderingContext2D;
 

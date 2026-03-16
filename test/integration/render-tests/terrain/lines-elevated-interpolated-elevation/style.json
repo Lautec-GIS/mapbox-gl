@@ -349,7 +349,8 @@
           500
         ],
         "line-cross-slope": 0,
-        "line-elevation-reference": "sea"
+        "line-elevation-reference": "sea",
+        "line-elevation-ground-scale": 0
       },
       "paint": {
         "line-width": 8,
@@ -369,7 +370,8 @@
           300
         ],
         "line-cross-slope": 1,
-        "line-elevation-reference": "sea"
+        "line-elevation-reference": "sea",
+        "line-elevation-ground-scale": 0
       },
       "paint": {
         "line-width": 8,
@@ -389,7 +391,8 @@
           0
         ],
         "line-cross-slope": 1,
-        "line-elevation-reference": "sea"
+        "line-elevation-reference": "sea",
+        "line-elevation-ground-scale": 0
       },
       "paint": {
         "line-width": 8,
@@ -408,7 +411,8 @@
           400
         ],
         "line-cross-slope": 0,
-        "line-elevation-reference": "sea"
+        "line-elevation-reference": "sea",
+        "line-elevation-ground-scale": 0
       },
       "paint": {
         "line-width": 8,

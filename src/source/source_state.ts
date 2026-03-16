@@ -167,7 +167,7 @@ class SourceFeatureState {
 
         for (const id in tiles) {
             const tile = tiles[id];
-            tile.refreshFeatureState(painter);
+            tile.refreshFeatureState(painter, featuresChanged);
         }
     }
 }

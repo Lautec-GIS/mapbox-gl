@@ -19,7 +19,7 @@ describe('reloadTile', () => {
             }
         ];
         const layerIndex = new StyleLayerIndex(layers);
-        const source = new GeoJSONWorkerSource(actor, layerIndex, [], [], true);
+        const source = new GeoJSONWorkerSource({actor, layerIndex, availableImages: [], availableModels: [], isSpriteLoaded: true});
         const originalLoadVectorData = source.loadVectorData;
         let loadVectorCallCount = 0;
         source.loadVectorData = function (params, callback) {
@@ -131,7 +131,8 @@ describe('resourceTiming', () => {
         vi.spyOn(perf, 'getEntriesByName').mockImplementation(() => { return [exampleResourceTiming]; });
 
         const layerIndex = new StyleLayerIndex(layers);
-        const source = new GeoJSONWorkerSource(actor, layerIndex, [], [], true, (params, callback) => { return callback(null, geoJson); });
+        const source = new GeoJSONWorkerSource({actor, layerIndex, availableImages: [], availableModels: [], isSpriteLoaded: true});
+        source.loadGeoJSON = (params, callback) => { return callback(null, geoJson); };
 
         source.loadData({source: 'testSource', request: {url: 'http://localhost/nonexistent', collectResourceTiming: true}}, (err, result) => {
             expect(err).toEqual(null);
@@ -141,7 +142,7 @@ describe('resourceTiming', () => {
 
     test('loadData - data', () => {
         const layerIndex = new StyleLayerIndex(layers);
-        const source = new GeoJSONWorkerSource(actor, layerIndex, [], [], true);
+        const source = new GeoJSONWorkerSource({actor, layerIndex, availableImages: [], availableModels: [], isSpriteLoaded: true});
 
         source.loadData({source: 'testSource', data: JSON.stringify(geoJson)}, (err, result) => {
             expect(err).toEqual(null);

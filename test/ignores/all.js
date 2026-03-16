@@ -30,9 +30,6 @@ const todo = [
     // "https://github.com/mapbox/mapbox-gl-js/issues/10365"
     "render-tests/terrain/symbol-draping/style.json",
 
-    // Requires complete landmark rendering support such as shadows and materials
-    "render-tests/model-layer/landmark-conflation-buckingham",
-
     // https://mapbox.atlassian.net/browse/MAPS3D-987
     "render-tests/model-layer/landmark-shadows-terrain",
 
@@ -137,6 +134,18 @@ const skip = [
     // Current behavior is arbitrary
     "render-tests/geojson/inline-linestring-fill",
 
+    // Broken in similar way as gl-native https://mapbox.atlassian.net/browse/MAPSNAT-3482
+    "render-tests/appearance/empty-image-in-appearance",
+    "render-tests/appearance/icon-text-fit-vertical/non-existent-image",
+    "render-tests/appearance/icon-text-fit-vertical/zero-icon-size",
+    "render-tests/appearance/non-existent-image-in-appearance",
+
+    // Broken in similar way as gl-native https://mapbox.atlassian.net/browse/MAPSNAT-3474
+    "render-tests/appearance/icon-text-fit-vertical/other-image",
+
+    // Broken - https://mapbox.atlassian.net/browse/GLJS-1583
+    "render-tests/appearance/line-placement/icon-appears-below",
+
     // Mapbox-gl-js does not support tile-mode
     "render-tests/icon-text-fit/text-variable-anchor-tile-map-mode",
     "render-tests/map-mode/tile",
@@ -231,7 +240,7 @@ const skip = [
     "render-tests/background-pattern/image-update/delayed/different-size-with-color-theme",
 
     // https://mapbox.atlassian.net/browse/GLJS-1295
-    "render-tests/placement/icon-optional",
+    "render-tests/placement/icon-optional/basic",
     "render-tests/placement/text-optional/basic",
     "render-tests/placement/text-optional/text-variable-anchor",
     // limit number of holes experimental for native
@@ -267,10 +276,9 @@ const skip = [
     "render-tests/building/terrain/terrain-unsupported",
     "render-tests/building/globe-unsupported",
 
-    // Ignore procedural buiding clip layer render tests for now.
-    "render-tests/building/clip-layer/default",
-    "render-tests/building/clip-layer/lower-order-clipping-skipped",
-    "render-tests/building/clip-layer/with-FE-and-landmarks"
+    // Not implemented, https://mapbox.atlassian.net/browse/GLJS-1591
+    "render-tests/slots/inner-slot-before-outer",
+    "render-tests/slots/mixed-slot-order-with-imports",
 ];
 
 export default {todo, skip};

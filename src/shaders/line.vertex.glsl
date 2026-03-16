@@ -15,11 +15,14 @@ in vec4 a_data;
 #if defined(ELEVATED) || defined(ELEVATED_ROADS) || defined(VARIABLE_LINE_WIDTH)
 in vec3 a_z_offset_width;
 #endif
+#ifdef ELEVATION_GROUND_SCALE
+in float a_elevation_ground_scale;
+#endif
 
 // Includes in order: a_uv_x, a_split_index, a_line_progress
 // to reduce attribute count on older devices.
 // Only line-gradient and line-trim-offset will requires a_packed info.
-#if defined(RENDER_LINE_GRADIENT) || defined(RENDER_LINE_TRIM_OFFSET)
+#if defined(RENDER_LINE_GRADIENT) || defined(RENDER_LINE_TRIM_OFFSET) || defined(RENDER_LINE_CURVE)
 in highp vec3 a_packed;
 #endif
 
@@ -33,6 +36,15 @@ uniform vec2 u_units_to_pixels;
 uniform lowp float u_device_pixel_ratio;
 uniform float u_width_scale;
 uniform highp float u_floor_width_scale;
+
+#ifdef RENDER_LINE_CURVE
+// Encodes curve control points in 3x3 matrices for x, y, z
+// Note: Could be replaced with an uniform array once Metal support is implemented
+uniform mat3 u_curve_points_x;
+uniform mat3 u_curve_points_y;
+uniform mat3 u_curve_points_z;
+uniform float u_curve_point_count;
+#endif
 
 #ifdef ELEVATED
 uniform lowp float u_zbias_factor;
@@ -48,11 +60,14 @@ float sample_elevation(vec2 apos) {
 #endif
 
 out vec2 v_normal;
-out vec2 v_width2;
+out vec4 v_width2_dilute; // xy fow width, z for dilute of whole line w for dilute of border
 out float v_gamma_scale;
 out highp vec3 v_uv;
 #ifdef ELEVATED_ROADS
 out highp float v_road_z_offset;
+#endif
+#ifdef VARIABLE_LINE_WIDTH
+out float stub_side;
 #endif
 
 #ifdef RENDER_LINE_DASH
@@ -91,6 +106,75 @@ out highp float v_depth;
 #pragma mapbox: define lowp vec4 border_color
 #pragma mapbox: define lowp float emissive_strength
 
+#ifdef RENDER_LINE_CURVE
+
+vec3 getCurvePoint(int index) {
+    int row = index / 3;
+    int col = index - row * 3;
+
+    float x = u_curve_points_x[row][col];
+    float y = u_curve_points_y[row][col];
+    float z = u_curve_points_z[row][col];
+
+    return vec3(x, y, z);
+}
+
+vec3 catmullRom(vec3 p0, vec3 p1, vec3 p2, vec3 p3, float t) {
+    float t2 = t * t;
+    float t3 = t2 * t;
+    return 0.5 * (
+        2.0 * p1 +
+        (-p0 + p2) * t +
+        (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 +
+        (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
+    );
+}
+
+vec2 catmullRomTangent(vec2 p0, vec2 p1, vec2 p2, vec2 p3, float t) {
+    float t2 = t * t;
+    return 0.5 * (
+        (-p0 + p2) +
+        (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * 2.0 * t +
+        (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * 3.0 * t2
+    );
+}
+
+struct CurveResult {
+    vec3 point;      // x, y, elevation
+    vec2 tangent;    // tangent direction
+};
+
+CurveResult calculateCurve(float line_progress) {
+    float curve_progress = line_progress * (u_curve_point_count - 1.0);
+    float curve_progress_local = fract(curve_progress);
+    float curve_segment = floor(curve_progress);
+    int seg = int(curve_segment);
+
+    vec3 p1 = getCurvePoint(seg);
+    vec3 p2 = getCurvePoint(seg + 1);
+
+    float is_first_seg = step(curve_segment, 0.5);
+    vec3 p0_extrapolated = p1 - (p2 - p1);
+    vec3 p0_fetched = getCurvePoint(max(seg - 1, 0));
+    vec3 p0 = mix(p0_fetched, p0_extrapolated, is_first_seg);
+
+    int last_seg = int(u_curve_point_count) - 2;
+    float is_last_seg = step(float(last_seg) - 0.5, curve_segment);
+    vec3 p3_extrapolated = p2 + (p2 - p1);
+    vec3 p3_fetched = getCurvePoint(min(seg + 2, int(u_curve_point_count) - 1));
+    vec3 p3 = mix(p3_fetched, p3_extrapolated, is_last_seg);
+
+    vec3 point = catmullRom(p0, p1, p2, p3, curve_progress_local);
+    vec2 tangent = catmullRomTangent(p0.xy, p1.xy, p2.xy, p3.xy, curve_progress_local) * (u_curve_point_count - 1.0);
+
+    CurveResult result;
+    result.point = point;
+    result.tangent = tangent;
+    return result;
+}
+
+#endif
+
 void main() {
     #pragma mapbox: initialize highp vec4 color
     #pragma mapbox: initialize lowp float floorwidth
@@ -110,6 +194,11 @@ void main() {
     a_z_offset = a_z_offset_width.x;
 #endif
 
+    highp float line_progress = 0.0;
+#if defined(RENDER_LINE_GRADIENT) || defined(RENDER_LINE_TRIM_OFFSET) || defined(RENDER_LINE_CURVE)
+    line_progress = a_packed[2];
+#endif
+
     // the distance over which the line edge fades out.
     // Retina devices need a smaller distance to avoid aliasing.
     float ANTIALIASING = 1.0 / u_device_pixel_ratio / 2.0;
@@ -123,21 +212,57 @@ void main() {
     // We store these in the least significant bit of a_pos_normal
     mediump vec2 normal = a_pos_normal - 2.0 * pos;
     normal.y = normal.y * 2.0 - 1.0;
+
     v_normal = normal;
+
+    offset = -1.0 * offset * u_width_scale;
+    bool left = normal.y == 1.0;
+
+#ifdef RENDER_LINE_CURVE
+    CurveResult curve = calculateCurve(line_progress);
+    pos = curve.point.xy * 8192.0;
+    a_extrude = length(a_extrude) * normalize(curve.tangent);
+    a_extrude = left ? vec2(-a_extrude.y, a_extrude.x) : vec2(a_extrude.y, -a_extrude.x);
+    a_z_offset += curve.point.z;
+#endif
 
     // these transformations used to be applied in the JS and native code bases.
     // moved them into the shader for clarity and simplicity.
     gapwidth = gapwidth / 2.0;
     float halfwidth;
+    float dilute_scale = 1.0;
+    float dilute_border_scale = 1.0;
 #ifdef VARIABLE_LINE_WIDTH
-    bool left = normal.y == 1.0;
-    halfwidth = (u_width_scale * (left ? a_z_offset_width.y : a_z_offset_width.z)) / 2.0;
-    a_z_offset += left ? side_z_offset : 0.0;
-    v_normal = side_z_offset > 0.0 && left ? vec2(0.0) : v_normal;
+    float left_width = a_z_offset_width.y;
+    float right_width = a_z_offset_width.z;
+    halfwidth = (u_width_scale * (left ? left_width : right_width)) / 2.0;
+
+    if (side_z_offset != 0.0) {
+        // Lift the side of the line asymmetrically, based on the sign of side_z_offset
+        float left_f = step(1.0, normal.y);
+        float is_negative = step(side_z_offset, 0.0);
+        float apply = mix(1.0 - left_f, left_f, is_negative);
+
+        a_extrude *= apply;
+        a_z_offset += abs(side_z_offset) * apply;
+        v_normal *= left_f;
+    }
+
+    // Variable width is used as an offset for non-zero border_widths case.
+    // Then the width of the visible part is defined by border_width.
+    offset = border_width > 0.0 ? (left_width + right_width) * u_width_scale * 0.5 : offset;
+    halfwidth = border_width > 0.0 ? border_width * u_width_scale * 0.5 : halfwidth;
+
+    bool zero_right_width = border_width == 0.0 && right_width == 0.0;
+
+    // If the right width is 0, we are rendering an asymmetric line with a stub side
+    // We should disable antialiasing and blur on this side to be able to stich two lines together
+    stub_side = zero_right_width ? -normal.y : 0.0;
+    v_normal = !left && zero_right_width ? vec2(0.0) : v_normal;
+    ANTIALIASING = !left && zero_right_width ? 0.0 : ANTIALIASING;
 #else
     halfwidth = (u_width_scale * width) / 2.0;
 #endif
-    offset = -1.0 * offset * u_width_scale;
 
     float inset = gapwidth + (gapwidth > 0.0 ? ANTIALIASING : 0.0);
     float outset = gapwidth + halfwidth * (gapwidth > 0.0 ? 2.0 : 1.0) + (halfwidth == 0.0 ? 0.0 : ANTIALIASING);
@@ -160,17 +285,21 @@ void main() {
     vec2 projected_extrude_xy = projected_extrude.xy;
 #ifdef ELEVATED_ROADS
     v_road_z_offset = a_z_offset;
-    gl_Position = u_matrix * vec4(pos + offset2 * u_pixels_to_tile_units, a_z_offset, 1.0) + projected_extrude;
+    gl_Position = u_matrix * vec4(pos + offset2 * u_pixels_to_tile_units, a_z_offset, 1.0);
 #else
 #ifdef ELEVATED
     vec2 offsetTile = offset2 * u_pixels_to_tile_units;
     vec2 offset_pos = pos + offsetTile;
     float ele = 0.0;
+    float scaled_z_offset = a_z_offset;
+#ifdef ELEVATION_GROUND_SCALE
+    scaled_z_offset = a_z_offset * mix(1.0, u_exaggeration, a_elevation_ground_scale);
+#endif
 #ifdef CROSS_SLOPE_VERTICAL
     // Vertical line
     // The least significant bit of a_pos_normal.y hold 1 if it's on top, 0 for bottom
     float top = a_pos_normal.y - 2.0 * floor(a_pos_normal.y * 0.5);
-    float line_height = 2.0 * u_tile_to_meter * outset * top * u_pixels_to_tile_units[1][1] + a_z_offset;
+    float line_height = 2.0 * u_tile_to_meter * outset * top * u_pixels_to_tile_units[1][1] + scaled_z_offset;
     ele = sample_elevation(offset_pos) + line_height;
     // Ignore projected extrude for vertical lines
     projected_extrude = vec4(0);
@@ -181,14 +310,14 @@ void main() {
     float ele1 = max(sample_elevation(offset_pos + extrude), sample_elevation(offset_pos + extrude / 2.0));
     float ele2 = max(sample_elevation(offset_pos - extrude), sample_elevation(offset_pos - extrude / 2.0));
     float ele_max = max(ele0, max(ele1, ele2));
-    ele = ele_max + a_z_offset;
+    ele = ele_max + scaled_z_offset;
 #else // CROSS_SLOPE_HORIZONTAL
     // Line follows terrain slope
     float ele0 = sample_elevation(offset_pos);
     float ele1 = max(sample_elevation(offset_pos + extrude), sample_elevation(offset_pos + extrude / 2.0));
     float ele2 = max(sample_elevation(offset_pos - extrude), sample_elevation(offset_pos - extrude / 2.0));
     float ele_max = max(ele0, 0.5 * (ele1 + ele2));
-    ele = ele_max - ele0 + ele1 + a_z_offset;
+    ele = ele_max - ele0 + ele1 + scaled_z_offset;
 #endif // CROSS_SLOPE_HORIZONTAL
 #endif // CROSS_SLOPE_VERTICAL
     gl_Position = u_matrix * vec4(offset_pos, ele, 1.0) + projected_extrude;
@@ -197,9 +326,46 @@ void main() {
     gl_Position.z -= (gl_Position.w * zbias);
     gl_Position = mix(gl_Position, AWAY, hidden);
 #else // ELEVATED
-    gl_Position = mix(u_matrix * vec4(pos + offset2 * u_pixels_to_tile_units, 0.0, 1.0) + projected_extrude, AWAY, hidden);
+    gl_Position = u_matrix * vec4(pos + offset2 * u_pixels_to_tile_units, 0.0, 1.0);
 #endif // ELEVATED
 #endif // ELEVATED_ROADS
+
+#ifndef ELEVATED
+#ifndef VARIABLE_LINE_WIDTH
+#ifndef RENDER_TO_TEXTURE
+    // Scale up sub-pixel extrusions of inner line width to ensure minimum half-pixel visibility
+    float base_w = gl_Position.w;
+    vec2 screen_width = abs(projected_extrude.xy / base_w * u_units_to_pixels);
+    float max_extrude_component = max(screen_width.x, screen_width.y);
+    if (base_w > 0.0 && max_extrude_component > 0.0001) {
+        float min_pixel = 1.05; // u_units_to_pixels is [2 / width, 2 / height], not using half pixel for halfwidth here
+        if (max_extrude_component < min_pixel) {
+            vec2 abs_pos = abs(gl_Position.xy);
+            float is_out = max(abs_pos.x, abs_pos.y) / base_w;
+            // smoothly disable dilute for a very long lines outside viewport (2.5 -> 4.5)
+            // bump width here and reduce opacity in fragment shader by dilute_scale factor
+            dilute_scale = mix(max_extrude_component / min_pixel, 1.0, smoothstep(2.5, 4.5, is_out));
+            projected_extrude /= dilute_scale;
+        }
+        else
+        {
+#ifdef RENDER_LINE_BORDER
+            // if line is wide enough, reduce opacity of thin borders only - no change of border width
+            float border_ratio = (border_width * u_width_scale + ANTIALIASING) / outset;
+            screen_width *= border_ratio;
+            float max_border_component = max(screen_width.x, screen_width.y);
+            dilute_border_scale = min(1.0, max_border_component / min_pixel);
+#endif
+        }
+    }
+#endif
+#endif
+#ifdef ELEVATED_ROADS
+    gl_Position = gl_Position + projected_extrude;
+#else
+    gl_Position = mix(gl_Position + projected_extrude, AWAY, hidden);
+#endif
+#endif
 
 #ifdef ELEVATED_ROADS
 #ifdef RENDER_SHADOWS
@@ -230,7 +396,6 @@ void main() {
 #if defined(RENDER_LINE_GRADIENT) || defined(RENDER_LINE_TRIM_OFFSET)
     highp float a_uv_x = a_packed[0];
     float a_split_index = a_packed[1];
-    highp float line_progress = a_packed[2];
 #ifdef RENDER_LINE_GRADIENT
     highp float texel_height = 1.0 / u_image_height;
     highp float half_texel_height = 0.5 * texel_height;
@@ -248,7 +413,7 @@ void main() {
     v_tex = vec2(a_linesofar * scale / (floorwidth * u_floor_width_scale), (-normal.y * height + dash.x + 0.5) / u_texsize.y);
 #endif
 
-    v_width2 = vec2(outset, inset);
+    v_width2_dilute = vec4(outset, inset, dilute_scale, dilute_border_scale);
 
 #ifdef FOG
     v_fog_pos = fog_position(pos);

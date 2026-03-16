@@ -1,7 +1,7 @@
 import potpack from 'potpack';
 import {Event, ErrorEvent, Evented} from '../util/evented';
 import {RGBAImage} from '../util/image';
-import {ImagePosition, PATTERN_PADDING} from './image_atlas';
+import {ImagePosition, PATTERN_PADDING, ImageAtlasCache} from './image_atlas';
 import Texture from './texture';
 import assert from 'assert';
 import {renderStyleImage} from '../style/style_image';
@@ -52,7 +52,7 @@ export type SpriteFormat = 'auto' | 'raster' | 'icon_set';
 type ImageRequestor = {
     ids: ImageId[];
     scope: string;
-    callback: Callback<StyleImageMap<StringifiedImageId>>;
+    callback: Callback<{images: StyleImageMap<StringifiedImageId>; versions: Map<string, number>}>;
 };
 
 /*
@@ -77,12 +77,14 @@ class ImageManager extends Evented {
     images: Map<string, Map<StringifiedImageId, StyleImage>>;
     updatedImages: Map<string, Set<ImageId>>;
     callbackDispatchedThisFrame: Map<string, Set<StringifiedImageId>>;
+    imageVersions: Map<string, Map<StringifiedImageId, number>>;
 
     patterns: Map<string, Map<StringifiedImageId, Pattern>>;
     patternsInFlight: Set<FQID<StringifiedImageId>>;
 
     atlasImage: Map<string, RGBAImage>;
     atlasTexture: Map<string, Texture | null | undefined>;
+    imageAtlasCache: ImageAtlasCache;
 
     imageRasterizerDispatcher: Dispatcher;
     _imageRasterizer: ImageRasterizer;
@@ -93,6 +95,7 @@ class ImageManager extends Evented {
         this.images = new Map();
         this.updatedImages = new Map();
         this.callbackDispatchedThisFrame = new Map();
+        this.imageVersions = new Map();
         this.loaded = new Map();
         this.requestors = [];
 
@@ -100,6 +103,7 @@ class ImageManager extends Evented {
         this.patternsInFlight = new Set();
         this.atlasImage = new Map();
         this.atlasTexture = new Map();
+        this.imageAtlasCache = new ImageAtlasCache();
         this.dirty = true;
 
         this.spriteFormat = spriteFormat;
@@ -122,6 +126,7 @@ class ImageManager extends Evented {
         this.images.set(scope, new Map());
         this.updatedImages.set(scope, new Set());
         this.callbackDispatchedThisFrame.set(scope, new Set());
+        this.imageVersions.set(scope, new Map());
         this.patterns.set(scope, new Map());
         this.atlasImage.set(scope, new RGBAImage({width: 1, height: 1}));
     }
@@ -132,6 +137,7 @@ class ImageManager extends Evented {
         this.images.delete(scope);
         this.updatedImages.delete(scope);
         this.callbackDispatchedThisFrame.delete(scope);
+        this.imageVersions.delete(scope);
         this.patterns.delete(scope);
         this.atlasImage.delete(scope);
 
@@ -210,6 +216,9 @@ class ImageManager extends Evented {
         assert(!this.images.get(scope).has(id.toString()), `Image "${id.toString()}" already exists in scope "${scope}"`);
         if (this._validate(id, image)) {
             this.images.get(scope).set(id.toString(), image);
+            const versions = this.imageVersions.get(scope);
+            const currentVersion = versions.get(id.toString()) || 0;
+            versions.set(id.toString(), currentVersion + 1);
         }
     }
 
@@ -267,6 +276,9 @@ class ImageManager extends Evented {
         image.version = oldImage.version + 1;
         this.images.get(scope).set(id.toString(), image);
         this.updatedImages.get(scope).add(id);
+        const versions = this.imageVersions.get(scope);
+        const currentVersion = versions.get(id.toString()) || 0;
+        versions.set(id.toString(), currentVersion + 1);
         this.removeFromImageRasterizerCache(id, scope);
     }
 
@@ -291,6 +303,12 @@ class ImageManager extends Evented {
         assert(images.has(id.toString()), `Image "${id.toString()}" does not exist in scope "${scope}"`);
         const image = images.get(id.toString());
         images.delete(id.toString());
+        // Increment version on removal
+        // This ensures that if the same image ID is added again, it gets a new version
+        // and won't incorrectly reuse cached atlases from the old image
+        const versions = this.imageVersions.get(scope);
+        const currentVersion = versions.get(id.toString()) || 0;
+        versions.set(id.toString(), currentVersion + 1);
         this.patterns.get(scope).delete(id.toString());
         this.removeFromImageRasterizerCache(id, scope);
         if (image.userImage && image.userImage.onRemove) {
@@ -302,7 +320,15 @@ class ImageManager extends Evented {
         return Array.from(this.images.get(scope).keys()).map((id) => ImageId.from(id));
     }
 
-    getImages(ids: ImageId[], scope: string, callback: Callback<StyleImageMap<StringifiedImageId>>) {
+    getImageVersions(scope: string): Map<string, number> {
+        const versions = this.imageVersions.get(scope);
+        if (!versions) {
+            return new Map();
+        }
+        return versions;
+    }
+
+    getImages(ids: ImageId[], scope: string, callback: Callback<{images: StyleImageMap<StringifiedImageId>; versions: Map<string, number>}>) {
         const images: ImageId[] = [];
         const resolvedImages: ImageId[] = [];
         const imageProviders = this.imageProviders.get(scope);
@@ -384,9 +410,9 @@ class ImageManager extends Evented {
         return this.updatedImages.get(scope) || new Set();
     }
 
-    _notify(ids: ImageId[], scope: string, callback: Callback<StyleImageMap<StringifiedImageId>>) {
+    _notify(ids: ImageId[], scope: string, callback: Callback<{images: StyleImageMap<StringifiedImageId>; versions: Map<string, number>}>) {
         const imagesInScope = this.images.get(scope);
-        const response: StyleImageMap<StringifiedImageId> = new Map();
+        const images: StyleImageMap<StringifiedImageId> = new Map();
 
         for (const id of ids) {
             if (!imagesInScope.get(id.toString())) {
@@ -410,7 +436,6 @@ class ImageManager extends Evented {
                 pixelRatio: image.pixelRatio,
                 sdf: image.sdf,
                 usvg: image.usvg,
-                version: image.version,
                 stretchX: image.stretchX,
                 stretchY: image.stretchY,
                 content: image.content,
@@ -426,10 +451,12 @@ class ImageManager extends Evented {
                 });
             }
 
-            response.set(ImageId.toString(id), styleImage);
+            images.set(ImageId.toString(id), styleImage);
         }
 
-        callback(null, response);
+        // Include image versions for atlas caching
+        const versions = this.getImageVersions(scope);
+        callback(null, {images, versions});
     }
 
     // Pattern stuff

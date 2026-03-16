@@ -105,7 +105,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         tile.requestParams = request;
         if (!tile.actor) tile.actor = this.dispatcher.getActor();
 
-        const done = (error?: AJAXError | null, data?: MapboxRasterTile, responseHeaders?: Headers) => {
+        const done = (error?: AJAXError | null, data?: MapboxRasterTile | ArrayBuffer | null, responseHeaders?: Headers) => {
             delete tile.request;
 
             if (tile.aborted) {
@@ -132,7 +132,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
 
                 tile.state = 'loaded';
                 tile._isHeaderLoaded = true;
-                tile._mrt = data;
+                tile._mrt = data as MapboxRasterTile;
             }
 
             callback(null);
@@ -140,11 +140,9 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
 
         if (this.partial) {
             // Load only the tile header in the main thread
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             tile.request = tile.fetchHeader(undefined, done.bind(this));
         } else {
             // Load and parse the entire tile in Worker
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             tile.request = tile.actor.send('loadTile', params, done.bind(this), undefined, true);
         }
     }
@@ -168,7 +166,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         if (textures.size) {
             // Clean everything else up owned by the tile, but preserve the texture.
             // Destroy first to prevent racing with the texture cache being popped.
-            tile.destroy(true);
+            tile.destroy(false);
             // Preserve the textures in the cache
             for (const texture of textures.values()) {
                 // Save the texture to the cache
@@ -191,21 +189,18 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         // Don't mark tile as reloading if it was empty.
         if (tile.state !== 'empty') tile.state = 'reloading';
 
-        // Fetch data for band and then repaint once data is acquired.
+        // Fetch data for band and then repaint
         tile.fetchBandForRender(sourceLayer, layerId, band, (error, data) => {
             if (error) {
                 tile.state = 'errored';
                 this.fire(new ErrorEvent(error));
-                this.triggerRepaint(tile);
-                return;
-            }
-
-            if (data) {
+            } else if (data) {
                 tile._isHeaderLoaded = true;
                 tile.setTexturePerLayer(layerId, data, this.map.painter);
                 tile.state = 'loaded';
-                this.triggerRepaint(tile);
             }
+
+            this.triggerRepaint(tile);
         });
     }
 

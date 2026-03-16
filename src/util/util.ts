@@ -430,13 +430,13 @@ export function bindAll(fns: Array<string>, context: unknown): void {
  * @private
  */
 export function mapObject<T, U>(
+    this: unknown,
     input: Record<PropertyKey, T>,
     iterator: (value: T, key: PropertyKey, obj: Record<PropertyKey, T>) => U,
     context?: unknown
 ): Record<PropertyKey, U> {
     const output: Record<PropertyKey, U> = {};
     for (const key in input) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         output[key] = iterator.call(context || this, input[key], key, input);
     }
     return output;
@@ -448,6 +448,7 @@ export function mapObject<T, U>(
  * @private
  */
 export function filterObject<T extends Record<PropertyKey, unknown>>(
+    this: unknown,
     input: T,
     iterator: (value: T[keyof T], key: keyof T, obj: T) => boolean,
     context?: unknown
@@ -667,8 +668,8 @@ export function parseCacheControl(cacheControl: string): Record<string, number> 
 
 export function getExpiryDataFromHeaders(responseHeaders: Headers | Map<string, string> | undefined) {
     if (!responseHeaders) return {cacheControl: undefined, expires: undefined};
-    const cacheControl = responseHeaders.get('Cache-Control');
-    const expires = responseHeaders.get('Expires');
+    const cacheControl = responseHeaders.get('cache-control');
+    const expires = responseHeaders.get('expires');
     return {cacheControl, expires};
 }
 
@@ -895,6 +896,18 @@ export function mapRange(range: Range, from: Range, to: Range): Range {
 
 export function easeIn(x: number) {
     return x * x * x * x * x;
+}
+
+/**
+ * Hash function from https://www.shadertoy.com/view/XlGcRh
+ * Matches gl-native's esgtsaHash in mbgl/util/random.hpp
+ */
+export function esgtsaHash(s: number): number {
+    s = s >>> 0; // Ensure unsigned 32-bit integer
+    s = Math.imul(s ^ 2747636419, 2654435769) >>> 0;
+    s = Math.imul(s ^ (s >>> 16), 2654435769) >>> 0;
+    s = Math.imul(s ^ (s >>> 16), 2654435769) >>> 0;
+    return s / 4294967296;
 }
 
 export {deepEqual};

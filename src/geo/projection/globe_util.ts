@@ -659,7 +659,7 @@ export function isLngLatBehindGlobe(tr: Transform, lngLat: LngLat): boolean {
 /**
  * Check if poles are visible inside the current viewport
  *
- * @param {Transform} transform The current map transform.
+ * @param {Transform} tr The current map transform.
  * @returns {[boolean, boolean]} A tuple of booleans [northInViewport, southInViewport]
  */
 export function polesInViewport(tr: Transform): [boolean, boolean] {
@@ -884,7 +884,7 @@ export class GlobeSharedBuffers {
         const poleVertices = GLOBE_VERTEX_GRID_SIZE + 2;
         this._poleSegments = [];
 
-        for (let zoom = 0, offset = 0; zoom < GLOBE_ZOOM_THRESHOLD_MIN; zoom++) {
+        for (let zoom = 0, offset = 0; zoom < GLOBE_ZOOM_THRESHOLD_MAX; zoom++) {
             const tiles = 1 << zoom;
             const endAngle = 360.0 / tiles;
 

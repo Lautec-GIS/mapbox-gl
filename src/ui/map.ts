@@ -18,7 +18,6 @@ import {
     postAddedAppearanceEvent
 } from '../util/mapbox';
 import Style from '../style/style';
-import IndoorManager from '../style/indoor_manager';
 import EvaluationParameters from '../style/evaluation_parameters';
 import Painter from '../render/painter';
 import Transform from '../geo/transform';
@@ -29,7 +28,6 @@ import LngLat, {LngLatBounds} from '../geo/lng_lat';
 import Point from '@mapbox/point-geometry';
 import AttributionControl from './control/attribution_control';
 import LogoControl from './control/logo_control';
-import IndoorControl from './control/indoor_control';
 import {supported} from '@mapbox/mapbox-gl-supported';
 import {RGBAImage} from '../util/image';
 import {Event, ErrorEvent, Evented} from '../util/evented';
@@ -55,7 +53,7 @@ import type SourceCache from '../source/source_cache';
 import type {MapEventType, MapEventOf} from './events';
 import type {PointLike} from '../types/point-like';
 import type {FeatureState} from '../style-spec/expression/index';
-import type {RequestParameters, AJAXError} from '../util/ajax';
+import type {AJAXError} from '../util/ajax';
 import type {RequestTransformFunction} from '../util/mapbox';
 import type {LngLatLike, LngLatBoundsLike} from '../geo/lng_lat';
 import type {CustomLayerInterface} from '../style/style_layer/custom_style_layer';
@@ -104,9 +102,10 @@ import type {Callback} from '../types/callback';
 import type {Interaction} from './interactions';
 import type {SpriteFormat} from '../render/image_manager';
 import type {PitchRotateKey} from './handler_manager';
-import type {CanvasSourceOptions} from '../source/canvas_source';
 import type {CustomSourceInterface} from '../source/custom_source';
+import type {CanvasSourceSpecification} from '../source/canvas_source';
 import type {RasterQueryParameters, RasterQueryResult} from '../source/raster_array_tile_source';
+import type {IndoorTileOptions} from '../style/indoor_data';
 
 export type ControlPosition = 'top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left';
 
@@ -401,6 +400,11 @@ const defaultOptions = {
  * @param {Object} [options.locale=null] A patch to apply to the default localization table for UI strings such as control tooltips. The `locale` object maps namespaced UI string IDs to translated strings in the target language;
  * see [`src/ui/default_locale.js`](https://github.com/mapbox/mapbox-gl-js/blob/main/src/ui/default_locale.js) for an example with all supported string IDs. The object may specify all UI strings (thereby adding support for a new translation) or only a subset of strings (thereby patching the default translation table).
  * @param {boolean} [options.testMode=false] Silences errors and warnings generated due to an invalid accessToken, useful when using the library to write unit tests.
+ * @param {number} [options.scaleFactor=1] The scale factor for text and icon sizes in symbol layers.
+ * A value greater than `1` increases label sizes, useful for improving accessibility or adjusting
+ * for high-density displays. The scale factor is clamped per-layer by `text-size-scale-range`
+ * and `icon-size-scale-range` style properties.
+ * This option is experimental and may change in future releases.
  * @param {'raster' | 'icon_set' | 'auto'} [options.spriteFormat='auto'] The format of the image sprite to use. If set to `'auto'`, vector iconset will be used for all mapbox-hosted sprites and raster sprite for all custom URLs.
  * @param {ProjectionSpecification} [options.projection='mercator'] The [projection](https://docs.mapbox.com/mapbox-gl-js/style-spec/projection/) the map should be rendered in.
  * Supported projections are:
@@ -437,9 +441,7 @@ const defaultOptions = {
  */
 export class Map extends Camera {
     style?: Style;
-    indoor: IndoorManager;
     painter: Painter;
-
     _container: HTMLElement;
     _missingCSSCanary: HTMLElement;
     _canvasContainer: HTMLElement;
@@ -470,7 +472,6 @@ export class Map extends Camera {
     _styleDirty?: boolean;
     _sourcesDirty?: boolean;
     _placementDirty?: boolean;
-    _scaleFactorChanged?: boolean;
     _loaded: boolean;
     _fullyLoaded: boolean; // accounts for placement finishing as well
     _trackResize: boolean;
@@ -642,7 +643,6 @@ export class Map extends Camera {
         this._containerHeight = 0;
         this._showParseStatus = true;
         this._precompilePrograms = options.precompilePrograms;
-        this._scaleFactorChanged = false;
 
         this._averageElevationLastSampledAt = -Infinity;
         this._averageElevationExaggeration = 0;
@@ -789,7 +789,6 @@ export class Map extends Camera {
             }
             this._postStyleLoadEvent();
             this._postStyleWithAppearanceEvent();
-            this._setupIndoor();
         });
 
         this.on('data', (event) => {
@@ -1216,35 +1215,66 @@ export class Map extends Camera {
     getMaxPitch(): number { return this.transform.maxPitch; }
 
     /**
-     * Returns the map's current scale factor.
+     * Returns the map's current scale factor for symbol sizing.
      *
-     * @returns {number} Returns the map's scale factor.
-     * @private
+     * The scale factor multiplies text and icon sizes in symbol layers, useful for
+     * accessibility or adapting to different display densities.
+     * This method is experimental and may change in future releases.
+     *
+     * @memberof Map#
+     * @returns {number} The map's current scale factor (default `1`).
+     * @experimental
      *
      * @example
      * const scaleFactor = map.getScaleFactor();
+     *
+     * @see {@link Map#setScaleFactor}
+     * @see [text-size-scale-range](https://docs.mapbox.com/style-spec/reference/layers/#layout-symbol-text-size-scale-range)
      */
     getScaleFactor(): number {
         return this._scaleFactor;
     }
 
     /**
-     * Sets the map's scale factor.
+     * Sets the map's scale factor for symbol sizing.
      *
-     * @param {number} scaleFactor The scale factor to set.
+     * The scale factor multiplies text and icon sizes in symbol layers. This is useful for
+     * improving accessibility (larger labels for users with vision impairments) or adjusting
+     * label sizes for different display densities.
+     *
+     * The effective scale factor for each symbol layer is clamped to that layer's
+     * `text-size-scale-range` and `icon-size-scale-range` properties,
+     * allowing fine-grained control over which layers scale and by how much.
+     *
+     * Calling this method triggers a re-layout of symbol layers whose effective scale factor changed.
+     * This method is experimental and may change in future releases.
+     *
+     * @memberof Map#
+     * @param {number} scaleFactor The scale factor to apply (default `1`). Values greater
+     * than `1` increase sizes; values less than `1` decrease sizes.
      * @returns {Map} Returns itself to allow for method chaining.
-     * @private
+     * @experimental
      *
      * @example
-     *
+     * // Increase map labels for accessibility (clamped by text-size-scale-range)
      * map.setScaleFactor(2);
+     *
+     * @example
+     * // Reset to default size
+     * map.setScaleFactor(1);
+     *
+     * @see {@link Map#getScaleFactor}
+     * @see [text-size-scale-range](https://docs.mapbox.com/style-spec/reference/layers/#layout-symbol-text-size-scale-range)
+     * @see [icon-size-scale-range](https://docs.mapbox.com/style-spec/reference/layers/#layout-symbol-icon-size-scale-range)
      */
     setScaleFactor(scaleFactor: number): this {
         this._scaleFactor = scaleFactor;
         this.painter.scaleFactor = scaleFactor;
         DevTools.refresh();
 
-        this._scaleFactorChanged = true;
+        if (this.style) {
+            this.style._setLabelPlacementStale();
+        }
 
         this.style._updateFilteredLayers((layer) => layer.type === 'symbol');
         this._update(true);
@@ -1608,7 +1638,7 @@ export class Map extends Camera {
                     mousein = false;
                 } else if (!mousein) {
                     mousein = true;
-                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent, {features}));
+                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent, {features}) as unknown as MapEventOf<T>);
                 }
             };
 
@@ -1627,14 +1657,14 @@ export class Map extends Camera {
                     mousein = true;
                 } else if (mousein) {
                     mousein = false;
-                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent));
+                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent) as unknown as MapEventOf<T>);
                 }
             };
 
             const mouseout = (e: MapMouseEvent) => {
                 if (mousein) {
                     mousein = false;
-                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent));
+                    listener.call(this, new MapMouseEvent(type, this, e.originalEvent) as unknown as MapEventOf<T>);
                 }
             };
 
@@ -1646,7 +1676,7 @@ export class Map extends Camera {
                 if (features.length) {
                     // Here we need to mutate the original event, so that preventDefault works as expected.
                     e.features = features;
-                    listener.call(this, e);
+                    listener.call(this, e as unknown as MapEventOf<T>);
                     delete e.features;
                 }
             };
@@ -2501,7 +2531,7 @@ export class Map extends Camera {
      * @see Example: GeoJSON source: [Add live realtime data](https://docs.mapbox.com/mapbox-gl-js/example/live-geojson/)
      * @see Example: Raster DEM source: [Add hillshading](https://docs.mapbox.com/mapbox-gl-js/example/hillshade/)
      */
-    addSource(id: string, source: SourceSpecification | CustomSourceInterface<unknown>): this {
+    addSource(id: string, source: SourceSpecification | CanvasSourceSpecification | CustomSourceInterface<unknown>): this {
         if (!this._isValidId(id)) {
             return this;
         }
@@ -2814,7 +2844,7 @@ export class Map extends Camera {
      */
     loadImage(url: string, callback: Callback<ImageBitmap | HTMLImageElement | ImageData>) {
         getImage(this._requestManager.transformRequest(url, ResourceType.Image), (err, img) => {
-            callback(err, img instanceof HTMLImageElement ? browser.getImageData(img) : img);
+            callback(err, img);
         });
     }
 
@@ -3945,6 +3975,37 @@ export class Map extends Camera {
         return this._triggerCameraUpdate(camera);
     }
 
+    /**
+     * Returns the map's near clip offset. Relevant for orthographic projection only.
+     *
+     * @memberof Map#
+     * @returns {number} The map's current near clip offset.
+     * @experimental
+     *
+     * @example
+     * map.getNearClipOffset();
+     */
+    getNearClipOffset(): number { return this.transform.nearClipOffset; }
+
+    /**
+     * Sets the map's camera near clip offset value. Relevant for orthographic projection only.
+     *
+     * @memberof Map#
+     * @param {number} offset The near clip offset to set.
+     * @returns {Map} Returns itself to allow for method chaining.
+     * @experimental
+     *
+     * @example
+     * map.setNearClipOffset(30)
+     */
+    setNearClipOffset(offset: number): this {
+        const needsUpdate = this.transform.nearClipOffset !== offset;
+
+        this.transform.nearClipOffset = offset;
+
+        return this._update(needsUpdate);
+    }
+
     _triggerCameraUpdate(camera: CameraSpecification): this {
         return this._update(this.transform.setOrthographicProjectionAtLowPitch(camera['camera-projection'] === 'orthographic'));
     }
@@ -4126,26 +4187,18 @@ export class Map extends Camera {
      * map._selectIndoorFloor('floor-1');
      */
     _selectIndoorFloor(floorId: string) {
-        this.indoor.selectFloor(floorId);
+        this.style.indoorManager.selectFloor(floorId);
     }
 
     _setIndoorActiveFloorsVisibility(activeFloorsVisible: boolean) {
-        this.indoor.setActiveFloorsVisibility(activeFloorsVisible);
+        this.style.indoorManager.setActiveFloorsVisibility(activeFloorsVisible);
     }
 
-    _addIndoorControl() {
-        if (!this._indoorControl) {
-            this._indoorControl = new IndoorControl();
+    getIndoorTileOptions(source: string, scope: string): IndoorTileOptions | null {
+        if (!this.style.isIndoorEnabled()) {
+            return null;
         }
-
-        this.addControl(this._indoorControl, 'right');
-    }
-
-    _removeIndoorControl() {
-        if (!this._indoorControl) {
-            return;
-        }
-        this.removeControl(this._indoorControl);
+        return this.style.indoorManager.getIndoorTileOptions(source, scope);
     }
 
     _updateContainerDimensions() {
@@ -4182,27 +4235,6 @@ export class Map extends Camera {
                 'Please ensure your page includes mapbox-gl.css, as described ' +
                 'in https://www.mapbox.com/mapbox-gl-js/api/.');
         }
-    }
-
-    _setupIndoor() {
-        if (!this.style.isIndoorEnabled()) {
-            return;
-        }
-
-        this.indoor = new IndoorManager(this.style);
-
-        this.on('load', () => {
-            this._addIndoorControl();
-            this.indoor._updateUI(this.transform.zoom, this.transform.center, this.transform.getBounds());
-
-            this.on('move', () => {
-                this.indoor._updateUI(this.transform.zoom, this.transform.center, this.transform.getBounds());
-            });
-
-            this.on('idle', () => {
-                this.indoor._updateUI(this.transform.zoom, this.transform.center, this.transform.getBounds());
-            });
-        });
     }
 
     _setupContainer() {
@@ -4291,6 +4323,12 @@ export class Map extends Camera {
         this.painter = new Painter(gl, this._contextCreateOptions, this.transform, this._scaleFactor, this._worldview);
         this.on('data', (event) => {
             if (event.dataType === 'source') {
+                const elevationSource = this.transform.elevation ? this.transform.elevation._source() : null;
+                // Force a new label placement when a DEM source was updated,
+                // to ensure that labels are placed according to the updated terrain.
+                if (elevationSource && event.sourceCacheId === elevationSource.id && this.style) {
+                    this.style._setLabelPlacementStale();
+                }
                 this.painter.setTileLoadedFlag(true);
             }
         });
@@ -4318,6 +4356,7 @@ export class Map extends Camera {
         if (this.style) {
             this.style.clearLayers();
             this.style.imageManager.destroyAtlasTextures();
+            this.style.imageManager.imageAtlasCache.destroyTextures();
             this.style.reloadModels();
             this.style.clearSources();
         }
@@ -4522,12 +4561,8 @@ export class Map extends Camera {
             averageElevationChanged = this._updateAverageElevation(frameStartTime);
         }
 
-        const updatePlacementResult = this.style && this.style._updatePlacement(this.painter, this.painter.transform, this.showCollisionBoxes, fadeDuration, this._crossSourceCollisions, this.painter.replacementSource, this._scaleFactorChanged);
-        if (this._scaleFactorChanged) {
-            this._scaleFactorChanged = false;
-        }
-        if (updatePlacementResult) {
-            this._placementDirty = updatePlacementResult.needsRerender;
+        if (this.style) {
+            this._placementDirty = this.style._updatePlacement(this.painter.transform, this.showCollisionBoxes, fadeDuration, this._crossSourceCollisions, this.painter.replacementSource);
         }
 
         // Actually draw
@@ -4901,9 +4936,6 @@ export class Map extends Camera {
         this._domRenderTaskQueue.clear();
         if (this.style) {
             this.style.destroy();
-        }
-        if (this.indoor) {
-            this.indoor.destroy();
         }
         this.painter.destroy();
         if (this.handlers) this.handlers.destroy();

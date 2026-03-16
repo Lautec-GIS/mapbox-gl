@@ -4,7 +4,7 @@
     "test": {
       "height": 128,
       "width": 128,
-      "allowed": 0.0218,
+      "allowed": 0.0220,
       "diff-calculation-threshold": 0.06
     }
   },

@@ -254,6 +254,7 @@ class Painter {
         continousRedraw: boolean;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         enabledLayers: any;
+        show3DModelFootprints: boolean;
     };
 
     _timeStamp: number;
@@ -298,6 +299,7 @@ class Painter {
             showTerrainProxyTiles: false,
             fpsWindow: 30,
             continousRedraw: false,
+            show3DModelFootprints: false,
             enabledLayers: {
             }
         };
@@ -310,6 +312,9 @@ class Painter {
         }
 
         DevTools.addParameter(this._debugParams, 'showTerrainProxyTiles', 'Terrain', {}, () => {
+            this.style.map.triggerRepaint();
+        });
+        DevTools.addParameter(this._debugParams, 'show3DModelFootprints', 'Debug', {}, () => {
             this.style.map.triggerRepaint();
         });
         DevTools.addParameter(this._debugParams, 'forceEnablePrecipitation', 'Precipitation');
@@ -813,7 +818,7 @@ class Painter {
 
         for (const id of layerIds) {
             const layer = layers[id];
-
+            if (layer.visibility === 'none') continue;
             if (layer.type === 'circle') {
                 layersRequireTerrainDepth = true;
             } else if (layer.type === 'building') {
@@ -942,15 +947,22 @@ class Painter {
                         // This order is later used by fill-extrusion and instanced tree's rendering code to know
                         // how to deal with landmarks.
                             order = layerIdx;
-                            for (const mask of layer.layout.get('clip-layer-types')) {
-                                clipMask |= (mask === 'model' ? LayerTypeMask.Model : (mask === 'symbol' ? LayerTypeMask.Symbol : LayerTypeMask.FillExtrusion));
-                            }
-                            for (const scope of layer.layout.get('clip-layer-scope')) {
-                                clipScope.push(scope);
-                            }
                             if (layer.isHidden(this.transform.zoom)) {
                                 addToSources = false;
                             } else {
+                                // Hidden layers may not have been recalculated this frame, so `layer.layout`
+                                // can be undefined. Only access evaluated layout when we know the clip layer
+                                // is active for this frame.
+                                if (!layer.layout) {
+                                    addToSources = false;
+                                    continue;
+                                }
+                                for (const mask of layer.layout.get('clip-layer-types')) {
+                                    clipMask |= (mask === 'model' ? LayerTypeMask.Model : (mask === 'symbol' ? LayerTypeMask.Symbol : LayerTypeMask.FillExtrusion));
+                                }
+                                for (const scope of layer.layout.get('clip-layer-scope')) {
+                                    clipScope.push(scope);
+                                }
                                 clippingActiveThisFrame = true;
                             }
                         }
@@ -983,6 +995,7 @@ class Painter {
         this.layersWithOcclusionOpacity = [];
         for (let i = 0; i < orderedLayers.length; i++) {
             const layer = orderedLayers[i];
+            if (layer.visibility === 'none') continue;
             const cutoffRange = layer.cutoffRange();
             this.longestCutoffRange = Math.max(cutoffRange, this.longestCutoffRange);
             if (cutoffRange > 0.0) {
@@ -1251,10 +1264,7 @@ class Painter {
         this.currentLayer = 0;
         this.firstLightBeamLayer = Number.MAX_SAFE_INTEGER;
 
-        let shadowLayers = 0;
-        if (shadowRenderer) {
-            shadowLayers = shadowRenderer.getShadowCastingLayerCount();
-        }
+        const groundShadowLayerIndex = shadowRenderer ? shadowRenderer.getGroundShadowLayerIndex() : -1;
 
         let terrainDepthCopied = false;
 
@@ -1345,7 +1355,7 @@ class Painter {
             this.renderLayer(this, sourceCache, layer, coordsForTranslucentLayer(layer, sourceCache));
 
             // Render ground shadows after the last shadow caster layer
-            if (!this.terrain && shadowRenderer && shadowLayers > 0 && layer.hasShadowPass() && --shadowLayers === 0) {
+            if (!this.terrain && shadowRenderer && this.currentLayer === groundShadowLayerIndex) {
                 // Draw ground shadow mask
                 {
                     this.clearStencil();
@@ -1693,16 +1703,17 @@ class Painter {
         // When terrain is active, fog is rendered as part of draping, not as part of tile
         // rendering. Removing the fog flag during tile rendering avoids additional defines.
         if (this._fogVisible && !rtt && (overrideFog === undefined || overrideFog)) {
-            defines.push('FOG', 'FOG_DITHERING');
+            defines.push('FOG');
         }
         if (rtt) defines.push('RENDER_TO_TEXTURE');
         if (this._showOverdrawInspector) defines.push('OVERDRAW_INSPECTOR');
+
         return defines;
     }
 
     getOrCreateProgram<T extends ProgramName>(name: T, options?: CreateProgramParams): Program<ProgramUniformsType[T]> {
         this.cache = this.cache || {};
-        const defines = ((options && options.defines) || []);
+        const defines = (options && options.defines) || [];
         const config = options && options.config;
         const overrideFog = options && options.overrideFog;
         const overrideRtt = options && options.overrideRtt;

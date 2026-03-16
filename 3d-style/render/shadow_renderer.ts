@@ -162,7 +162,7 @@ class ShadowReceivers {
 export class ShadowRenderer {
     painter: Painter;
     _enabled: boolean;
-    _shadowLayerCount: number;
+    _drawShadowAfterLayer: number;
     _numCascadesToRender: number;
     _cascades: Array<ShadowCascade>;
     _groundShadowTiles: Array<OverscaledTileID>;
@@ -177,7 +177,7 @@ export class ShadowRenderer {
     constructor(painter: Painter) {
         this.painter = painter;
         this._enabled = false;
-        this._shadowLayerCount = 0;
+        this._drawShadowAfterLayer = -1;
         this._numCascadesToRender = 0;
         this._cascades = [];
         this._groundShadowTiles = [];
@@ -208,7 +208,7 @@ export class ShadowRenderer {
         const painter = this.painter;
 
         this._enabled = false;
-        this._shadowLayerCount = 0;
+        this._drawShadowAfterLayer = -1;
         this._receivers.clear();
 
         if (!directionalLight || !directionalLight.properties) {
@@ -216,21 +216,39 @@ export class ShadowRenderer {
         }
 
         const shadowIntensity = directionalLight.properties.get('shadow-intensity');
+        const drawBeforeLayer = directionalLight.properties.get('shadow-draw-before-layer');
 
         if (!directionalLight.shadowsEnabled() || shadowIntensity <= 0.0) {
             return;
         }
 
-        this._shadowLayerCount = painter.style.order.reduce(
-            (accumulator: number, layerId: string) => {
-                const layer = painter.style._mergedLayers[layerId];
-                return accumulator + (layer.hasShadowPass() && !layer.isHidden(transform.zoom) ? 1 : 0);
-            }, 0);
+        let lastShadowLayer = -1;
 
-        this._enabled = this._shadowLayerCount > 0;
+        let layerIdx = 0;
+        for (const layerId of painter.style.order) {
+            const layer = painter.style._mergedLayers[layerId];
+            if (layer.hasShadowPass() && !layer.isHidden(transform.zoom)) {
+                lastShadowLayer = layerIdx;
+            }
+            // If drawBeforeLayer is specified, ground shadows will be rendered right before that layer.
+            // Check the exact match for the layer id or a match for a layer with the specific slot.
+            // Slots themselves are not included in layerRenderItems but if we have at least one layer
+            // which has a matching slot, then we will use that layer as the target.
+            if (drawBeforeLayer && (drawBeforeLayer === layerId || drawBeforeLayer === layer.slot)) {
+                // There should be no need to render shadows before the first layer, and it's not supported
+                this._drawShadowAfterLayer = layerIdx > 0 ? layerIdx - 1 : 0;
+            }
+            layerIdx += 1;
+        }
+
+        this._enabled = lastShadowLayer >= 0;
 
         if (!this.enabled) {
             return;
+        }
+
+        if (this._drawShadowAfterLayer < 0) {
+            this._drawShadowAfterLayer = lastShadowLayer;
         }
 
         const context = painter.context;
@@ -442,8 +460,8 @@ export class ShadowRenderer {
         return this._depthMode;
     }
 
-    getShadowCastingLayerCount(): number {
-        return this._shadowLayerCount;
+    getGroundShadowLayerIndex(): number {
+        return this._drawShadowAfterLayer;
     }
 
     calculateShadowPassMatrixFromTile(unwrappedId: UnwrappedTileID): mat4 {

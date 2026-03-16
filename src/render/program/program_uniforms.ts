@@ -38,13 +38,12 @@ import type {ModelDefinesType} from '../../../3d-style/render/program/model_prog
 import type {FillDefinesType} from './fill_program';
 import type {FillExtrusionDefinesType} from './fill_extrusion_program';
 
-export type FogDefinesType = ['FOG', 'FOG_DITHERING'];
+export type FogDefinesType = 'FOG';
 export type TerrainDepthAccessDefinesType = 'DEPTH_D24' | 'DEPTH_OCCLUSION';
 
 type GlobalDefinesType =
     | 'DEBUG_WIREFRAME'
     | 'DEPTH_TEXTURE'
-    | 'FOG_DITHERING'
     | 'FOG'
     | 'GLOBE'
     | 'LIGHTING_3D_ALPHA_EMISSIVENESS'
@@ -73,7 +72,8 @@ export type DynamicDefinesType =
     | HillshadeDefinesType
     | TerrainDepthAccessDefinesType
     | ModelDefinesType
-    | BuildingDefinesType;
+    | BuildingDefinesType
+    | `MAX_UBO_SIZE_VEC4 ${number}u`;
 
 export const programUniforms = {
     fillExtrusion: fillExtrusionUniforms,

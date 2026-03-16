@@ -8,15 +8,21 @@ uniform highp float u_floor_width_scale;
 uniform float u_alpha_discard_threshold;
 uniform highp vec2 u_trim_offset;
 uniform highp vec2 u_trim_fade_range;
+uniform highp vec2 u_trim_gradient_mix_range;
 uniform lowp vec4 u_trim_color;
+uniform bool u_emissive_in_shadows;
 
-in vec2 v_width2;
+in vec4 v_width2_dilute;
 in vec2 v_normal;
 in float v_gamma_scale;
 in highp vec3 v_uv;
 #ifdef ELEVATED_ROADS
 in highp float v_road_z_offset;
 #endif
+#ifdef VARIABLE_LINE_WIDTH
+in float stub_side;
+#endif
+
 #ifdef RENDER_LINE_DASH
 uniform sampler2D u_dash_image;
 
@@ -70,14 +76,22 @@ void main() {
     #pragma mapbox: initialize lowp float emissive_strength
 
     // Calculate the distance of the pixel from the line in pixels.
-    float dist = length(v_normal) * v_width2.s;
+    float dist = length(v_normal) * v_width2_dilute.x;
 
     // Calculate the antialiasing fade factor. This is either when fading in
-    // the line in case of an offset line (v_width2.t) or when fading out
-    // (v_width2.s)
+    // the line in case of an offset line (v_width2_dilute.y) or when fading out
+    // (v_width2_dilute.x)
+#ifdef VARIABLE_LINE_WIDTH
+    blur = mix(blur, 0.0, stub_side);
+#endif
+    float diluted_opacity = opacity * v_width2_dilute.z;
     float blur2 = (u_width_scale * blur + 1.0 / u_device_pixel_ratio) * v_gamma_scale;
-    float alpha = clamp(min(dist - (v_width2.t - blur2), v_width2.s - dist) / blur2, 0.0, 1.0);
+    float alpha = clamp(min(dist - (v_width2_dilute.y - blur2), v_width2_dilute.x - dist) / blur2, 0.0, 1.0);
+#ifdef VARIABLE_LINE_WIDTH
+    alpha = mix(alpha, 1.0, stub_side);
+#endif
     alpha = side_z_offset > 0.0 ? 1.0 - alpha : alpha;
+
 #ifdef RENDER_LINE_DASH
     float sdfdist = texture(u_dash_image, v_tex).r;
     float sdfgamma = 1.0 / (2.0 * u_device_pixel_ratio) / dash.z;
@@ -108,7 +122,14 @@ void main() {
         highp float start_transition = max(0.0, min(1.0, (line_progress - trim_start) / max(u_trim_fade_range[0], 1.0e-9)));
         highp float end_transition = max(0.0, min(1.0, (trim_end - line_progress) / max(u_trim_fade_range[1], 1.0e-9)));
         highp float transition_factor = min(start_transition, end_transition);
-        out_color = mix(out_color, u_trim_color, transition_factor);
+        highp float gradient_trim_color_mix_factor = 0.0;
+#ifdef RENDER_LINE_GRADIENT
+        gradient_trim_color_mix_factor = smoothstep(u_trim_gradient_mix_range.x, u_trim_gradient_mix_range.y, line_progress);
+#endif
+        highp vec4 trim_color = mix(u_trim_color, out_color, gradient_trim_color_mix_factor);
+        // Note: if u_trim_gradient_mix_range.x < 1.0 the non-trimmed part will use the non-gradient color
+        // This sets the usage of line-gradient as a trim-color
+        out_color = mix(u_trim_gradient_mix_range.x < 1.0 ? color : out_color, trim_color, transition_factor);
         trim_alpha = 1.0 - transition_factor;
     }
 #endif
@@ -120,8 +141,9 @@ void main() {
     }
 
 #ifdef RENDER_LINE_BORDER
+#ifndef VARIABLE_LINE_WIDTH
     float edgeBlur = ((border_width * u_width_scale) + 1.0 / u_device_pixel_ratio);
-    float alpha2 = clamp(min(dist - (v_width2.t - edgeBlur), v_width2.s - dist) / edgeBlur, 0.0, 1.0);
+    float alpha2 = clamp(min(dist - (v_width2_dilute.y - edgeBlur), v_width2_dilute.x - dist) / edgeBlur, 0.0, 1.0);
     if (alpha2 < 1.) {
         float smoothAlpha = smoothstep(0.6, 1.0, alpha2);
         if (border_color.a == 0.0) {
@@ -136,13 +158,16 @@ void main() {
         } else {
             out_color = mix(border_color * trim_alpha, out_color, smoothAlpha);
         }
+        out_color *= v_width2_dilute.w;
     }
+#endif
 #endif
 
 #ifdef LIGHTING_3D_MODE
     out_color = apply_lighting_with_emission_ground(out_color, emissive_strength);
 #ifdef RENDER_SHADOWS
     float light = shadowed_light_factor(v_pos_light_view_0, v_pos_light_view_1, v_depth);
+    light = u_emissive_in_shadows ? mix(light, 1.0, emissive_strength) : light;
 #ifdef ELEVATED_ROADS
     out_color.rgb *= mix(v_road_z_offset != 0.0 ? u_ground_shadow_factor : vec3(1.0), vec3(1.0), light);
 #else
@@ -155,7 +180,7 @@ void main() {
     out_color = fog_dither(fog_apply_premultiplied(out_color, v_fog_pos));
 #endif
 
-    out_color *= (alpha * opacity);
+    out_color *= (alpha * diluted_opacity);
 
 #ifdef INDICATOR_CUTOUT
     out_color = applyCutout(out_color, v_z_offset);

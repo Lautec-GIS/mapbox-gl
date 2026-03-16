@@ -191,6 +191,18 @@ map.addSource('urban-areas', {
     'data': 'https://docs.mapbox.com/mapbox-gl-js/assets/ne_50m_urban_areas.geojson'
 });
 
+map.addSource('canvas-source', {
+    type: 'canvas',
+    canvas: 'myCanvas',
+    animate: true,
+    coordinates: [
+        [-76.54, 39.18],
+        [-76.52, 39.18],
+        [-76.52, 39.17],
+        [-76.54, 39.17]
+    ]
+});
+
 map.addSource('points', {
     'type': 'geojson',
     'data': {

@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "allowJs": true,
     "allowSyntheticDefaultImports": true,
@@ -17,8 +18,12 @@
     "noUncheckedIndexedAccess": true,
     "resolveJsonModule": true,
     "strict": false,
+    "strictBindCallApply": true,
+    "strictBuiltinIteratorReturn": true,
+    "noImplicitThis": true,
     "target": "es2022",
     "useDefineForClassFields": false,
+    "useUnknownInCatchVariables": true,
     "verbatimModuleSyntax": true,
     "lib": [
       "ESNext",

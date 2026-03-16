@@ -4,6 +4,7 @@ import type {RequestParameters, ResponseCallback} from '../util/ajax';
 import type {AlphaImage} from '../util/image';
 import type {GlyphPositions} from '../render/glyph_atlas';
 import type ImageAtlas from '../render/image_atlas';
+import type {ImageAtlasReference} from '../render/image_atlas';
 import type LineAtlas from '../render/line_atlas';
 import type {OverscaledTileID} from './tile_id';
 import type {Bucket} from '../data/bucket';
@@ -24,6 +25,17 @@ import type {ImageId} from '../style-spec/expression/types/image_id';
 import type {StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
 import type {StyleModelMap} from '../style/style_mode';
 import type {IndoorTileOptions} from '../style/indoor_data.js';
+import type {TileProvider} from './tile_provider';
+
+/**
+ * Source types that can instantiate a {@link WorkerSource} in {@link MapWorker}.
+ */
+export type WorkerSourceType =
+    | 'vector'
+    | 'geojson'
+    | 'raster-dem'
+    | 'raster-array'
+    | 'batched-model';
 
 /**
  * The parameters passed to the {@link MapWorker#getWorkerSource}.
@@ -66,7 +78,11 @@ export type WorkerSourceVectorTileRequest = WorkerSourceTileRequest & {
     tileSize: number;
     tileZoom: number;
     zoom: number;
-    data?: unknown;
+    data?: {
+        rawData: ArrayBuffer;
+        expires?: string;
+        cacheControl?: string;
+    };
     extraShadowCaster?: boolean;
     isSymbolTile?: boolean | null;
     partial?: boolean;
@@ -110,7 +126,7 @@ export type WorkerSourceTiled3dModelRequest = WorkerSourceTileRequest & {
  */
 export type WorkerSourceVectorTileResult = {
     buckets: Array<Bucket>;
-    imageAtlas: ImageAtlas;
+    imageAtlas: ImageAtlas | ImageAtlasReference;
     glyphAtlasImage: AlphaImage;
     lineAtlas: LineAtlas;
     featureIndex: FeatureIndex;
@@ -157,14 +173,6 @@ export type WorkerSourceImageRaserizeCallback = Callback<RasterizedImageMap>;
  *
  * @see {@link Map#addSourceType}
  * @private
- *
- * @class WorkerSource
- * @param actor
- * @param layerIndex
- * @param availableImages
- * @param isSpriteLoaded
- * @param loadData
- * @param brightness
  */
 export interface WorkerSource {
     availableImages?: ImageId[];
@@ -197,15 +205,19 @@ export interface WorkerSource {
     removeSource?: (params: {source: string}, callback: Callback<void>) => void;
 }
 
+export type WorkerSourceOptions = {
+    actor: Actor;
+    layerIndex: StyleLayerIndex;
+    availableImages: ImageId[];
+    availableModels: StyleModelMap;
+    isSpriteLoaded: boolean;
+    tileProvider?: TileProvider<ArrayBuffer>;
+    brightness?: number;
+    worldview?: string;
+    maxUniformBufferBindings?: number;
+    maxUniformBlockSizeDwords?: number;
+};
+
 export interface WorkerSourceConstructor {
-    new(
-        actor?: Actor,
-        layerIndex?: StyleLayerIndex,
-        availableImages?: ImageId[],
-        availableModels?: StyleModelMap,
-        isSpriteLoaded?: boolean,
-        loadData?: (params: {source: string; scope: string}, callback: Callback<unknown>) => () => void | undefined,
-        brightness?: number,
-        worldview?: string
-    ): WorkerSource;
+    new(options: WorkerSourceOptions): WorkerSource;
 }

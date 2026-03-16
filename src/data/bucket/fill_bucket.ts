@@ -13,7 +13,7 @@ import loadGeometry from '../load_geometry';
 import toEvaluationFeature from '../evaluation_feature';
 import EvaluationParameters from '../../style/evaluation_parameters';
 import {EdgeIterator, ElevationFeatures, ElevationFeatureSampler, type ElevationFeature, type Range} from '../../../3d-style/elevation/elevation_feature';
-import {ELEVATION_CLIP_MARGIN, MARKUP_ELEVATION_BIAS, PROPERTY_ELEVATION_ROAD_BASE_Z_LEVEL} from '../../../3d-style/elevation/elevation_constants';
+import {ELEVATION_CLIP_MARGIN, MARKUP_ELEVATION_BIAS, PROPERTY_ELEVATION_ROAD_BASE_Z_LEVEL, SUBDIVISION_EDGE_EXTENSION} from '../../../3d-style/elevation/elevation_constants';
 import {ElevatedStructures, type FeatureInfo} from '../../../3d-style/elevation/elevated_structures';
 import Point from '@mapbox/point-geometry';
 import {tileToMeter} from '../../geo/mercator_coordinate';
@@ -40,7 +40,7 @@ import type {TileTransform} from '../../geo/projection/tile_transform';
 import type {VectorTileLayer} from '@mapbox/vector-tile';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
-import type {ElevationPolygons, ElevationPortalGraph} from '../../../3d-style/elevation/elevation_graph';
+import type {ElevationPortalGraph} from '../../../3d-style/elevation/elevation_graph';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
 import type {GlobalProperties} from "../../style-spec/expression";
 import type {LUT} from '../../util/lut';
@@ -301,10 +301,6 @@ class FillBucket implements Bucket {
         return this.elevatedStructures ? this.elevatedStructures.unevaluatedPortals : undefined;
     }
 
-    getElevationPolygons(): ElevationPolygons | undefined {
-        return this.elevatedStructures ? this.elevatedStructures.portalPolygons : undefined;
-    }
-
     setEvaluatedPortalGraph(graph: ElevationPortalGraph, vtLayer: VectorTileLayer, canonical: CanonicalTileID, availableImages: ImageId[], brightness: number) {
         if (this.elevatedStructures) {
             this.elevatedStructures.construct(graph);
@@ -354,14 +350,12 @@ class FillBucket implements Bucket {
 
                     // Create "elevated structures" for polygons using "road" elevation mode that
                     // contains additional bridge and tunnel geometries for rendering. Additive "markup" features are
-                    // stacked on top of another elevated layers and do not need these structures of their own
-                    for (const polygon of elevated.polygons) {
-                        // Overlapping edges between adjacent polygons form "portals", i.e. entry & exit points
-                        // useful for traversing elevated polygons
-                        this.elevatedStructures.addPortalCandidates(
-                            elevated.elevationFeature.id, polygon, isTunnel, elevated.elevationFeature, zLevel
-                        );
-                    }
+                    // stacked on top of another elevated layers and do not need these structures of their own.
+                    // Overlapping edges between adjacent polygons form "portals", i.e. entry & exit points
+                    // useful for traversing elevated polygons
+                    this.elevatedStructures.addPortalCandidates(
+                        elevated.elevationFeature.id, elevated.polygons, isTunnel, elevated.elevationFeature, zLevel
+                    );
                 }
 
                 if (elevated.elevationFeature.constantHeight == null) {
@@ -518,7 +512,7 @@ class FillBucket implements Bucket {
         const clippedPolygons: Point[][][] = [];
 
         for (const poly of polygons) {
-            const clippedPoly = polygonSubdivision(poly, new EdgeIterator(elevation, metersToTile));
+            const clippedPoly = polygonSubdivision(poly, new EdgeIterator(elevation, metersToTile), SUBDIVISION_EDGE_EXTENSION);
             clippedPolygons.push(...clippedPoly);
         }
 
