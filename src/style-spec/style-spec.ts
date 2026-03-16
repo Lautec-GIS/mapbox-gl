@@ -95,7 +95,7 @@ export type ArrayPropertySpecification =
     type: 'array';
     'property-type': ExpressionType;
     value: 'color';
-    expression?: ExpressionSpecification;
+    expression?: PropertyExpressionSpecification;
     transition?: boolean;
     default?: string[];
     length?: number;
