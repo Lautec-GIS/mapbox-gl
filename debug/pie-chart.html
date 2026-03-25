@@ -1,215 +1,168 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Mapbox GL JS debug page</title>
+    <title>Mapbox GL JS Pie Chart Debug</title>
     <meta charset="utf-8" />
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0, user-scalable=no"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <link rel="stylesheet" href="../dist/mapbox-gl.css" />
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-        }
-        html,
-        body,
-        #map {
-            height: 100%;
-        }
-        #controls {
+        body { margin: 0; padding: 0; }
+        html, body, #map { height: 100%; }
+        #info {
             position: absolute;
-            top: 0;
-            left: 0;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 4px;
+            font-family: sans-serif;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
         }
     </style>
 </head>
 
 <body>
 <div id="map"></div>
-<div id="controls">
-    <label
-    ><input id="terrain-checkbox" type="checkbox" checked />
-        terrain</label
-    ><br />
-</div>
+<div id="info"></div>
 
 <script src="../dist/mapbox-gl-dev.js"></script>
-<script src="../debug/access_token_generated.js"></script>
-<script>
-    var map = (window.map = new mapboxgl.Map({
+<script type="module">
+    import {Pane} from 'https://esm.sh/tweakpane@4';
+    import {getAccessToken} from './access_token_generated.js';
+
+    mapboxgl.accessToken = getAccessToken();
+
+    const map = (window.map = new mapboxgl.Map({
         container: "map",
-        zoom: 12.5,
+        zoom: 10,
         center: [-77.01866, 38.888],
-        //style: "mapbox://styles/mapbox/streets-v10",
-        style: {
-            version: 8,
-            name: "Empty",
-            metadata: {
-                "mapbox:autocomposite": true,
-            },
-            glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
-            sources: {},
-            layers: [
-                {
-                    id: "background",
-                    type: "background",
-                    paint: {
-                        "background-color": "rgba(0,0,0,0)",
-                    },
-                },
-            ],
-        },
+        style: "mapbox://styles/mapbox/dark-v11",
         hash: true,
         useWebGL2: true,
     }));
 
-    function geojson() {
+    function generateData() {
         return {
             type: "FeatureCollection",
             features: [
                 {
                     type: "Feature",
-                    geometry: {
-                        type: "Point",
-                        coordinates: [-77.01866, 38.888],
-                    },
-                    properties: {
-                        progress: 0.49803922,
-                    },
+                    id: 1,
+                    geometry: { type: "Point", coordinates: [-77.01866, 38.888] },
+                    properties: { progress: 0.75, radius: 100, label: "75% Progress" }
                 },
                 {
                     type: "Feature",
-                    geometry: {
-                        type: "Point",
-                        coordinates: [-79.901633, 37.64734],
-                    },
-                    properties: {
-                        progress: 1.7881394498431355e-7,
-                    },
+                    id: 2,
+                    geometry: { type: "Point", coordinates: [-77.1, 38.9] },
+                    properties: { progress: 0.33, radius: 50, label: "33% Progress (Small)" }
                 },
                 {
                     type: "Feature",
-                    geometry: {
-                        type: "Point",
-                        coordinates: [-79.801633, 37.64734],
-                    },
-                    properties: {
-                        progress: 1,
-                    },
+                    id: 3,
+                    geometry: { type: "Point", coordinates: [-76.95, 38.85] },
+                    properties: { progress: 1.0, radius: 150, label: "Full Chart (Large)" }
                 },
                 {
                     type: "Feature",
-                    geometry: {
-                        type: "Point",
-                        coordinates: [-79.701633, 37.64734],
-                    },
-                    properties: {
-                        progress: 0,
-                    },
-                },
-            ],
+                    id: 4,
+                    geometry: { type: "Point", coordinates: [-77.05, 38.8] },
+                    properties: { progress: 0.1, radius: 80, label: "10% Progress" }
+                }
+            ]
         };
     }
 
     map.on("load", () => {
-        map.addSource("test", {
+        map.addSource("test-data", {
             type: "geojson",
-            data: geojson(),
+            data: generateData(),
         });
 
+        map.addSource("mapbox-dem", {
+            "type": "raster-dem",
+            "url": "mapbox://mapbox.mapbox-terrain-dem-v1",
+            "tileSize": 512,
+            "maxzoom": 14
+        });
+
+        // Layer 1: Standard progress charts
         map.addLayer({
-            id: "test",
+            id: "pie-standard",
             type: "pie-chart",
-            source: "test",
+            source: "test-data",
             paint: {
                 "pie-chart-colors": [
-                    "rgba(255,0,0,0)",
+                    "rgba(0,0,0,0)",
                     "#673AB7",
                     "#3F51B5",
                     "#2196F3",
                     "#03A9F4",
-                    "#00BCD4",
-                    "#009688",
                 ],
-                "pie-chart-size": 250,
+                "pie-chart-size": ["get", "radius"],
                 "pie-chart-mask": ["get", "progress"],
-                "pie-chart-center-size": 50,
-                "pie-chart-stroke-color": "blue",
-                "pie-chart-stroke-width": 4,
-                "pie-chart-divider-width": 4,
-                "pie-chart-labels": ["test"]
-            },
+                "pie-chart-center-size": 30,
+                "pie-chart-stroke-color": "#ffffff",
+                "pie-chart-stroke-width": 2,
+                "pie-chart-divider-width": 1
+            }
         });
 
-        // map.addLayer({
-        //     id: "test",
-        //     type: "box-chart",
-        //     source: "test",
-        //     paint: {
-        //         "box-chart-colors": [
-        //             "#673AB7",
-        //             "#3F51B5",
-        //             "#2196F3",
-        //             "#03A9F4",
-        //             "#00BCD4",
-        //             "#009688",
-        //         ],
-        //         "box-chart-size": 500,
-        //         "box-chart-mask": ["get", "progress"],
-        //         "box-chart-stroke-color": "gray",
-        //         "box-chart-stroke-width": 4,
-        //     },
-        // });
-
-        map.on('click', (e) => {
-            // Set `bbox` as 5px reactangle area around clicked point.
-            const bbox = [
-                [e.point.x - 1, e.point.y - 1],
-                [e.point.x + 1, e.point.y + 1]
-            ];
-            // Find features intersecting the bounding box.
-            const selectedFeatures = map.queryRenderedFeatures(bbox, {
-                layers: ['test']
-            });
-
-        });
-
-
-        // map.addSource("mapbox-dem", {
-        //     type: "raster-dem",
-        //     url: "mapbox://mapbox.mapbox-terrain-dem-v1",
-        //     tileSize: 512,
-        //     maxzoom: 14,
-        // });
-        // // add the DEM source as a terrain layer with exaggerated height
-        // map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
-
-        // map.addLayer({
-        //     id: "test2",
-        //     type: "circle",
-        //     source: "test",
-        //     paint: {
-        //         "circle-color": "rgba(255,0,0,1)",
-        //         "circle-radius": 75,
-        //     },
-        // });
-
-
-    });
-
-    document.getElementById("terrain-checkbox").onclick =
-        function () {
-            map.setPaintProperty("test","pie-chart-colors", [
-                "#673AB7",
-                "pink",
-                "yellow",
-                "#03A9F4",
-                "#00BCD4",
-                "#009688",
-            ]);
+        const pane = new Pane();
+        const params = {
+            size: 100,
+            centerSize: 30,
+            strokeWidth: 2,
+            dividerWidth: 1,
+            mask: 0.75,
+            opacity: 1.0,
+            terrain: false,
+            projection: 'mercator'
         };
+
+        pane.addBinding(params, 'size', {min: 10, max: 300}).on('change', (e) => {
+            map.setPaintProperty('pie-standard', 'pie-chart-size', e.value);
+        });
+        pane.addBinding(params, 'centerSize', {min: 0, max: 100}).on('change', (e) => {
+            map.setPaintProperty('pie-standard', 'pie-chart-center-size', e.value);
+        });
+        pane.addBinding(params, 'strokeWidth', {min: 0, max: 20}).on('change', (e) => {
+            map.setPaintProperty('pie-standard', 'pie-chart-stroke-width', e.value);
+        });
+        pane.addBinding(params, 'dividerWidth', {min: 0, max: 10}).on('change', (e) => {
+            map.setPaintProperty('pie-standard', 'pie-chart-divider-width', e.value);
+        });
+        pane.addBinding(params, 'mask', {min: 0, max: 1}).on('change', (e) => {
+            map.setPaintProperty('pie-standard', 'pie-chart-mask', e.value);
+        });
+        pane.addBinding(params, 'opacity', {min: 0, max: 1}).on('change', (e) => {
+            map.setPaintProperty('pie-standard', 'pie-chart-opacity', e.value);
+        });
+        pane.addBinding(params, 'terrain').on('change', (e) => {
+            map.setTerrain(e.value ? {"source": "mapbox-dem", "exaggeration": 1.5} : null);
+        });
+        pane.addBinding(params, 'projection', {options: {mercator: 'mercator', globe: 'globe'}}).on('change', (e) => {
+            map.setProjection(e.value);
+        });
+
+        map.on('mousemove', (e) => {
+            const features = map.queryRenderedFeatures(e.point, { layers: ['pie-standard'] });
+            const info = document.getElementById('info');
+            if (features.length > 0) {
+                const f = features[0];
+                info.style.display = 'block';
+                info.innerHTML = `
+                    <strong>Layer:</strong> ${f.layer.id}<br>
+                    <strong>Label:</strong> ${f.properties.label}<br>
+                    <strong>Progress:</strong> ${f.properties.progress.toFixed(2)}
+                `;
+            } else {
+                info.style.display = 'none';
+            }
+        });
+    });
 </script>
 </body>
 </html>

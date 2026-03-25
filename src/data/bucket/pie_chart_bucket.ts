@@ -88,6 +88,7 @@ class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> impl
         this.layerIds = this.layers.map(layer => layer.id);
         this.index = options.index;
         this.hasPattern = false;
+        this.hasAppearances = false;
         this.projection = options.projection;
 
         this.layoutVertexArray = new CircleLayoutArray();
@@ -96,33 +97,25 @@ class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> impl
         this.programConfigurations = new ProgramConfigurationSet(options.layers, {
             zoom: options.zoom,
             lut: options.lut,
-        });
+        }, (prop) => prop !== 'pie-chart-colors');
+
         this.stateDependentLayerIds = this.layers.filter((l) => l.isStateDependent()).map((l) => l.id);
     }
 
     hasAppearances: boolean;
     evaluateQueryRenderedFeaturePadding?: () => number;
     prepare?: () => Promise<unknown>;
-    updateAppearances: (canonical?: CanonicalTileID, featureState?: FeatureStates, availableImages?: Array<ImageId>, globalProperties?: GlobalProperties) => void;
-
+    updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
+    }
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
     }
-
     populate(features: Array<IndexedFeature>, options: PopulateParameters, canonical: CanonicalTileID, tileTransform: TileTransform) {
         const bucketFeatures = [];
-        const circleSortKey = null;
-
         for (const {feature, id, index, sourceLayerIndex} of features) {
             const needGeometry = this.layers[0]._featureFilter.needGeometry;
             const evaluationFeature = toEvaluationFeature(feature, needGeometry);
 
             if (!this.layers[0]._featureFilter.filter(new EvaluationParameters(this.zoom), evaluationFeature, canonical)) continue;
-
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const sortKey = circleSortKey ?
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-call,@typescript-eslint/no-unsafe-member-access
-                circleSortKey.evaluate(evaluationFeature, {}, canonical) :
-                undefined;
 
             const bucketFeature: BucketFeature = {
                 id,
@@ -131,20 +124,11 @@ class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> impl
                 sourceLayerIndex,
                 index,
                 geometry: needGeometry ? evaluationFeature.geometry : loadGeometry(feature, canonical, tileTransform),
-                patterns: {},
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                sortKey
+                patterns: {}
             };
 
             bucketFeatures.push(bucketFeature);
 
-        }
-
-        if (circleSortKey) {
-            bucketFeatures.sort((a, b) => {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                return (a.sortKey as number) - (b.sortKey as number);
-            });
         }
 
         let globeProjection: Projection | null | undefined = null;

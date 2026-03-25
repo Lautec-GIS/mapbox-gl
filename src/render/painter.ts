@@ -28,7 +28,6 @@ import line, {prepare as prepareLine} from './draw_line';
 import fill, {drawDepthPrepass as fillDepthPrepass, drawGroundShadowMask as fillGroundShadowMask} from './draw_fill';
 import fillExtrusion from './draw_fill_extrusion';
 import pieChart from './draw_pie_chart';
-import boxChart from './draw_box_chart';
 import building from '../../3d-style/render/draw_building';
 import hillshade from './draw_hillshade';
 import raster, {prepare as prepareRaster} from './draw_raster';
@@ -144,7 +143,6 @@ const draw: Record<string, DrawStyleLayer> = {
     fill,
     'fill-extrusion': fillExtrusion,
     'pie-chart': pieChart,
-    'box-chart': boxChart,
     building,
     hillshade,
     raster,

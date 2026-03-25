@@ -6,7 +6,7 @@ import {
     tilespaceTranslate,
 } from "../query_utils";
 import {getLayoutProperties, getPaintProperties} from "./pie_chart_style_layer_properties";
-import {vec4, vec3} from "gl-matrix";
+import {vec4} from "gl-matrix";
 import Point from "@mapbox/point-geometry";
 import ProgramConfiguration from "../../data/program_configuration";
 
@@ -24,7 +24,6 @@ import type {LayerSpecification} from "../../style-spec/types";
 import type {TilespaceQueryGeometry} from "../query_geometry";
 import type {VectorTileFeature} from "@mapbox/vector-tile";
 import type {DEMSampler} from "../../terrain/elevation";
-import type {Ray} from "../../util/primitives";
 import type {LUT} from "../../util/lut";
 import type {ProgramName} from "../../render/program";
 
@@ -49,7 +48,7 @@ class PieChartStyleLayer extends StyleLayer {
     }
 
     getProgramConfiguration(zoom: number): ProgramConfiguration {
-        return new ProgramConfiguration(this, {zoom, lut: this.lut});
+        return new ProgramConfiguration(this, {zoom, lut: this.lut}, (prop) => prop !== 'pie-chart-colors');
     }
 
     createBucket(parameters: BucketParameters<PieChartStyleLayer>): PieChartBucket<PieChartStyleLayer> {
@@ -138,19 +137,6 @@ function queryIntersectsCircle(
 function projectPoint(x: number, y: number, z: number, pixelPosMatrix: Float32Array): Point {
     const point = vec4.transformMat4(new Float32Array(), [x, y, z, 1], pixelPosMatrix);
     return new Point(point[0] / point[3], point[1] / point[3]);
-}
-
-const origin = vec3.fromValues(0, 0, 0);
-const up = vec3.fromValues(0, 0, 1);
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function intersectAtHeight(r: Ray, z: number): Point {
-    const intersectionPt = vec3.create();
-    origin[2] = z;
-    const intersects = r.intersectsPlane(origin, up, intersectionPt);
-    console.assert(intersects, 'tilespacePoint should always be below horizon, and since camera cannot have pitch >90, ray should always intersect');
-
-    return new Point(intersectionPt[0], intersectionPt[1]);
 }
 
 export default PieChartStyleLayer;

@@ -30,7 +30,7 @@ import AttributionControl from './control/attribution_control';
 import LogoControl from './control/logo_control';
 import {supported} from '@mapbox/mapbox-gl-supported';
 import {RGBAImage} from '../util/image';
-import {Event, ErrorEvent, Evented} from '../util/evented';
+import {Event, ErrorEvent} from '../util/evented';
 import {MapMouseEvent} from './events';
 import TaskQueue from '../util/task_queue';
 import webpSupported from '../util/webp_supported';

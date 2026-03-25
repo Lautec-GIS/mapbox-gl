@@ -1,9 +1,7 @@
 import StencilMode from "../gl/stencil_mode";
 import DepthMode from "../gl/depth_mode";
 import CullFaceMode from "../gl/cull_face_mode";
-import ColorMode from '../gl/color_mode';
-import Color from '../style-spec/util/color';
-import {pieChartUniformValues, pieChartDefinesValues} from "./program/pie_chart_program";
+import {pieChartUniformValues} from "./program/pie_chart_program";
 
 import type Program from "./program";
 import type SegmentVector from "../data/segment";
@@ -18,6 +16,7 @@ import type IndexBuffer from "../gl/index_buffer";
 import type {UniformValues} from "./uniform_binding";
 import type {PieChartUniformsType} from "./program/pie_chart_program";
 import type Tile from "../source/tile";
+import type {DynamicDefinesType} from "./program/program_uniforms";
 
 export default drawPieCharts;
 
@@ -50,16 +49,9 @@ function drawPieCharts(
     const tr = painter.transform;
 
     const depthMode = painter.depthModeForSublayer(0, DepthMode.ReadOnly);
+    // Turn off stencil testing to allow pie charts to be drawn across boundaries
     const stencilMode = StencilMode.disabled;
-
-    const numOverdrawSteps = 8;
-    const a = 1 / numOverdrawSteps;
-
-    const colorMode = new ColorMode(
-        [gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA],
-        new Color(a, a, a, 1),
-        [true, true, true, true]
-    );
+    const colorMode = painter.colorModeForDrapableLayerRenderPass(0);
     const isGlobeProjection = tr.projection.name === "globe";
 
     const segmentsRenderStates: Array<SegmentsTileRenderState> = [];
@@ -73,7 +65,7 @@ function drawPieCharts(
         if (!bucket || bucket.projection.name !== tr.projection.name) continue;
 
         const programConfiguration = bucket.programConfigurations.get(layer.id);
-        const definesValues = pieChartDefinesValues(layer);
+        const definesValues: DynamicDefinesType[] = [];
         if (isGlobeProjection) {
             definesValues.push("PROJECTION_GLOBE_VIEW");
         }
@@ -136,7 +128,7 @@ function drawPieCharts(
 
         program.draw(
             painter,
-            gl.POINTS,
+            gl.TRIANGLES,
             depthMode,
             stencilMode,
             colorMode,

@@ -133,7 +133,6 @@ import type {RasterQueryParameters, RasterQueryResult} from '../source/raster_ar
 import type {StyleBOM} from './style_bom_utils';
 
 export type {StyleBOMEntry, StyleBOM} from './style_bom_utils';
-import type {GeoJSON} from "geojson";
 
 export type QueryRenderedFeaturesParams = {
     layers?: string[];

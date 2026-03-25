@@ -5,16 +5,12 @@ import styleSpec from '../../style-spec/reference/latest';
 
 import {
     Properties,
-    ColorRampProperty,
     DataDrivenProperty,
     DataConstantProperty
 } from '../properties';
 
 
 import type Color from '../../style-spec/util/color';
-import type Formatted from '../../style-spec/expression/types/formatted';
-import type ResolvedImage from '../../style-spec/expression/types/resolved_image';
-import type {StylePropertySpecification} from '../../style-spec/style-spec';
 
 export type LayoutProps = {
     "visibility": DataConstantProperty<"visible" | "none">;
@@ -32,8 +28,8 @@ export type PaintProps = {
     "pie-chart-center-size": DataDrivenProperty<number>;
     "pie-chart-stroke-width": DataDrivenProperty<number>;
     "pie-chart-stroke-color": DataDrivenProperty<Color>;
-    "circle-stroke-opacity": DataDrivenProperty<number>;
     "pie-chart-divider-width": DataDrivenProperty<number>;
+    "pie-chart-opacity": DataDrivenProperty<number>;
     "pie-chart-stroke-color-use-theme": DataDrivenProperty<string>;
 };
 
@@ -46,7 +42,7 @@ export const getPaintProperties = (): Properties<PaintProps> => paint || (paint 
     "pie-chart-center-size": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-center-size"]),
     "pie-chart-stroke-width": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-stroke-width"]),
     "pie-chart-stroke-color": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-stroke-color"]),
-    "circle-stroke-opacity": new DataDrivenProperty(styleSpec["paint_pie-chart"]["circle-stroke-opacity"]),
     "pie-chart-divider-width": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-divider-width"]),
+    "pie-chart-opacity": new DataDrivenProperty(styleSpec["paint_pie-chart"]["pie-chart-opacity"]),
     "pie-chart-stroke-color-use-theme": new DataDrivenProperty({"type":"string","default":"default","property-type":"data-driven"}),
 }));
