@@ -188,15 +188,14 @@ class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> impl
 
                 if (x < 0 || x >= EXTENT || y < 0 || y >= EXTENT) continue;
 
-                if (projection) {
+                if (projection && this.globeExtVertexArray) {
                     const projectedPoint = projection.projectTilePoint(x, y, canonical);
                     const normal = projection.upVector(canonical, x, y);
-                    const array = this.globeExtVertexArray as CircleGlobeExtArray;
 
-                    addGlobeExtVertex(array, projectedPoint, normal);
-                    addGlobeExtVertex(array, projectedPoint, normal);
-                    addGlobeExtVertex(array, projectedPoint, normal);
-                    addGlobeExtVertex(array, projectedPoint, normal);
+                    addGlobeExtVertex(this.globeExtVertexArray, projectedPoint, normal);
+                    addGlobeExtVertex(this.globeExtVertexArray, projectedPoint, normal);
+                    addGlobeExtVertex(this.globeExtVertexArray, projectedPoint, normal);
+                    addGlobeExtVertex(this.globeExtVertexArray, projectedPoint, normal);
                 }
                 const segment = this.segments.prepareSegment(4, this.layoutVertexArray, this.indexArray, feature.sortKey);
                 const vertexIndex = segment.vertexLength;

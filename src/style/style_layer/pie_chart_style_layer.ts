@@ -8,6 +8,7 @@ import {getLayoutProperties, getPaintProperties} from "./pie_chart_style_layer_p
 import {vec4} from "gl-matrix";
 import Point from "@mapbox/point-geometry";
 import ProgramConfiguration from "../../data/program_configuration";
+import PieChartBucket from "../../data/bucket/pie_chart_bucket";
 
 import type {
     Transitionable,
@@ -25,7 +26,6 @@ import type {VectorTileFeature} from "@mapbox/vector-tile";
 import type {DEMSampler} from "../../terrain/elevation";
 import type {LUT} from "../../util/lut";
 import type {ProgramName} from "../../render/program";
-import PieChartBucket from "../../data/bucket/pie_chart_bucket";
 
 class PieChartStyleLayer extends StyleLayer {
     override _unevaluatedLayout: Layout<LayoutProps>;
