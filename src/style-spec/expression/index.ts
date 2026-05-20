@@ -492,7 +492,7 @@ export function normalizePropertyExpression<T>(
             kind: 'constant',
             configDependencies: new Set(),
             isIndoorDependent: false,
-            evaluate: () => specification.default.map((color) => Color.parse(color)) as PropertyValueSpecification<T>
+            evaluate: () => (specification.default || []).map((color) => Color.parse(color)) as unknown as T
         } as ConstantExpression;
 
     } else if (isExpression(value) || (Array.isArray(value) && value.length > 0)) {
