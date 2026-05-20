@@ -75,6 +75,8 @@ import starsFrag from './stars.fragment.glsl';
 import starsVert from './stars.vertex.glsl';
 import occlusionFrag from './occlusion.fragment.glsl';
 import occlusionVert from './occlusion.vertex.glsl';
+import pieChartFrag from './pie_chart.fragment.glsl';
+import pieChartVert from './pie_chart.vertex.glsl';
 // 3d-style related shaders
 import fillExtrusionDepthFrag from '../../3d-style/shaders/fill_extrusion_depth.fragment.glsl';
 import fillExtrusionDepthVert from '../../3d-style/shaders/fill_extrusion_depth.vertex.glsl';
@@ -186,7 +188,8 @@ export default {
     model: compile(modelFrag, modelVert),
     modelDepth: compile(modelDepthFrag, modelDepthVert),
     stars: compile(starsFrag, starsVert),
-    occlusion: compile(occlusionFrag, occlusionVert)
+    occlusion: compile(occlusionFrag, occlusionVert),
+    pieChart: compile(pieChartFrag, pieChartVert)
 } as const;
 
 export function parseUsedPreprocessorDefines(source: string, defines: Set<DynamicDefinesType>): void {
