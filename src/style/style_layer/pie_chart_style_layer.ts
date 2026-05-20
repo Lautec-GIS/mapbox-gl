@@ -51,7 +51,7 @@ class PieChartStyleLayer extends StyleLayer {
         return new ProgramConfiguration(this, {zoom, lut: this.lut}, (prop) => prop !== 'pie-chart-colors');
     }
 
-    createBucket(parameters: BucketParameters<PieChartStyleLayer>): PieChartBucket<PieChartStyleLayer> {
+    override createBucket(parameters: BucketParameters<this>): PieChartBucket<PieChartStyleLayer> {
         return new PieChartBucket(parameters);
     }
 

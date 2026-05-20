@@ -99,6 +99,7 @@ class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> impl
     evaluateQueryRenderedFeaturePadding?: () => number;
     prepare?: () => Promise<unknown>;
     updateAppearances(_canonical?: CanonicalTileID, _featureState?: FeatureStates, _availableImages?: Array<ImageId>, _globalProperties?: GlobalProperties) {
+        return {hasLayoutChanges: false, hasUboChanges: false};
     }
     updateFootprints(_id: UnwrappedTileID, _footprints: Array<TileFootprint>) {
     }
