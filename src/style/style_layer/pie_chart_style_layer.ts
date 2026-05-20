@@ -25,7 +25,7 @@ import type {VectorTileFeature} from "@mapbox/vector-tile";
 import type {DEMSampler} from "../../terrain/elevation";
 import type {LUT} from "../../util/lut";
 import type {ProgramName} from "../../render/program";
-import type PieChartBucket from "../../data/bucket/pie_chart_bucket";
+import PieChartBucket from "../../data/bucket/pie_chart_bucket";
 
 class PieChartStyleLayer extends StyleLayer {
     override _unevaluatedLayout: Layout<LayoutProps>;
@@ -52,11 +52,7 @@ class PieChartStyleLayer extends StyleLayer {
     }
 
     createBucket(parameters: BucketParameters<PieChartStyleLayer>): PieChartBucket<PieChartStyleLayer> {
-        // PieChartBucket is created in Task 8; import via require to avoid
-        // a compile error while the module file does not yet exist.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const PieChartBucketClass = require("../../data/bucket/pie_chart_bucket").default;
-        return new PieChartBucketClass(parameters);
+        return new PieChartBucket(parameters);
     }
 
     override queryRadius(bucket: Bucket): number {
