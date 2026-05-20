@@ -1,5 +1,3 @@
-#define NUM_VISIBILITY_RINGS 2
-#define NUM_SAMPLES_PER_RING 16
 #define ELEVATION_BIAS 0.0001
 
 uniform mat4 u_matrix;
@@ -38,7 +36,7 @@ float circle_elevation(vec2 pos) {
 void main(void) {
 
     #pragma mapbox: initialize lowp float size
-    #pragma mapbox: initialize lowp float mask
+    #pragma mapbox: initialize highp float mask
 
     vec2 extrude = vec2(mod(a_pos, 2.0) * 2.0 - 1.0);
     vec2 circle_center = floor(a_pos * 0.5);

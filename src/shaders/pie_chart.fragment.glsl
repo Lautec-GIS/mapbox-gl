@@ -27,6 +27,7 @@ void main() {
 
     float angle_of_segment = 2.0 * PI / float(u_segment_count);
     int segment_index = int(current_angle / angle_of_segment);
+    segment_index = clamp(segment_index, 0, int(u_segment_count) - 1);
 
     vec4 out_color = u_colors[segment_index] * flags[segment_index];
 
