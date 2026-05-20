@@ -131,7 +131,7 @@ class StyleLayer extends Evented {
 
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const filterSpec = latest[`filter_${layer.type}`];
-            assert(filterSpec);
+            if (filterSpec) assert(filterSpec);
             // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             const compiledStaticFilter = createExpression(this.filter, filterSpec);
             if (compiledStaticFilter.result !== 'error') {

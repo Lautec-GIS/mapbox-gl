@@ -14,6 +14,7 @@ import CustomStyleLayer from './style_layer/custom_style_layer';
 import sky from './style_layer/sky_style_layer';
 import slot from './style_layer/slot_style_layer';
 import model from '../../3d-style/style/style_layer/model_style_layer';
+import pieChart from './style_layer/pie_chart_style_layer';
 
 import type {LUT} from '../util/lut';
 import type {ConfigOptions} from './properties';
@@ -27,6 +28,7 @@ const subclasses: Record<Exclude<TypedStyleLayer['type'], 'custom'>, TypedStyleL
     hillshade,
     fill,
     'fill-extrusion': fillExtrusion,
+    'pie-chart': pieChart,
     building,
     line,
     symbol,

@@ -9,6 +9,7 @@ import type HeatmapStyleLayer from './heatmap_style_layer';
 import type HillshadeStyleLayer from './hillshade_style_layer';
 import type LineStyleLayer from './line_style_layer';
 import type ModelStyleLayer from '../../../3d-style/style/style_layer/model_style_layer';
+import type PieChartStyleLayer from "./pie_chart_style_layer";
 import type RasterParticleStyleLayer from './raster_particle_style_layer';
 import type RasterStyleLayer from './raster_style_layer';
 import type SkyStyleLayer from './sky_style_layer';
@@ -39,6 +40,7 @@ export type CoreStyleLayer =
     | HillshadeStyleLayer
     | LineStyleLayer
     | ModelStyleLayer
+    | PieChartStyleLayer
     | RasterStyleLayer
     | SkyStyleLayer
     | SymbolStyleLayer;
