@@ -133,6 +133,33 @@ class Uniform4f extends Uniform<[number, number, number, number]> implements IUn
     }
 }
 
+class Uniform4fv extends Uniform<Array<number>> implements IUniform<number[]> {
+    constructor(context: Context) {
+        super(context);
+        this.current = [];
+    }
+
+    override set(program: WebGLProgram, name: string, v: Array<number>): void {
+        if (!this.fetchUniformLocation(program, name)) return;
+
+        let needsUpdate = this.current.length !== v.length;
+
+        if (!needsUpdate) {
+            for (let i = 0; i < v.length; i++) {
+                if (v[i] !== this.current[i]) {
+                    needsUpdate = true;
+                    break;
+                }
+            }
+        }
+
+        if (needsUpdate) {
+            this.current = [...v];
+            this.gl.uniform4fv(this.location, v);
+        }
+    }
+}
+
 class UniformColor extends Uniform<PremultipliedRenderColor> implements IUniform<PremultipliedRenderColor> {
     constructor(context: Context) {
         super(context);
@@ -226,6 +253,7 @@ export {
     Uniform3f,
     Uniform4ui,
     Uniform4f,
+    Uniform4fv,
     UniformColor,
     UniformMatrix2f,
     UniformMatrix3f,
