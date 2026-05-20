@@ -974,6 +974,53 @@ export type CircleLayout = CircleLayerSpecification['layout'];
  */
 export type CirclePaint = CircleLayerSpecification['paint'];
 
+export type PieChartLayerSpecification = {
+    "id": string,
+    "type": "pie-chart",
+    "metadata"?: unknown,
+    "source": string,
+    "source-layer"?: string,
+    "slot"?: string,
+    "minzoom"?: number,
+    "maxzoom"?: number,
+    "filter"?: FilterSpecification,
+    "layout"?: {
+        "visibility"?: "visible" | "none" | ExpressionSpecification
+    },
+    "paint"?: {
+        "pie-chart-size"?: DataDrivenPropertyValueSpecification<number>,
+        "pie-chart-size-transition"?: TransitionSpecification,
+        "pie-chart-colors"?: DataDrivenPropertyValueSpecification<Array<string>>,
+        "pie-chart-labels"?: DataDrivenPropertyValueSpecification<Array<string>>,
+        "pie-chart-mask"?: DataDrivenPropertyValueSpecification<number>,
+        "pie-chart-mask-transition"?: TransitionSpecification,
+        "pie-chart-center-size"?: DataDrivenPropertyValueSpecification<number>,
+        "pie-chart-center-size-transition"?: TransitionSpecification,
+        "pie-chart-stroke-width"?: DataDrivenPropertyValueSpecification<number>,
+        "pie-chart-stroke-width-transition"?: TransitionSpecification,
+        "pie-chart-stroke-color"?: DataDrivenPropertyValueSpecification<ColorSpecification>,
+        "pie-chart-stroke-color-transition"?: TransitionSpecification,
+        "pie-chart-divider-width"?: DataDrivenPropertyValueSpecification<number>,
+        "pie-chart-divider-width-transition"?: TransitionSpecification,
+        "pie-chart-opacity"?: DataDrivenPropertyValueSpecification<number>,
+        "pie-chart-opacity-transition"?: TransitionSpecification
+    },
+    /**
+     * @experimental This property is experimental and subject to change in future versions.
+     */
+    "appearances"?: Array<AppearanceSpecification>
+};
+
+/**
+ * @deprecated Use `PieChartLayerSpecification['layout']` instead.
+ */
+export type PieChartLayout = PieChartLayerSpecification['layout'];
+
+/**
+ * @deprecated Use `PieChartLayerSpecification['paint']` instead.
+ */
+export type PieChartPaint = PieChartLayerSpecification['paint'];
+
 export type HeatmapLayerSpecification = {
     "id": string,
     "type": "heatmap",
@@ -1582,6 +1629,7 @@ export type LayerSpecification =
     | LineLayerSpecification
     | SymbolLayerSpecification
     | CircleLayerSpecification
+    | PieChartLayerSpecification
     | HeatmapLayerSpecification
     | FillExtrusionLayerSpecification
     | BuildingLayerSpecification
@@ -1644,6 +1692,11 @@ export type SymbolLayer = SymbolLayerSpecification;
  * @deprecated Use `CircleLayerSpecification` instead.
  */
 export type CircleLayer = CircleLayerSpecification;
+
+/**
+ * @deprecated Use `PieChartLayerSpecification` instead.
+ */
+export type PieChartLayer = PieChartLayerSpecification;
 
 /**
  * @deprecated Use `HeatmapLayerSpecification` instead.
