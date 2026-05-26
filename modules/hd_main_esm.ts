@@ -8,7 +8,9 @@ export async function prepareHD() {
     try {
         const {HD: hdModule} = await import('./hd_main_imports');
         Object.assign(HD, hdModule);
-    } catch (error) {
-        warnOnce('Could not load HD module.');
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Could not load HD module:', message);
+        warnOnce(`Could not load HD module: ${message}`);
     }
 }

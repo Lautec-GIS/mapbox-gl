@@ -159,15 +159,21 @@ class PieChartBucket<Layer extends PieChartStyleLayer = PieChartStyleLayer> impl
 
     upload(context: Context) {
         if (!this.uploaded) {
-            this.layoutVertexBuffer = context.createVertexBuffer(this.layoutVertexArray, pieChartAttributes.members);
-            this.indexBuffer = context.createIndexBuffer(this.indexArray);
+            if (this.layoutVertexArray.length > 0) {
+                this.layoutVertexBuffer = context.createVertexBuffer(this.layoutVertexArray, pieChartAttributes.members);
+                this.indexBuffer = context.createIndexBuffer(this.indexArray);
 
-            if (this.globeExtVertexArray) {
-                this.globeExtVertexBuffer = context.createVertexBuffer(this.globeExtVertexArray, pieChartGlobeAttributesExt.members);
+                if (this.globeExtVertexArray) {
+                    this.globeExtVertexBuffer = context.createVertexBuffer(this.globeExtVertexArray, pieChartGlobeAttributesExt.members);
+                }
             }
         }
         this.programConfigurations.upload(context);
         this.uploaded = true;
+    }
+
+    updateExpressions(layers: ReadonlyArray<TypedStyleLayer>) {
+        this.programConfigurations.updateExpressions(layers);
     }
 
     destroy() {

@@ -117,7 +117,6 @@ function drawPieCharts(
         const segments = segmentsState.segments;
 
         if (painter.terrain) {
-            // @ts-expect-error terrain setupElevationDraw options type does not include pieChart program
             painter.terrain.setupElevationDraw(tile, program, terrainOptions);
         }
 

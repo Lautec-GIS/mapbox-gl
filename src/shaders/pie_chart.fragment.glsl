@@ -1,4 +1,9 @@
-in float flags[24];
+in vec4 v_flags_0;
+in vec4 v_flags_1;
+in vec4 v_flags_2;
+in vec4 v_flags_3;
+in vec4 v_flags_4;
+in vec4 v_flags_5;
 in vec2 v_extrude;
 in float v_size;
 uniform vec4 u_colors[24];
@@ -29,7 +34,19 @@ void main() {
     int segment_index = int(current_angle / angle_of_segment);
     segment_index = clamp(segment_index, 0, int(u_segment_count) - 1);
 
-    vec4 out_color = u_colors[segment_index] * flags[segment_index];
+    vec4 flags_array[6];
+    flags_array[0] = v_flags_0;
+    flags_array[1] = v_flags_1;
+    flags_array[2] = v_flags_2;
+    flags_array[3] = v_flags_3;
+    flags_array[4] = v_flags_4;
+    flags_array[5] = v_flags_5;
+
+    int array_index = segment_index / 4;
+    int component_index = segment_index % 4;
+    float flag = flags_array[array_index][component_index];
+
+    vec4 out_color = u_colors[segment_index] * flag;
 
     float frag_position_length = length(frag_position);
 

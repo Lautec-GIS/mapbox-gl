@@ -20,7 +20,12 @@ uniform vec3 u_up_dir;
 
 out vec2 v_extrude;
 out float v_size;
-out float flags[24];
+out vec4 v_flags_0;
+out vec4 v_flags_1;
+out vec4 v_flags_2;
+out vec4 v_flags_3;
+out vec4 v_flags_4;
+out vec4 v_flags_5;
 
 #pragma mapbox: define lowp float size
 #pragma mapbox: define highp float mask
@@ -46,30 +51,42 @@ void main(void) {
 
     uint mask_int = uint(mask * 16777215.0);
 
-    flags[0] = float((mask_int & 0x1u) > 0u);
-    flags[1] = float((mask_int & 0x2u) > 0u);
-    flags[2] = float((mask_int & 0x4u) > 0u);
-    flags[3] = float((mask_int & 0x8u) > 0u);
-    flags[4] = float((mask_int & 0x10u) > 0u);
-    flags[5] = float((mask_int & 0x20u) > 0u);
-    flags[6] = float((mask_int & 0x40u) > 0u);
-    flags[7] = float((mask_int & 0x80u) > 0u);
-    flags[8] = float((mask_int & 0x100u) > 0u);
-    flags[9] = float((mask_int & 0x200u) > 0u);
-    flags[10] = float((mask_int & 0x400u) > 0u);
-    flags[11] = float((mask_int & 0x800u) > 0u);
-    flags[12] = float((mask_int & 0x1000u) > 0u);
-    flags[13] = float((mask_int & 0x2000u) > 0u);
-    flags[14] = float((mask_int & 0x4000u) > 0u);
-    flags[15] = float((mask_int & 0x8000u) > 0u);
-    flags[16] = float((mask_int & 0x10000u) > 0u);
-    flags[17] = float((mask_int & 0x20000u) > 0u);
-    flags[18] = float((mask_int & 0x40000u) > 0u);
-    flags[19] = float((mask_int & 0x80000u) > 0u);
-    flags[20] = float((mask_int & 0x100000u) > 0u);
-    flags[21] = float((mask_int & 0x200000u) > 0u);
-    flags[22] = float((mask_int & 0x400000u) > 0u);
-    flags[23] = float((mask_int & 0x800000u) > 0u);
+    v_flags_0 = vec4(
+        float((mask_int & 0x1u) > 0u),
+        float((mask_int & 0x2u) > 0u),
+        float((mask_int & 0x4u) > 0u),
+        float((mask_int & 0x8u) > 0u)
+    );
+    v_flags_1 = vec4(
+        float((mask_int & 0x10u) > 0u),
+        float((mask_int & 0x20u) > 0u),
+        float((mask_int & 0x40u) > 0u),
+        float((mask_int & 0x80u) > 0u)
+    );
+    v_flags_2 = vec4(
+        float((mask_int & 0x100u) > 0u),
+        float((mask_int & 0x200u) > 0u),
+        float((mask_int & 0x400u) > 0u),
+        float((mask_int & 0x800u) > 0u)
+    );
+    v_flags_3 = vec4(
+        float((mask_int & 0x1000u) > 0u),
+        float((mask_int & 0x2000u) > 0u),
+        float((mask_int & 0x4000u) > 0u),
+        float((mask_int & 0x8000u) > 0u)
+    );
+    v_flags_4 = vec4(
+        float((mask_int & 0x10000u) > 0u),
+        float((mask_int & 0x20000u) > 0u),
+        float((mask_int & 0x40000u) > 0u),
+        float((mask_int & 0x80000u) > 0u)
+    );
+    v_flags_5 = vec4(
+        float((mask_int & 0x100000u) > 0u),
+        float((mask_int & 0x200000u) > 0u),
+        float((mask_int & 0x400000u) > 0u),
+        float((mask_int & 0x800000u) > 0u)
+    );
 
     vec4 projected_center = u_matrix * world_center;
 

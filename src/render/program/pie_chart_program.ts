@@ -42,6 +42,8 @@ const pieChartUniforms = (context: Context): PieChartUniformsType => ({
 });
 
 const identityMatrix = mat4.create();
+const ZERO_VEC2: [number, number] = [0, 0];
+const ZERO_VEC3: [number, number, number] = [0, 0, 0];
 
 const pieChartUniformValues = (
     painter: Painter,
@@ -83,10 +85,10 @@ const pieChartUniformValues = (
         'u_device_pixel_ratio': browser.devicePixelRatio,
         'u_extrude_scale': extrudeScale,
         'u_inv_rot_matrix': identityMatrix as Float32Array,
-        'u_merc_center': [0, 0] as [number, number],
-        'u_tile_id': [0, 0, 0] as [number, number, number],
+        'u_merc_center': ZERO_VEC2,
+        'u_tile_id': ZERO_VEC3,
         'u_zoom_transition': 0,
-        'u_up_dir': [0, 0, 0] as [number, number, number],
+        'u_up_dir': ZERO_VEC3,
         'u_colors': pieColors,
         'u_segment_count': isConstantArray ? (constantColors as Array<string>).length : 0,
         'u_opacity': layer.paint.get('pie-chart-opacity').constantOr(1.0)

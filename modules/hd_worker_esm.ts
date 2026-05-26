@@ -27,7 +27,9 @@ export async function prepareHD() {
         postprocessTile = mod.postprocessTile;
         parseActiveFloors = mod.parseActiveFloors;
         loaded = true;
-    } catch (error) {
-        warnOnce('Could not load HD module.');
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Could not load HD module:', message);
+        warnOnce(`Could not load HD module: ${message}`);
     }
 }

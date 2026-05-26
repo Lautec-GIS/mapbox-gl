@@ -55,6 +55,7 @@ import type {SourceSpecification} from '../style-spec/types';
 import type {HeatmapUniformsType} from '../render/program/heatmap_program';
 import type {LineUniformsType, LinePatternUniformsType} from '../render/program/line_program';
 import type {CollisionUniformsType} from '../render/program/collision_program';
+import type {PieChartUniformsType} from '../render/program/pie_chart_program';
 import type {GlobeRasterUniformsType} from './globe_raster_program';
 import type {TerrainRasterUniformsType} from './terrain_raster_program';
 import type {RasterUniformsType} from '../render/program/raster_program';
@@ -98,6 +99,7 @@ type ElevationUniformsType =
     | HeatmapUniformsType
     | LinePatternUniformsType
     | LineUniformsType
+    | PieChartUniformsType
     | RasterUniformsType
     | SymbolUniformsType
     | TerrainRasterUniformsType;
