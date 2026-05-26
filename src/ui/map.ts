@@ -59,7 +59,7 @@ import type {RequestTransformFunction} from '../util/mapbox';
 import type {LngLatLike, LngLatBoundsLike} from '../geo/lng_lat';
 import type {CustomLayerInterface} from '../style/style_layer/custom_style_layer';
 import type {StyleImageInterface, StyleImageMetadata} from '../style/style_image';
-import type {StyleOptions, StyleSetterOptions, AnyLayer, FeatureSelector, SourceSelector, QueryRenderedFeaturesParams, QueryRenderedFeaturesetParams} from '../style/style';
+import type {StyleOptions, StyleSetterOptions, AnyLayer, FeatureSelector, SourceSelector, QueryRenderedFeaturesParams, QueryRenderedFeaturesetParams, LayerProperty} from '../style/style';
 import type {FontstackCompositing} from '../style/glyph_loader';
 import type ScrollZoomHandler from './handler/scroll_zoom';
 import type {ScrollZoomHandlerOptions} from './handler/scroll_zoom';
@@ -3536,6 +3536,23 @@ export class Map extends Camera {
     }
 
     /**
+     * Returns the value of a layout, paint, or root-level property in the specified style layer.
+     *
+     * @param {string} layerId The ID of the layer to get the property from.
+     * @param {string} name The name of the property to get. Can be a paint or layout property, or a root-level layer property (`minzoom`, `maxzoom`, `filter`, `slot`, `source`, `source-layer`).
+     * @returns {*} The value of the specified property.
+     * @example
+     * const minzoom = map.getLayerProperty('my-layer', 'minzoom');
+     */
+    getLayerProperty<K extends keyof LayerProperty>(layerId: string, name: K): LayerProperty[K] | null | undefined {
+        if (!this._isValidId(layerId)) {
+            return null;
+        }
+
+        return this.style.getLayerProperty(layerId, name);
+    }
+
+    /**
      * Sets the value of a layout or paint property in the specified style layer.
      *
      * @param {string} layerId The ID of the layer to set the layout or paint property in.
@@ -3547,10 +3564,10 @@ export class Map extends Camera {
      * @example
      * map.setLayerProperty('my-layer', 'visibility', 'none');
      */
-    setLayerProperty<T extends keyof (LayoutSpecification | PaintSpecification)>(
+    setLayerProperty<K extends keyof LayerProperty>(
         layerId: string,
-        name: T,
-        value: LayoutSpecification[T] | PaintSpecification[T],
+        name: K,
+        value: LayerProperty[K],
         options: StyleSetterOptions = {},
     ): this {
         if (!this._isValidId(layerId)) {
@@ -4194,15 +4211,15 @@ export class Map extends Camera {
      * map._selectIndoorFloor('floor-1');
      */
     _selectIndoorFloor(floorId: string) {
-        this.style.indoorManager.selectFloor(floorId);
+        if (this.style.indoorManager) this.style.indoorManager.selectFloor(floorId);
     }
 
     _setIndoorActiveFloorsVisibility(activeFloorsVisible: boolean) {
-        this.style.indoorManager.setActiveFloorsVisibility(activeFloorsVisible);
+        if (this.style.indoorManager) this.style.indoorManager.setActiveFloorsVisibility(activeFloorsVisible);
     }
 
     getIndoorTileOptions(source: string, scope: string): IndoorTileOptions | null {
-        if (!this.style || !this.style.isIndoorEnabled()) {
+        if (!this.style || !this.style.isIndoorEnabled() || !this.style.indoorManager) {
             return null;
         }
         return this.style.indoorManager.getIndoorTileOptions(source, scope);

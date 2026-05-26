@@ -22,7 +22,7 @@ import Lights from '../../3d-style/style/lights';
 import {getProperties as getAmbientProps} from '../../3d-style/style/ambient_light_properties';
 import {getProperties as getDirectionalProps} from '../../3d-style/style/directional_light_properties';
 import {createExpression} from '../style-spec/expression/index';
-import {prepareHD as prepareHDMain} from '../../modules/hd_main';
+import {HD, prepareHD as prepareHDMain} from '../../modules/hd_main';
 import {
     validateStyle,
     validateLayoutProperty,
@@ -70,9 +70,9 @@ import {TargetFeature} from '../util/vectortile_to_geojson';
 import {loadIconset} from './load_iconset';
 import {ImageId} from '../style-spec/expression/types/image_id';
 import {ImageProvider} from '../render/image_provider';
-import IndoorManager from './indoor_manager';
 import {StyleBOMUtils} from './style_bom_utils';
 
+import type IndoorManager from '../../3d-style/style/indoor_manager';
 import type {FontstackCompositing} from './glyph_loader';
 import type {PropertyValidatorOptions} from '../style-spec/validate/validate_property';
 import type {StylePropertySpecification} from '../style-spec/style-spec';
@@ -106,6 +106,7 @@ import type {
     IconsetSpecification,
     ModelsSpecification,
     AppearanceSpecification,
+    LayerBaseSpecification,
     TerrainSpecificationUpdate
 } from '../style-spec/types';
 import type {Callback} from '../types/callback';
@@ -289,6 +290,8 @@ type FeaturesetSelector = {
     uniqueFeatureID: boolean;
 };
 
+export type LayerProperty = LayerBaseSpecification & PaintSpecification & LayoutSpecification;
+
 const MAX_IMPORT_DEPTH = 5;
 const defaultTransition = {duration: 300, delay: 0};
 
@@ -302,7 +305,7 @@ class Style extends Evented<MapEvents> {
     imageManager: ImageManager;
     glyphManager: GlyphManager;
     modelManager: ModelManager;
-    indoorManager: IndoorManager;
+    indoorManager: IndoorManager | null;
     ambientLight: Lights<Ambient> | null | undefined;
     directionalLight: Lights<Directional> | null | undefined;
     light: Light;
@@ -426,12 +429,17 @@ class Style extends Evented<MapEvents> {
 
         this._mergedOrder = [];
         this._drapedFirstOrder = [];
-        this._mergedLayers = {};
+        this._mergedLayers = Object.create(null) as Style['_mergedLayers'];
         this._mergedIndoor = {};
         this._mergedSourceCaches = {};
-        this._mergedOtherSourceCaches = {};
-        this._mergedSymbolSourceCaches = {};
-        this._mergedFillExtrusionSourceCaches = {};
+        // `_other/_symbol/_fillExtrusionSourceCaches` are indexed by the raw
+        // source ID from the style JSON, so a source named "__proto__" would
+        // otherwise mutate the registry's prototype. Use null-prototype
+        // objects here (and in their non-merged counterparts and in
+        // `mergeSources`) to make those assignments ordinary own properties.
+        this._mergedOtherSourceCaches = Object.create(null) as Style['_mergedOtherSourceCaches'];
+        this._mergedSymbolSourceCaches = Object.create(null) as Style['_mergedSymbolSourceCaches'];
+        this._mergedFillExtrusionSourceCaches = Object.create(null) as Style['_mergedFillExtrusionSourceCaches'];
         this._clipLayerPresent = false;
         this._hasAppearances = false;
 
@@ -445,7 +453,7 @@ class Style extends Evented<MapEvents> {
 
         this._hasDataDrivenEmissive = false;
 
-        this.indoorManager = new IndoorManager(this);
+        this.indoorManager = null;
 
         if (options.dispatcher) {
             this.dispatcher = options.dispatcher;
@@ -490,11 +498,15 @@ class Style extends Evented<MapEvents> {
             this.modelManager.setEventedParent(this);
         }
 
-        this._layers = {};
+        // Use a null-prototype object so a layer ID of "__proto__" (or any
+        // other inherited-property name) becomes an ordinary own property
+        // rather than mutating Object.prototype. The same hardening exists
+        // in StyleLayerIndex on the worker side.
+        this._layers = Object.create(null) as Style['_layers'];
         this._sourceCaches = {};
-        this._otherSourceCaches = {};
-        this._symbolSourceCaches = {};
-        this._fillExtrusionSourceCaches = {};
+        this._otherSourceCaches = Object.create(null) as Style['_otherSourceCaches'];
+        this._symbolSourceCaches = Object.create(null) as Style['_symbolSourceCaches'];
+        this._fillExtrusionSourceCaches = Object.create(null) as Style['_fillExtrusionSourceCaches'];
         this._loaded = false;
         this._initialBroadcastDone = false;
         this._programPrecompiler = this.map._precompilePrograms && this.isRootStyle() ?
@@ -923,7 +935,7 @@ class Style extends Evented<MapEvents> {
                 this.light = new Light(this.stylesheet.light);
             }
 
-            this._layers = {};
+            this._layers = Object.create(null) as Style['_layers'];
             for (const layer of layers) {
                 const styleLayer = createStyleLayer(layer, this.scope, this._styleColorTheme.lut, this.options);
                 if (styleLayer.expressionDependencies.configDependencies.size !== 0) this._configDependentLayers.add(styleLayer.fqid);
@@ -1217,9 +1229,13 @@ class Style extends Evented<MapEvents> {
 
     mergeSources() {
         const mergedSourceCaches: Record<string, SourceCache> = {};
-        const mergedOtherSourceCaches: Record<string, SourceCache> = {};
-        const mergedSymbolSourceCaches: Record<string, SourceCache> = {};
-        const mergedFillExtrusionSourceCaches: Record<string, SourceCache> = {};
+        // `_other/_symbol/_fillExtrusionSourceCaches` are keyed by raw source
+        // IDs from the style JSON, so the root-scope FQID can collapse to
+        // "__proto__". Use null-prototype objects here so that assignment
+        // creates an own property rather than touching the prototype chain.
+        const mergedOtherSourceCaches: Record<string, SourceCache> = Object.create(null) as Record<string, SourceCache>;
+        const mergedSymbolSourceCaches: Record<string, SourceCache> = Object.create(null) as Record<string, SourceCache>;
+        const mergedFillExtrusionSourceCaches: Record<string, SourceCache> = Object.create(null) as Record<string, SourceCache>;
 
         this.forEachFragmentStyle((style: Style) => {
             for (const id in style._sourceCaches) {
@@ -1250,6 +1266,7 @@ class Style extends Evented<MapEvents> {
     }
 
     mergeIndoor() {
+        this._mergedIndoor = {};
         this.forEachFragmentStyle((style: Style) => {
             if (style.stylesheet && style.stylesheet.indoor) {
                 for (const indoor of Object.values(style.stylesheet.indoor)) {
@@ -1259,12 +1276,40 @@ class Style extends Evented<MapEvents> {
                 }
             }
         });
+
+        if (Object.keys(this._mergedIndoor).length > 0) {
+            // Preload HD on both threads so IndoorManager is ready before any tile arrives.
+            // The .then() defers _initIndoorManager until after the dynamic import resolves
+            // in ESM builds; in UMD prepareHDMain() returns a resolved promise so this is
+            // effectively synchronous. prepareHDWorker() is also called so bucket transfers
+            // from worker to main work correctly.
+            void prepareHDMain().then(() => { this._initIndoorManager(); });
+        }
+    }
+
+    _initIndoorManager(): void {
+        if (this.indoorManager || !HD.IndoorManager || !this.isRootStyle() || Object.keys(this._mergedIndoor).length === 0) {
+            return;
+        }
+        this.indoorManager = new HD.IndoorManager(this, this._loaded);
+        // If the style had already finished loading before the HD module resolved,
+        // reload indoor sources so they are re-parse on the worker with the now-available IndoorManager.
+        if (this._loaded) {
+            for (const fqid of Object.keys(this._mergedIndoor)) {
+                const sourceCache = this._mergedSourceCaches[fqid] || this._mergedOtherSourceCaches[fqid];
+                if (sourceCache) sourceCache.reload();
+            }
+        }
     }
 
     mergeLayers() {
         const slots: Record<string, TypedStyleLayer[]> = {};
         const mergedOrder: TypedStyleLayer[] = [];
-        const mergedLayers: Record<string, TypedStyleLayer> = {};
+        // Keys are FQIDs that collapse to the raw layer ID at root scope, so
+        // a layer named "__proto__" would otherwise mutate this object's
+        // prototype rather than being stored as an own property. Match the
+        // null-prototype hardening used for the unmerged `_layers` registry.
+        const mergedLayers: Record<string, TypedStyleLayer> = Object.create(null) as Record<string, TypedStyleLayer>;
 
         this._mergedSlots = [];
         this._has3DLayers = false;
@@ -2605,7 +2650,7 @@ class Style extends Evented<MapEvents> {
     }
 
     setIndoorData(mapId: string, params: ActorMessages['setIndoorData']['params']) {
-        this.indoorManager.setIndoorData(params);
+        if (this.indoorManager) this.indoorManager.setIndoorData(params);
     }
 
     updateIndoorDependentLayers() {
@@ -3117,19 +3162,46 @@ class Style extends Evented<MapEvents> {
         this._updateLayer(layer);
     }
 
-    setLayerProperty<T extends keyof (PaintSpecification | LayoutSpecification)>(layerId: string, name: T | "appearances", value: PaintSpecification[T] | LayoutSpecification[T] | AppearanceSpecification[], options: StyleSetterOptions = {}) {
+    getLayerProperty<K extends keyof LayerProperty>(layerId: string, name: K): LayerProperty[K] | undefined {
+        const layer = this._checkLayer(layerId);
+        if (!layer) return;
+
+        switch (name) {
+        case 'minzoom':      return layer.minzoom as LayerProperty[K];
+        case 'maxzoom':      return layer.maxzoom as LayerProperty[K];
+        case 'filter':       return this.getFilter(layerId) as LayerProperty[K];
+        case 'slot':         return layer.slot as LayerProperty[K];
+        case 'appearances':  return layer.getAppearances().map(a => a.serialize()) as LayerProperty[K];
+        }
+
+        return (layer.isPaintProperty(name as keyof PaintSpecification) ?
+            this.getPaintProperty(layerId, name as keyof PaintSpecification) :
+            this.getLayoutProperty(layerId, name as keyof LayoutSpecification)) as LayerProperty[K];
+    }
+
+    setLayerProperty<K extends keyof LayerProperty>(layerId: string, name: K, value: LayerProperty[K], options: StyleSetterOptions = {}) {
         this._checkLoaded();
 
         const layer = this._checkLayer(layerId);
         if (!layer) return;
 
-        if (name === 'appearances') {
-            layer.setAppearances(value);
+        switch (name) {
+        case 'appearances':
+            layer.setAppearances(value as AppearanceSpecification[]);
             this._updateLayer(layer);
-        } else if (layer.isPaintProperty(name)) {
-            this.setPaintProperty(layerId, name, value as PaintSpecification[T], options);
+            return;
+        case 'minzoom':      return this.setLayerZoomRange(layerId, value as number);
+        case 'maxzoom':      return this.setLayerZoomRange(layerId, null, value as number);
+        case 'filter':       return this.setFilter(layerId, value as FilterSpecification, options);
+        case 'slot':         return this.setSlot(layerId, value as string);
+        }
+
+        if (layer.isPaintProperty(name as keyof PaintSpecification)) {
+            const paintName = name as keyof PaintSpecification;
+            this.setPaintProperty(layerId, paintName, value as PaintSpecification[typeof paintName], options);
         } else {
-            this.setLayoutProperty(layerId, name, value as LayoutSpecification[T], options);
+            const layoutName = name as keyof LayoutSpecification;
+            this.setLayoutProperty(layerId, layoutName, value as LayoutSpecification[typeof layoutName], options);
         }
     }
 
@@ -4156,7 +4228,7 @@ class Style extends Evented<MapEvents> {
         delete this.terrain;
         delete this.ambientLight;
         delete this.directionalLight;
-        this.indoorManager.destroy();
+        if (this.indoorManager) this.indoorManager.destroy();
 
         // Shared managers should be removed only on removing the root style
         if (this.isRootStyle()) {

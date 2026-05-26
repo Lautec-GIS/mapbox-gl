@@ -1646,6 +1646,8 @@ export type LayoutSpecification = UnionToIntersection<NonNullable<LayerSpecifica
 
 export type PaintSpecification = UnionToIntersection<NonNullable<LayerSpecification['paint']>>;
 
+export type LayerBaseSpecification = Pick<LayerSpecification, "slot" | "minzoom" | "maxzoom" | "filter" | "appearances">;
+
 // Aliases for easier migration from @types/mapbox-gl
 
 export type Layer = Pick<

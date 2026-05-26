@@ -329,6 +329,94 @@ describe('Style#loadJSON', () => {
     });
 });
 
+// `_layers`, `_otherSourceCaches`, `_symbolSourceCaches`, and
+// `_fillExtrusionSourceCaches` are indexed by raw IDs from untrusted style
+// JSON. If they were initialized with `{}`, an ID of "__proto__" would invoke
+// the prototype setter rather than creating an own property, corrupting the
+// registry and breaking `for...in` iteration across the render pipeline.
+// These tests guard the `Object.create(null)` hardening against regression.
+describe('Style prototype-pollution hardening', () => {
+    test('layer id "__proto__" via loadJSON does not corrupt the registry', async () => {
+        const style = new Style(new StubMap());
+
+        style.loadJSON({
+            version: 8,
+            sources: {},
+            layers: [{id: '__proto__', type: 'background'}]
+        });
+
+        await waitFor(style, "style.load");
+
+        expect(Object.getPrototypeOf(style._layers)).toBeNull();
+        expect(Object.hasOwn(style._layers, '__proto__')).toBe(true);
+        expect(style.getLayer('__proto__')).toBeTruthy();
+        expect(Object.keys(style._layers)).toEqual(['__proto__']);
+    });
+
+    test('source id "__proto__" via loadJSON does not corrupt source-cache registries', async () => {
+        const style = new Style(new StubMap());
+
+        // JSON.parse models the realistic attack vector: hostile JSON over the
+        // network. An object-literal `{"__proto__": ...}` in JS source sets
+        // the prototype rather than creating an own property, so it cannot
+        // reach `addSource()` with id "__proto__". Validation runs (default)
+        // so this exercises the full path including validate_object.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const hostileStyle = JSON.parse('{"version":8,"sources":{"__proto__":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}},"layers":[]}');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(hostileStyle);
+
+        await waitFor(style, "style.load");
+
+        expect(Object.getPrototypeOf(style._otherSourceCaches)).toBeNull();
+        expect(Object.getPrototypeOf(style._symbolSourceCaches)).toBeNull();
+        expect(Object.getPrototypeOf(style._fillExtrusionSourceCaches)).toBeNull();
+        expect(Object.hasOwn(style._otherSourceCaches, '__proto__')).toBe(true);
+        expect(Object.hasOwn(style._symbolSourceCaches, '__proto__')).toBe(true);
+    });
+
+    test('addLayer with id "__proto__" does not corrupt the registry', async () => {
+        const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(createStyleJSON());
+        await waitFor(style, "style.load");
+
+        style.addLayer({id: '__proto__', type: 'background'});
+
+        expect(Object.getPrototypeOf(style._layers)).toBeNull();
+        expect(style.getLayer('__proto__')).toBeTruthy();
+    });
+
+    test('addSource with id "__proto__" does not corrupt source-cache registries', async () => {
+        const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(createStyleJSON());
+        await waitFor(style, "style.load");
+
+        style.addSource('__proto__', createGeoJSONSource());
+
+        expect(Object.getPrototypeOf(style._otherSourceCaches)).toBeNull();
+        expect(Object.getPrototypeOf(style._symbolSourceCaches)).toBeNull();
+        expect(Object.hasOwn(style._otherSourceCaches, '__proto__')).toBe(true);
+        expect(Object.hasOwn(style._symbolSourceCaches, '__proto__')).toBe(true);
+    });
+
+    test('merged source-cache registries stay null-prototype after mergeSources', async () => {
+        const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const hostileStyle = JSON.parse('{"version":8,"sources":{"__proto__":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}},"layers":[]}');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(hostileStyle);
+        await waitFor(style, "style.load");
+
+        style.mergeSources();
+
+        expect(Object.getPrototypeOf(style._mergedOtherSourceCaches)).toBeNull();
+        expect(Object.getPrototypeOf(style._mergedSymbolSourceCaches)).toBeNull();
+        expect(Object.getPrototypeOf(style._mergedFillExtrusionSourceCaches)).toBeNull();
+    });
+});
+
 describe('Style#_remove', () => {
     test('clears tiles', async () => {
         const style = new Style(new StubMap());
@@ -411,6 +499,7 @@ describe('Style#setState', () => {
             'setPaintProperty',
             'setLayoutProperty',
             'setLayerProperty',
+            'getLayerProperty',
             'setFilter',
             'addSource',
             'removeSource',
@@ -1704,6 +1793,221 @@ describe('Style#setLayerProperty', () => {
 
         style.update({});
         expect(style._changes.isDirty()).toBeFalsy();
+    });
+
+    test('minzoom', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": [
+                {"id": "background", "type": "background"}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        style.setLayerProperty('background', 'minzoom', 5);
+        expect(style._layers['background'].minzoom).toBe(5);
+        expect(style._changes.isDirty()).toBeTruthy();
+    });
+
+    test('maxzoom', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": [
+                {"id": "background", "type": "background"}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        style.setLayerProperty('background', 'maxzoom', 12);
+        expect(style._layers['background'].maxzoom).toBe(12);
+        expect(style._changes.isDirty()).toBeTruthy();
+    });
+
+    test('filter', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {
+                "geojson": {
+                    "type": "geojson",
+                    "data": {"type": "FeatureCollection", "features": []}
+                }
+            },
+            "layers": [
+                {"id": "line", "type": "line", "source": "geojson"}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        const filter = ['==', ['get', 'type'], 'road'];
+        style.setLayerProperty('line', 'filter', filter);
+        expect(style.getFilter('line')).toEqual(filter);
+        expect(style.getFilter('line')).not.toBe(filter);
+        expect(style._changes.isDirty()).toBeTruthy();
+    });
+
+    test('slot', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": [
+                {"id": "background", "type": "background"}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        style.setLayerProperty('background', 'slot', 'middle');
+        expect(style._layers['background'].slot).toBe('middle');
+    });
+
+});
+
+describe('Style#getLayerProperty', () => {
+    test('returns undefined for unknown layer', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": []
+        });
+
+        await waitFor(style, 'style.load');
+        expect(style.getLayerProperty('nonexistent', 'minzoom')).toBeUndefined();
+    });
+
+    test('returns minzoom and maxzoom', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": [
+                {"id": "background", "type": "background", "minzoom": 3, "maxzoom": 12}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        expect(style.getLayerProperty('background', 'minzoom')).toBe(3);
+        expect(style.getLayerProperty('background', 'maxzoom')).toBe(12);
+    });
+
+    test('returns filter', async () => {
+        const filter = ['==', ['get', 'type'], 'road'];
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {
+                "geojson": {
+                    "type": "geojson",
+                    "data": {"type": "FeatureCollection", "features": []}
+                }
+            },
+            "layers": [
+                {"id": "line", "type": "line", "source": "geojson", filter}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        expect(style.getLayerProperty('line', 'filter')).toEqual(filter);
+    });
+
+    test('returns slot', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {
+                "vt": {"type": "vector", "tiles": ["http://example.com/{z}/{x}/{y}.pbf"]}
+            },
+            "layers": [
+                {"id": "line", "type": "line", "source": "vt", "source-layer": "roads", "slot": "middle"}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        expect(style.getLayerProperty('line', 'slot')).toBe('middle');
+    });
+
+    test('returns appearances round-tripped through serialize', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": [
+                {"id": "background", "type": "background"}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        const appearances = [
+            {
+                "condition": ["==", ["feature-state", "availability"], "partial"],
+                "properties": {
+                    "icon-image": ["image", "charging-station", {"params": {"fill": "orange"}}],
+                    "icon-size": 1.1
+                }
+            }
+        ];
+        style.setLayerProperty('background', 'appearances', appearances);
+        expect(style.getLayerProperty('background', 'appearances')).toEqual(appearances);
+    });
+
+    test('returns undefined for unset root properties', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {
+                "geojson": {
+                    "type": "geojson",
+                    "data": {"type": "FeatureCollection", "features": []}
+                }
+            },
+            "layers": [
+                {"id": "line", "type": "line", "source": "geojson"}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        expect(style.getLayerProperty('line', 'minzoom')).toBeUndefined();
+        expect(style.getLayerProperty('line', 'maxzoom')).toBeUndefined();
+        expect(style.getLayerProperty('line', 'filter')).toBeUndefined();
+        expect(style.getLayerProperty('line', 'slot')).toBeUndefined();
+    });
+
+    test('delegates to getPaintProperty for paint properties', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {},
+            "layers": [
+                {"id": "background", "type": "background", "paint": {"background-color": "red"}}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        expect(style.getLayerProperty('background', 'background-color')).toEqual('red');
+    });
+
+    test('delegates to getLayoutProperty for layout properties', async () => {
+        const style = new Style(new StubMap());
+        style.loadJSON({
+            "version": 8,
+            "sources": {
+                "geojson": {
+                    "type": "geojson",
+                    "data": {"type": "FeatureCollection", "features": []}
+                }
+            },
+            "layers": [
+                {"id": "line", "type": "line", "source": "geojson", "layout": {"line-cap": "round"}}
+            ]
+        });
+
+        await waitFor(style, 'style.load');
+        expect(style.getLayerProperty('line', 'line-cap')).toBe('round');
     });
 });
 
