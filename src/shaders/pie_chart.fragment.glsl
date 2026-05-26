@@ -34,20 +34,27 @@ void main() {
                            dist >= u_center_size_frac &&
                            dist < (u_center_size_frac + u_stroke_width_frac);
 
-    // Divider lines: angular distance to nearest sector boundary
-    float sector_angle = 2.0 * PI / float(u_segment_count);
-    float angle_in_sector = mod(angle, sector_angle);
-    float dist_to_divider = min(angle_in_sector, sector_angle - angle_in_sector) * dist;
-    bool in_divider = u_divider_width_frac > 0.0 && dist_to_divider < u_divider_width_frac;
-
     if (in_hole) discard;
 
-    if (in_outer_stroke || in_inner_stroke || in_divider) {
+    if (in_outer_stroke || in_inner_stroke) {
         glFragColor = u_stroke_color;
         return;
     }
 
     if (!visible) discard;
+
+    // Divider lines: angular distance to nearest sector boundary.
+    // Each boundary is shared by two adjacent sectors, so each sector
+    // contributes half the total divider width to avoid doubling.
+    float sector_angle = 2.0 * PI / float(u_segment_count);
+    float angle_in_sector = mod(angle, sector_angle);
+    float dist_to_divider = min(angle_in_sector, sector_angle - angle_in_sector) * dist;
+    bool in_divider = u_divider_width_frac > 0.0 && dist_to_divider < u_divider_width_frac * 0.5;
+
+    if (in_divider) {
+        glFragColor = u_stroke_color;
+        return;
+    }
 
     glFragColor = u_colors[seg];
 
