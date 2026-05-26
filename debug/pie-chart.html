@@ -38,7 +38,9 @@ import * as mapboxgl from '../dist/esm-dev/mapbox-gl.js';
 import {getAccessToken} from './access_token_generated.js';
 
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
-const FULL_MASK = (1 << COLORS.length) - 1;
+// Masks are stored as normalized floats: integer_bitmask / 16777215
+const norm = (n) => n / 16777215;
+const FULL_MASK = norm((1 << COLORS.length) - 1);
 
 const geojson = {
     type: 'FeatureCollection',
@@ -47,8 +49,8 @@ const geojson = {
         {type: 'Feature', properties: {mask: FULL_MASK}, geometry: {type: 'Point', coordinates: [30, 20]}},
         {type: 'Feature', properties: {mask: FULL_MASK}, geometry: {type: 'Point', coordinates: [-30, 20]}},
         {type: 'Feature', properties: {mask: FULL_MASK}, geometry: {type: 'Point', coordinates: [0, -20]}},
-        {type: 'Feature', properties: {mask: 0b000111}, geometry: {type: 'Point', coordinates: [30, -20]}},
-        {type: 'Feature', properties: {mask: 0b101010}, geometry: {type: 'Point', coordinates: [-30, -20]}},
+        {type: 'Feature', properties: {mask: norm(0b000111)}, geometry: {type: 'Point', coordinates: [30, -20]}},
+        {type: 'Feature', properties: {mask: norm(0b101010)}, geometry: {type: 'Point', coordinates: [-30, -20]}},
     ]
 };
 
@@ -107,7 +109,7 @@ document.getElementById('globe-checkbox').oninput = function() {
 };
 
 document.getElementById('mask-toggle').onchange = function() {
-    const newMask = this.checked ? FULL_MASK : 0b010101;
+    const newMask = this.checked ? FULL_MASK : norm(0b010101);
     geojson.features.forEach(f => { f.properties.mask = newMask; });
     map.getSource('pies').setData(geojson);
 };

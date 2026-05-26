@@ -16,7 +16,7 @@
           {
             "type": "Feature",
             "properties": {
-              "mask": 7
+              "mask": 4.172325382967316e-07
             },
             "geometry": {
               "type": "Point",

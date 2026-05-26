@@ -14,7 +14,7 @@ void main() {
     float dist = length(v_extrude);
     if (dist > 1.0) discard;
 
-    int mask_i = int(floor(v_mask + 0.5));
+    uint mask_u = uint(v_mask * 16777215.0 + 0.5);
 
     // Polar angle in [0, 2*PI)
     float angle = atan(v_extrude.y, v_extrude.x);
@@ -23,7 +23,7 @@ void main() {
     int seg = int(floor(angle / (2.0 * PI / float(u_segment_count))));
     seg = clamp(seg, 0, u_segment_count - 1);
 
-    bool visible = ((mask_i >> seg) & 1) == 1;
+    bool visible = (mask_u >> uint(seg) & 1u) == 1u;
 
     // Outer stroke: near the outer edge
     bool in_outer_stroke = u_stroke_width_frac > 0.0 && dist > (1.0 - u_stroke_width_frac);
