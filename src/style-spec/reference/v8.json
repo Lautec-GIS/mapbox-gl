@@ -11775,8 +11775,8 @@
   "paint_pie-chart": {
     "pie-chart-mask": {
       "type": "number",
-      "default": 0,
-      "doc": "Integer bitmask: bit N set means slice N is visible for this feature. Use [\"get\", \"property\"] to read from feature data.",
+      "default": 16777215,
+      "doc": "Integer bitmask: bit N set means slice N is visible for this feature. Default 16777215 (all 24 bits set) shows all slices. Use [\"get\", \"property\"] to read per-feature visibility from data.",
       "sdk-support": {
         "basic functionality": {"js": "3.x.x"},
         "data-driven styling": {"js": "3.x.x"}
