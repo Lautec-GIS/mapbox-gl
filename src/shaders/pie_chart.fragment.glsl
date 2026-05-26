@@ -10,16 +10,11 @@ uniform vec4 u_stroke_color;
 in vec2 v_extrude;
 in float v_mask;
 
-out vec4 fragColor;
-
-const float PI = 3.141592653589793;
-
 void main() {
     float dist = length(v_extrude);
     if (dist > 1.0) discard;
 
-    // Recover integer bitmask from normalised float attribute
-    int mask_i = int(floor(v_mask * 16777215.0 + 0.5));
+    int mask_i = int(floor(v_mask + 0.5));
 
     // Polar angle in [0, 2*PI)
     float angle = atan(v_extrude.y, v_extrude.x);
@@ -48,15 +43,15 @@ void main() {
     if (in_hole) discard;
 
     if (in_outer_stroke || in_inner_stroke || in_divider) {
-        fragColor = u_stroke_color;
+        glFragColor = u_stroke_color;
         return;
     }
 
     if (!visible) discard;
 
-    fragColor = u_colors[seg];
+    glFragColor = u_colors[seg];
 
 #ifdef OVERDRAW_INSPECTOR
-    fragColor = vec4(1.0);
+    glFragColor = vec4(1.0);
 #endif
 }

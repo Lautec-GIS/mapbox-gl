@@ -1,0 +1,42 @@
+{
+  "_comment": "Renders a 3-slice pie chart with equal sectors (red/green/blue), all slices visible via bitmask 7",
+  "version": 8,
+  "metadata": {
+    "test": {
+      "width": 64,
+      "height": 64
+    }
+  },
+  "sources": {
+    "geojson": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "mask": 7
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [0, 0]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "layers": [
+    {
+      "id": "pie",
+      "type": "pie-chart",
+      "source": "geojson",
+      "paint": {
+        "pie-chart-mask": ["get", "mask"],
+        "pie-chart-colors": ["red", "green", "blue"],
+        "pie-chart-size": 48
+      }
+    }
+  ]
+}

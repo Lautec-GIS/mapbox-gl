@@ -1,0 +1,45 @@
+{
+  "_comment": "Renders a 3-slice pie chart with black outer stroke and divider lines between slices",
+  "version": 8,
+  "metadata": {
+    "test": {
+      "width": 64,
+      "height": 64
+    }
+  },
+  "sources": {
+    "geojson": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {
+              "mask": 7
+            },
+            "geometry": {
+              "type": "Point",
+              "coordinates": [0, 0]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "layers": [
+    {
+      "id": "pie",
+      "type": "pie-chart",
+      "source": "geojson",
+      "paint": {
+        "pie-chart-mask": ["get", "mask"],
+        "pie-chart-colors": ["red", "green", "blue"],
+        "pie-chart-size": 48,
+        "pie-chart-stroke-width": 2,
+        "pie-chart-stroke-color": "black",
+        "pie-chart-divider-width": 0.05
+      }
+    }
+  ]
+}
