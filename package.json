@@ -130,6 +130,7 @@
     "serialize-javascript": "^7.0.3"
   },
   "scripts": {
+    "prepare": "npm run build-prod && npm run build-css && npm run build-esm-prod",
     "build-dev": "rollup -c --environment BUILD:dev",
     "watch-dev": "rollup -c --environment BUILD:dev --watch",
     "watch-esm": "rollup -c rollup.config.esm.ts --environment BUILD:dev --watch",
