@@ -11,6 +11,8 @@ import backgroundPatternFrag from './background_pattern.fragment.glsl';
 import backgroundPatternVert from './background_pattern.vertex.glsl';
 import circleFrag from './circle.fragment.glsl';
 import circleVert from './circle.vertex.glsl';
+import pieChartFrag from './pie_chart.fragment.glsl';
+import pieChartVert from './pie_chart.vertex.glsl';
 import clippingMaskFrag from './clipping_mask.fragment.glsl';
 import clippingMaskVert from './clipping_mask.vertex.glsl';
 import heatmapFrag from './heatmap.fragment.glsl';
@@ -153,6 +155,7 @@ export default {
     background: compile(backgroundFrag, backgroundVert),
     backgroundPattern: compile(backgroundPatternFrag, backgroundPatternVert),
     circle: compile(circleFrag, circleVert),
+    pieChart: compile(pieChartFrag, pieChartVert),
     clippingMask: compile(clippingMaskFrag, clippingMaskVert),
     heatmap: compile(heatmapFrag, heatmapVert),
     heatmapTexture: compile(heatmapTextureFrag, heatmapTextureVert),

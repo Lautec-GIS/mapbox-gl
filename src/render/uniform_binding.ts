@@ -149,6 +149,19 @@ class UniformColor extends Uniform<PremultipliedRenderColor> implements IUniform
     }
 }
 
+class Uniform4fv extends Uniform<Float32Array> implements IUniform<Float32Array> {
+    constructor(context: Context, size: number) {
+        super(context);
+        this.current = new Float32Array(size * 4);
+    }
+
+    override set(program: WebGLProgram, name: string, v: Float32Array): void {
+        if (!this.fetchUniformLocation(program, name)) return;
+        this.current = v;
+        this.gl.uniform4fv(this.location, v);
+    }
+}
+
 // Matrix uniforms cache a Float32Array copy of the last uploaded value. This makes it safe
 // for callers to pass long-lived buffers (reused across frames, mutated in place) directly:
 // change detection compares against the private copy rather than `v` itself, so `v === cache`
@@ -226,6 +239,7 @@ export {
     Uniform3f,
     Uniform4ui,
     Uniform4f,
+    Uniform4fv,
     UniformColor,
     UniformMatrix2f,
     UniformMatrix3f,
