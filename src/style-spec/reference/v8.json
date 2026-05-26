@@ -1514,6 +1514,15 @@
             }
           }
         },
+        "pie-chart": {
+          "doc": "A screen-aligned pie or donut chart at each point feature. Slices are toggled on/off per feature via a bitmask property.",
+          "sdk-support": {
+            "basic functionality": {
+              "js": "3.x.x"
+            }
+          },
+          "experimental": true
+        },
         "heatmap": {
           "doc": "A heatmap.",
           "sdk-support": {
@@ -1724,7 +1733,8 @@
     "layout_hillshade",
     "layout_background",
     "layout_sky",
-    "layout_model"
+    "layout_model",
+    "layout_pie-chart"
   ],
   "layout_background": {
     "visibility": {
@@ -6961,7 +6971,8 @@
     "paint_hillshade",
     "paint_background",
     "paint_sky",
-    "paint_model"
+    "paint_model",
+    "paint_pie-chart"
   ],
   "paint_fill": {
     "fill-antialias": {
@@ -11732,6 +11743,140 @@
         }
       },
       "default": "default"
+    }
+  },
+  "layout_pie-chart": {
+    "visibility": {
+      "type": "enum",
+      "values": {
+        "visible": {"doc": "The layer is shown."},
+        "none":    {"doc": "The layer is not shown."}
+      },
+      "default": "visible",
+      "doc": "Whether this layer is displayed.",
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"}
+      },
+      "expression": {"interpolated": false},
+      "property-type": "constant"
+    }
+  },
+  "paint_pie-chart": {
+    "pie-chart-mask": {
+      "type": "number",
+      "default": 0,
+      "doc": "Integer bitmask: bit N set means slice N is visible for this feature. Use [\"get\", \"property\"] to read from feature data.",
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"},
+        "data-driven styling": {"js": "3.x.x"}
+      },
+      "expression": {
+        "interpolated": false,
+        "parameters": ["zoom", "feature"]
+      },
+      "property-type": "data-driven",
+      "transition": false
+    },
+    "pie-chart-colors": {
+      "type": "array",
+      "value": "string",
+      "doc": "Per-slice CSS color strings. Constant across all features; passed as uniform array u_colors[24].",
+      "default": ["#e41a1c","#377eb8","#4daf4a","#984ea3","#ff7f00","#a65628"],
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"}
+      },
+      "property-type": "data-constant",
+      "transition": false
+    },
+    "pie-chart-labels": {
+      "type": "array",
+      "value": "string",
+      "doc": "Per-slice label strings. Metadata only — used for feature querying, not rendered.",
+      "default": ["Slice 1","Slice 2","Slice 3","Slice 4","Slice 5","Slice 6"],
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"}
+      },
+      "property-type": "data-constant",
+      "transition": false
+    },
+    "pie-chart-size": {
+      "type": "number",
+      "default": 50,
+      "minimum": 0,
+      "units": "pixels",
+      "doc": "Outer diameter of the chart in pixels.",
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"},
+        "data-driven styling": {"js": "3.x.x"}
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": ["zoom", "feature"]
+      },
+      "property-type": "data-driven",
+      "transition": false
+    },
+    "pie-chart-center-size": {
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "units": "pixels",
+      "doc": "Inner hole diameter in pixels. 0 = solid pie; >0 = donut.",
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"}
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": ["zoom"]
+      },
+      "property-type": "data-constant",
+      "transition": false
+    },
+    "pie-chart-stroke-color": {
+      "type": "color",
+      "default": "#000000",
+      "doc": "Color for outer ring and slice divider lines.",
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"}
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": ["zoom"]
+      },
+      "property-type": "data-constant",
+      "transition": false
+    },
+    "pie-chart-stroke-width": {
+      "type": "number",
+      "default": 2,
+      "minimum": 0,
+      "units": "pixels",
+      "doc": "Outer border thickness in pixels.",
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"}
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": ["zoom"]
+      },
+      "property-type": "data-constant",
+      "transition": false
+    },
+    "pie-chart-divider-width": {
+      "type": "number",
+      "default": 2,
+      "minimum": 0,
+      "units": "pixels",
+      "doc": "Divider line thickness between slices in pixels.",
+      "sdk-support": {
+        "basic functionality": {"js": "3.x.x"}
+      },
+      "expression": {
+        "interpolated": true,
+        "parameters": ["zoom"]
+      },
+      "property-type": "data-constant",
+      "transition": false
     }
   }
 }

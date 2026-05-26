@@ -974,6 +974,38 @@ export type CircleLayout = CircleLayerSpecification['layout'];
  */
 export type CirclePaint = CircleLayerSpecification['paint'];
 
+/**
+ * @experimental This type is experimental and subject to change in future versions.
+ */
+export type PieChartLayerSpecification = {
+    "id": string,
+    "type": "pie-chart",
+    "metadata"?: unknown,
+    "source": string,
+    "source-layer"?: string,
+    "slot"?: string,
+    "minzoom"?: number,
+    "maxzoom"?: number,
+    "filter"?: FilterSpecification,
+    "layout"?: {
+        "visibility"?: "visible" | "none" | ExpressionSpecification
+    },
+    "paint"?: {
+        "pie-chart-mask"?: DataDrivenPropertyValueSpecification<number>,
+        "pie-chart-colors"?: string[],
+        "pie-chart-labels"?: string[],
+        "pie-chart-size"?: DataDrivenPropertyValueSpecification<number>,
+        "pie-chart-center-size"?: PropertyValueSpecification<number>,
+        "pie-chart-stroke-color"?: PropertyValueSpecification<ColorSpecification>,
+        "pie-chart-stroke-width"?: PropertyValueSpecification<number>,
+        "pie-chart-divider-width"?: PropertyValueSpecification<number>
+    },
+    /**
+     * @experimental This property is experimental and subject to change in future versions.
+     */
+    "appearances"?: Array<AppearanceSpecification>
+};
+
 export type HeatmapLayerSpecification = {
     "id": string,
     "type": "heatmap",
@@ -1582,6 +1614,7 @@ export type LayerSpecification =
     | LineLayerSpecification
     | SymbolLayerSpecification
     | CircleLayerSpecification
+    | PieChartLayerSpecification
     | HeatmapLayerSpecification
     | FillExtrusionLayerSpecification
     | BuildingLayerSpecification
