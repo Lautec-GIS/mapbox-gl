@@ -4572,6 +4572,17 @@
       "parameters": ["zoom", "feature"]
     }
   },
+  "filter_pie-chart": {
+    "type": "boolean",
+    "doc": "Expression which determines whether or not to display a pie-chart. Pie-chart layer does NOT support dynamic filtering, meaning this expression can NOT use the `[\"pitch\"]` and `[\"distance-from-center\"]` expressions to reference the current state of the view.",
+    "default": false,
+    "transition": false,
+    "property-type": "data-driven",
+    "expression": {
+      "interpolated": false,
+      "parameters": ["zoom", "feature"]
+    }
+  },
   "filter_fill-extrusion": {
     "type": "boolean",
     "doc": "Expression which determines whether or not to display a Polygon. Fill-extrusion layer does NOT support dynamic filtering, meaning this expression can NOT use the `[\"pitch\"]` and `[\"distance-from-center\"]` expressions to reference the current state of the view.",
