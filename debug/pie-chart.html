@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mapbox GL JS debug page - Pie Chart layer</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="../dist/mapbox-gl.css" />
+    <style>
+        body { margin: 0; padding: 0; }
+        html, body, #map { height: 100%; }
+        #controls {
+            position: absolute;
+            top: 0;
+            left: 0;
+            padding: 10px;
+            background: rgba(255,255,255,0.85);
+            font-family: sans-serif;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+        #controls label { display: block; }
+    </style>
+</head>
+
+<body>
+<div id="map"></div>
+<div id="controls">
+    <label><input id="globe-checkbox" type="checkbox"> Globe projection</label>
+    <label>Size: <input id="size-slider" type="range" min="10" max="120" value="50"> <span id="size-val">50</span>px</label>
+    <label>Center hole: <input id="center-slider" type="range" min="0" max="50" value="0"> <span id="center-val">0</span>px</label>
+    <label>Stroke: <input id="stroke-slider" type="range" min="0" max="10" value="2"> <span id="stroke-val">2</span>px</label>
+    <label>Divider: <input id="divider-slider" type="range" min="0" max="5" value="1"> <span id="divider-val">1</span>px</label>
+    <label><input id="mask-toggle" type="checkbox" checked> Show all slices</label>
+</div>
+
+<script type="module">
+import * as mapboxgl from '../dist/esm-dev/mapbox-gl.js';
+import {getAccessToken} from './access_token_generated.js';
+
+const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
+const FULL_MASK = (1 << COLORS.length) - 1;
+
+const geojson = {
+    type: 'FeatureCollection',
+    features: [
+        {type: 'Feature', properties: {mask: FULL_MASK}, geometry: {type: 'Point', coordinates: [0, 20]}},
+        {type: 'Feature', properties: {mask: FULL_MASK}, geometry: {type: 'Point', coordinates: [30, 20]}},
+        {type: 'Feature', properties: {mask: FULL_MASK}, geometry: {type: 'Point', coordinates: [-30, 20]}},
+        {type: 'Feature', properties: {mask: FULL_MASK}, geometry: {type: 'Point', coordinates: [0, -20]}},
+        {type: 'Feature', properties: {mask: 0b000111}, geometry: {type: 'Point', coordinates: [30, -20]}},
+        {type: 'Feature', properties: {mask: 0b101010}, geometry: {type: 'Point', coordinates: [-30, -20]}},
+    ]
+};
+
+const map = window.map = new mapboxgl.Map({
+    accessToken: getAccessToken(),
+    container: 'map',
+    devtools: true,
+    zoom: 2,
+    center: [0, 0],
+    style: {
+        version: 8,
+        sources: {},
+        layers: [{id: 'bg', type: 'background', paint: {'background-color': '#e8e0d8'}}]
+    },
+    hash: true
+});
+
+map.addControl(new mapboxgl.NavigationControl());
+
+map.on('load', () => {
+    map.addSource('pies', {type: 'geojson', data: geojson});
+
+    map.addLayer({
+        id: 'pies',
+        type: 'pie-chart',
+        source: 'pies',
+        paint: {
+            'pie-chart-mask': ['get', 'mask'],
+            'pie-chart-colors': COLORS,
+            'pie-chart-size': 50,
+            'pie-chart-center-size': 0,
+            'pie-chart-stroke-width': 2,
+            'pie-chart-stroke-color': '#333333',
+            'pie-chart-divider-width': 1
+        }
+    });
+});
+
+function slider(id, valId, paintProp, scale) {
+    const el = document.getElementById(id);
+    const lbl = document.getElementById(valId);
+    el.oninput = () => {
+        const v = parseFloat(el.value) * (scale || 1);
+        lbl.textContent = el.value;
+        if (map.getLayer('pies')) map.setPaintProperty('pies', paintProp, v);
+    };
+}
+
+slider('size-slider', 'size-val', 'pie-chart-size');
+slider('center-slider', 'center-val', 'pie-chart-center-size');
+slider('stroke-slider', 'stroke-val', 'pie-chart-stroke-width');
+slider('divider-slider', 'divider-val', 'pie-chart-divider-width');
+
+document.getElementById('globe-checkbox').oninput = function() {
+    map.setProjection(this.checked ? 'globe' : 'mercator');
+};
+
+document.getElementById('mask-toggle').onchange = function() {
+    const newMask = this.checked ? FULL_MASK : 0b010101;
+    geojson.features.forEach(f => { f.properties.mask = newMask; });
+    map.getSource('pies').setData(geojson);
+};
+</script>
+</body>
+</html>
