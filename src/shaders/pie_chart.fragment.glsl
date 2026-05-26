@@ -41,8 +41,6 @@ void main() {
         return;
     }
 
-    if (!visible) discard;
-
     // Divider lines: angular distance to nearest sector boundary.
     // Each boundary is shared by two adjacent sectors, so each sector
     // contributes half the total divider width to avoid doubling.
@@ -55,6 +53,8 @@ void main() {
         glFragColor = u_stroke_color;
         return;
     }
+
+    if (!visible) discard;
 
     glFragColor = u_colors[seg];
 
