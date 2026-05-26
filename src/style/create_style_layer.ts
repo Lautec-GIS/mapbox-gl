@@ -1,4 +1,5 @@
 import circle from './style_layer/circle_style_layer';
+import pieChart from './style_layer/pie_chart_style_layer';
 import heatmap from './style_layer/heatmap_style_layer';
 import hillshade from './style_layer/hillshade_style_layer';
 import fill from './style_layer/fill_style_layer';
@@ -23,6 +24,7 @@ import type {CustomLayerInterface} from './style_layer/custom_style_layer';
 
 const subclasses: Record<Exclude<TypedStyleLayer['type'], 'custom'>, TypedStyleLayerConstructor> = {
     circle,
+    'pie-chart': pieChart,
     heatmap,
     hillshade,
     fill,

@@ -3,6 +3,7 @@ import {fillUniforms, fillPatternUniforms, fillOutlineUniforms, fillOutlinePatte
 import {lineBlendCompositeUniforms} from './line_blend_composite_program';
 import {lineBlendReduceUniforms} from './line_blend_reduce_program';
 import {circleUniforms} from './circle_program';
+import {pieChartUniforms} from './pie_chart_program';
 import {collisionUniforms, collisionCircleUniforms, type CollisionDebugDefinesType} from './collision_program';
 import {debugUniforms} from './debug_program';
 import {clippingMaskUniforms} from './clipping_mask_program';
@@ -84,6 +85,7 @@ export const programUniforms = {
     lineBlendComposite: lineBlendCompositeUniforms,
     lineBlendReduce: lineBlendReduceUniforms,
     circle: circleUniforms,
+    pieChart: pieChartUniforms,
     collisionBox: collisionUniforms,
     collisionCircle: collisionCircleUniforms,
     debug: debugUniforms,

@@ -23,6 +23,7 @@ import {clippingMaskUniformValues} from './program/clipping_mask_program';
 import Color from '../style-spec/util/color';
 import symbol from './draw_symbol';
 import circle from './draw_circle';
+import pieChart from './draw_pie_chart';
 import assert from '../style-spec/util/assert';
 import heatmap from './draw_heatmap';
 import line, {prepare as prepareLine} from './draw_line';
@@ -146,6 +147,7 @@ type PrepareStyleLayer = (layer: TypedStyleLayer, sourceCache: SourceCache, pain
 const draw: Record<CoreStyleLayer['type'], DrawStyleLayer> & Partial<Record<HDStyleLayer['type'], DrawStyleLayer>> = {
     symbol,
     circle,
+    'pie-chart': pieChart,
     heatmap,
     line,
     fill,
