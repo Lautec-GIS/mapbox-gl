@@ -59,3 +59,4 @@ test/usvg/vitest/
 test/usvg/test-suite/
 test/usvg/test-results.xml
 src/data/usvg/usvg_pb_renderer.js
+.env
