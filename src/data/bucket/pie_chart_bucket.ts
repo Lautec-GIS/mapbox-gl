@@ -34,11 +34,11 @@ import type {VectorTileLayer} from '@mapbox/vector-tile';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {ImageId} from '../../style-spec/expression/types/image_id';
 import type {GlobalProperties} from '../../style-spec/expression';
+import type {ElevationFeature} from '../../../3d-style/elevation/elevation_feature';
 
 export const PIE_CHART_COLORS_PROP = 'pie-chart-colors' as const;
 
-const filterPaintProps = (property: string): boolean =>
-    property !== PIE_CHART_COLORS_PROP && property !== 'pie-chart-labels';
+const filterPaintProps = (property: string): boolean => property !== PIE_CHART_COLORS_PROP && property !== 'pie-chart-labels';
 
 class PieChartBucket implements Bucket {
     index: number;
@@ -162,7 +162,7 @@ class PieChartBucket implements Bucket {
         if (this.globeExtVertexBuffer) this.globeExtVertexBuffer.destroy();
     }
 
-    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, availableImages: ImageId[], canonical: CanonicalTileID, projection?: Projection | null, brightness?: number | null, _elevationFeatures?: any[]) {
+    addFeature(feature: BucketFeature, geometry: Array<Array<Point>>, index: number, availableImages: ImageId[], canonical: CanonicalTileID, projection?: Projection | null, brightness?: number | null, _elevationFeatures?: ElevationFeature[]) {
         for (const ring of geometry) {
             for (const point of ring) {
                 const x = point.x;

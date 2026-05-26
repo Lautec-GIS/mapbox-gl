@@ -11,7 +11,7 @@ function makeLayer() {
     return layer;
 }
 
-function makeBucket(layer) {
+function makeBucket(layer: PieChartStyleLayer) {
     return new PieChartBucket({
         zoom: 0,
         overscaling: 1,

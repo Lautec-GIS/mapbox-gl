@@ -20,8 +20,7 @@ import type {ProgramName} from '../../render/program';
 
 export const PIE_CHART_COLORS_PROP = 'pie-chart-colors' as const;
 
-const filterPaintProps = (property: string): boolean =>
-    property !== PIE_CHART_COLORS_PROP && property !== 'pie-chart-labels';
+const filterPaintProps = (property: string): boolean => property !== PIE_CHART_COLORS_PROP && property !== 'pie-chart-labels';
 
 const NO_TRANSLATE = new Point(0, 0);
 
@@ -49,11 +48,11 @@ class PieChartStyleLayer extends StyleLayer {
 
     override queryRadius(bucket: Bucket): number {
         const pieChartBucket = bucket as PieChartBucket;
-        const sizeValue = (this.paint.get('pie-chart-size') as any).value;
+        const sizeValue = this.paint.get('pie-chart-size').value;
         const maxSize = sizeValue.kind === 'constant' ?
             sizeValue.value :
             pieChartBucket.programConfigurations.get(this.id).getMaxValue('pie-chart-size');
-        return maxSize / 2 + (this.paint.get('pie-chart-stroke-width') as number);
+        return maxSize / 2 + this.paint.get('pie-chart-stroke-width');
     }
 
     override queryIntersectsFeature(
@@ -66,8 +65,8 @@ class PieChartStyleLayer extends StyleLayer {
         pixelPosMatrix: Float32Array,
         elevationHelper?: DEMSampler | null,
     ): boolean {
-        const size = (this.paint.get('pie-chart-size') as any).evaluate(feature, featureState) / 2 +
-            (this.paint.get('pie-chart-stroke-width') as number);
+        const size = this.paint.get('pie-chart-size').evaluate(feature, featureState) / 2 +
+            this.paint.get('pie-chart-stroke-width');
 
         return queryIntersectsCircle(
             queryGeometry, geometry, transform, pixelPosMatrix, elevationHelper,

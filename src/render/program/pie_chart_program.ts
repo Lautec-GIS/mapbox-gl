@@ -60,12 +60,12 @@ export const pieChartUniformValues = (
     }
 
     const segmentCount = Math.min(colorsRaw.length, MAX_SLICES);
-    const size = (layer.paint.get('pie-chart-size') as any).constantOr(50) as number;
+    const size = layer.paint.get('pie-chart-size').constantOr(50);
     const halfSize = size * 0.5;
-    const strokeWidth = layer.paint.get('pie-chart-stroke-width') as number;
-    const dividerWidth = layer.paint.get('pie-chart-divider-width') as number;
-    const centerSize = layer.paint.get('pie-chart-center-size') as number;
-    const strokeColorRaw = layer.paint.get('pie-chart-stroke-color') as Color;
+    const strokeWidth = layer.paint.get('pie-chart-stroke-width');
+    const dividerWidth = layer.paint.get('pie-chart-divider-width');
+    const centerSize = layer.paint.get('pie-chart-center-size');
+    const strokeColorRaw = layer.paint.get('pie-chart-stroke-color');
     const sc = strokeColorRaw.toPremultipliedRenderColor(null);
 
     return {
