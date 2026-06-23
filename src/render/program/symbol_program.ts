@@ -24,6 +24,7 @@ export type SymbolUniformsType = {
     ['u_label_plane_matrix']: UniformMatrix4f;
     ['u_coord_matrix']: UniformMatrix4f;
     ['u_is_text']: Uniform1i;
+    ['u_is_sdf']: Uniform1i;
     ['u_elevation_from_sea']: Uniform1i;
     ['u_pitch_with_map']: Uniform1i;
     ['u_texsize']: Uniform2f;
@@ -48,10 +49,9 @@ export type SymbolUniformsType = {
     ['u_inv_matrix']: UniformMatrix4f;
     ['u_normal_scale']: Uniform1f;
     ['u_lutTexture']: Uniform1i;
-    ['u_zoom']: Uniform1f;
     // Constant paint property uniforms (u_spp_* = Symbol Paint Properties).
-    // Used when USE_PAINT_PROPERTIES_UBO is defined; the shader reads these for
-    // properties that are not data-driven (isDataDriven == false in the header).
+    // The shader reads these for properties that are not data-driven
+    // (isDataDriven == false in the header).
     ['u_spp_fill_np_color']: Uniform4f;
     ['u_spp_halo_np_color']: Uniform4f;
     ['u_spp_opacity']: Uniform1f;
@@ -62,6 +62,18 @@ export type SymbolUniformsType = {
     ['u_spp_z_offset']: Uniform1f;
     // [cos(angle), sin(angle)] for translate-anchor rotation; identity [1,0] for viewport anchor.
     ['u_spp_translate_rotation']: Uniform2f;
+    // Precomputed zoom interpolation factor (t) per property
+    ['u_spp_fill_color_zoom_factor']: Uniform1f;
+    ['u_spp_halo_color_zoom_factor']: Uniform1f;
+    ['u_spp_opacity_zoom_factor']: Uniform1f;
+    ['u_spp_halo_width_zoom_factor']: Uniform1f;
+    ['u_spp_halo_blur_zoom_factor']: Uniform1f;
+    ['u_spp_emissive_strength_zoom_factor']: Uniform1f;
+    ['u_spp_occlusion_opacity_zoom_factor']: Uniform1f;
+    ['u_spp_z_offset_zoom_factor']: Uniform1f;
+    ['u_spp_translate_zoom_factor']: Uniform1f;
+    // Fractional render zoom; drives per-feature zoom factors for appearances with differing stops.
+    ['u_spp_zoom_fraction']: Uniform1f;
     ['u_opacity_multiplier']: Uniform1f;
 };
 
@@ -70,11 +82,9 @@ export type SymbolDefinesType =
     | 'ICON_TRANSITION'
     | 'PITCH_WITH_MAP_TERRAIN'
     | 'PROJECTED_POS_ON_VIEWPORT'
-    | 'RENDER_SDF'
     | 'RENDER_TEXT_AND_SYMBOL'
     | 'Z_OFFSET'
-    | 'APPLY_LUT_ON_GPU'
-    | 'USE_PAINT_PROPERTIES_UBO';
+    | 'APPLY_LUT_ON_GPU';
 
 const symbolUniforms = (context: Context): SymbolUniformsType => ({
     'u_is_size_zoom_constant': new Uniform1i(context),
@@ -89,6 +99,7 @@ const symbolUniforms = (context: Context): SymbolUniformsType => ({
     'u_label_plane_matrix': new UniformMatrix4f(context),
     'u_coord_matrix': new UniformMatrix4f(context),
     'u_is_text': new Uniform1i(context),
+    'u_is_sdf': new Uniform1i(context),
     'u_elevation_from_sea': new Uniform1i(context),
     'u_pitch_with_map': new Uniform1i(context),
     'u_texsize': new Uniform2f(context),
@@ -113,7 +124,6 @@ const symbolUniforms = (context: Context): SymbolUniformsType => ({
     'u_inv_matrix': new UniformMatrix4f(context),
     'u_normal_scale': new Uniform1f(context),
     'u_lutTexture': new Uniform1i(context),
-    'u_zoom': new Uniform1f(context),
     'u_spp_fill_np_color': new Uniform4f(context),
     'u_spp_halo_np_color': new Uniform4f(context),
     'u_spp_opacity': new Uniform1f(context),
@@ -123,6 +133,16 @@ const symbolUniforms = (context: Context): SymbolUniformsType => ({
     'u_spp_occlusion_opacity': new Uniform1f(context),
     'u_spp_z_offset': new Uniform1f(context),
     'u_spp_translate_rotation': new Uniform2f(context),
+    'u_spp_fill_color_zoom_factor': new Uniform1f(context),
+    'u_spp_halo_color_zoom_factor': new Uniform1f(context),
+    'u_spp_opacity_zoom_factor': new Uniform1f(context),
+    'u_spp_halo_width_zoom_factor': new Uniform1f(context),
+    'u_spp_halo_blur_zoom_factor': new Uniform1f(context),
+    'u_spp_emissive_strength_zoom_factor': new Uniform1f(context),
+    'u_spp_occlusion_opacity_zoom_factor': new Uniform1f(context),
+    'u_spp_z_offset_zoom_factor': new Uniform1f(context),
+    'u_spp_translate_zoom_factor': new Uniform1f(context),
+    'u_spp_zoom_fraction': new Uniform1f(context),
     'u_opacity_multiplier': new Uniform1f(context),
 });
 
@@ -139,6 +159,7 @@ const symbolUniformValues = (
     glCoordMatrix: mat4,
     elevationFromSea: boolean,
     isText: boolean,
+    isSDF: boolean,
     texSize: [number, number],
     texSizeIcon: [number, number],
     isHalo: boolean,
@@ -169,6 +190,7 @@ const symbolUniformValues = (
         'u_label_plane_matrix': labelPlaneMatrix,
         'u_coord_matrix': glCoordMatrix,
         'u_is_text': +isText,
+        'u_is_sdf': +isSDF,
         'u_elevation_from_sea': elevationFromSea ? 1.0 : 0.0,
         'u_pitch_with_map': +pitchWithMap,
         'u_texsize': texSize,
@@ -185,7 +207,7 @@ const symbolUniformValues = (
         'u_up_vector': [0, -1, 0] as [number, number, number],
         'u_color_adj_mat': colorAdjustmentMatrix,
         'u_icon_transition': transition ? transition : 0.0,
-        'u_gamma_scale': pitchWithMap ? painter.transform.getCameraToCenterDistance(projection) * Math.cos(painter.terrain ? 0 : painter.transform._pitch) : 1,
+        'u_gamma_scale': isSDF ? (pitchWithMap ? painter.transform.getCameraToCenterDistance(projection) * Math.cos(painter.terrain ? 0 : painter.transform._pitch) : 1) : 0,
         'u_device_pixel_ratio': browser.devicePixelRatio,
         'u_is_halo': +isHalo,
         'u_scale_factor': scaleFactor ? scaleFactor : 1.0,
@@ -193,9 +215,7 @@ const symbolUniformValues = (
         'u_inv_matrix': mat4.invert(mat4.create(), labelPlaneMatrix),
         'u_normal_scale': normalScale,
         'u_lutTexture': TextureSlots.LUT,
-        'u_zoom': transform.zoom - Math.floor(transform.zoom),
-        // Defaults for u_spp_* — overwritten per draw call in drawSymbolElements()
-        // when USE_PAINT_PROPERTIES_UBO is active.
+        // Defaults for u_spp_* — overwritten per draw call in drawSymbolElements().
         'u_spp_fill_np_color': [0, 0, 0, 1] as [number, number, number, number],
         'u_spp_halo_np_color': [0, 0, 0, 0] as [number, number, number, number],
         'u_spp_opacity': 1.0,
@@ -205,6 +225,16 @@ const symbolUniformValues = (
         'u_spp_occlusion_opacity': 1.0,
         'u_spp_z_offset': 0.0,
         'u_spp_translate_rotation': [1.0, 0.0] as [number, number], // identity: no rotation
+        'u_spp_fill_color_zoom_factor': 0.0,
+        'u_spp_halo_color_zoom_factor': 0.0,
+        'u_spp_opacity_zoom_factor': 0.0,
+        'u_spp_halo_width_zoom_factor': 0.0,
+        'u_spp_halo_blur_zoom_factor': 0.0,
+        'u_spp_emissive_strength_zoom_factor': 0.0,
+        'u_spp_occlusion_opacity_zoom_factor': 0.0,
+        'u_spp_z_offset_zoom_factor': 0.0,
+        'u_spp_translate_zoom_factor': 0.0,
+        'u_spp_zoom_fraction': 0.0,
         'u_opacity_multiplier': 1.0,
     };
 

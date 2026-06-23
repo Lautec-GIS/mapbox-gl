@@ -35,7 +35,6 @@ export type PaintProps = {
     "model-translation": DataDrivenProperty<[number, number, number]>;
     "model-color": DataDrivenProperty<Color>;
     "model-color-mix-intensity": DataDrivenProperty<number>;
-    "model-lightmap-intensity": DataConstantProperty<number>;
     "model-type": DataConstantProperty<"common-3d" | "location-indicator">;
     "model-cast-shadows": DataConstantProperty<boolean>;
     "model-receive-shadows": DataConstantProperty<boolean>;
@@ -46,7 +45,7 @@ export type PaintProps = {
     "model-cutoff-fade-range": DataConstantProperty<number>;
     "model-front-cutoff": DataConstantProperty<[number, number, number]>;
     "model-elevation-reference": DataConstantProperty<"sea" | "ground" | "hd-road-markup">;
-    "model-ignore-line-cutout": DataConstantProperty<boolean>;
+    "model-line-cutout-mode": DataConstantProperty<"enabled" | "disabled" | "enabled-above-cutout">;
     "model-color-use-theme": DataDrivenProperty<string>;
 };
 
@@ -58,7 +57,6 @@ export const getPaintProperties = (): Properties<PaintProps> => paint || (paint 
     "model-translation": new DataDrivenProperty(styleSpec["paint_model"]["model-translation"]),
     "model-color": new DataDrivenProperty(styleSpec["paint_model"]["model-color"]),
     "model-color-mix-intensity": new DataDrivenProperty(styleSpec["paint_model"]["model-color-mix-intensity"]),
-    "model-lightmap-intensity": new DataConstantProperty(styleSpec["paint_model"]["model-lightmap-intensity"]),
     "model-type": new DataConstantProperty(styleSpec["paint_model"]["model-type"]),
     "model-cast-shadows": new DataConstantProperty(styleSpec["paint_model"]["model-cast-shadows"]),
     "model-receive-shadows": new DataConstantProperty(styleSpec["paint_model"]["model-receive-shadows"]),
@@ -69,6 +67,6 @@ export const getPaintProperties = (): Properties<PaintProps> => paint || (paint 
     "model-cutoff-fade-range": new DataConstantProperty(styleSpec["paint_model"]["model-cutoff-fade-range"]),
     "model-front-cutoff": new DataConstantProperty(styleSpec["paint_model"]["model-front-cutoff"]),
     "model-elevation-reference": new DataConstantProperty(styleSpec["paint_model"]["model-elevation-reference"]),
-    "model-ignore-line-cutout": new DataConstantProperty(styleSpec["paint_model"]["model-ignore-line-cutout"]),
+    "model-line-cutout-mode": new DataConstantProperty(styleSpec["paint_model"]["model-line-cutout-mode"]),
     "model-color-use-theme": new DataDrivenProperty({"type":"string","default":"default","property-type":"data-driven"}),
 }));

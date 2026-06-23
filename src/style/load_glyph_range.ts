@@ -11,7 +11,7 @@ export type GlyphRange = {
     descender?: number;
 };
 
-export function loadGlyphRange(
+export async function loadGlyphRange(
     fontstack: string,
     range: number,
     urlTemplate: string,
@@ -21,22 +21,24 @@ export function loadGlyphRange(
     const begin = range * 256;
     const end = begin + 255;
 
-    const request = requestManager.transformRequest(
-        requestManager.normalizeGlyphsURL(urlTemplate)
-            .replace('{fontstack}', fontstack)
-            .replace('{range}', `${begin}-${end}`),
-        ResourceType.Glyphs);
+    let result: GlyphRange;
+    try {
+        const request = await requestManager.transformRequest(
+            requestManager.normalizeGlyphsURL(urlTemplate)
+                .replace('{fontstack}', fontstack)
+                .replace('{range}', `${begin}-${end}`),
+            ResourceType.Glyphs);
 
-    getArrayBuffer(request, (err?: Error, data?: ArrayBuffer) => {
-        if (err) {
-            callback(err);
-        } else if (data) {
-            const glyphs: Record<string, StyleGlyph> = {};
-            const glyphData = parseGlyphPBF(data);
-            for (const glyph of glyphData.glyphs) {
-                glyphs[glyph.id] = glyph;
-            }
-            callback(null, {glyphs, ascender: glyphData.ascender, descender: glyphData.descender});
+        const {data} = await getArrayBuffer(request);
+        const glyphs: Record<string, StyleGlyph> = {};
+        const glyphData = parseGlyphPBF(data);
+        for (const glyph of glyphData.glyphs) {
+            glyphs[glyph.id] = glyph;
         }
-    });
+        result = {glyphs, ascender: glyphData.ascender, descender: glyphData.descender};
+    } catch (err) {
+        // No controller: every rejection must settle the callback, or the GlyphManager dedup entry blocks forever.
+        return callback(err as Error);
+    }
+    callback(null, result);
 }

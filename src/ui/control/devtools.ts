@@ -32,12 +32,17 @@ declare global {
 type Callback = (value?: unknown) => void;
 
 export type DevToolsFolder = {
-    addBinding: <T extends object>(target: T, key: keyof T, params?: BindingParams, callback?: Callback) => void;
-    addButton: (title: string, callback: () => void) => ButtonApi;
-    addSubFolder: (name: string, options?: Partial<FolderParams>) => DevToolsFolder;
-    addReadonly: <T extends object>(target: T, key: keyof T, params?: BindingParams) => BindingApi;
-    folder: FolderApi;
+    addBinding: <T extends object>(target: T, key: keyof T, params?: Record<string, unknown>, callback?: Callback) => void;
+    addButton: (title: string, callback: () => void) => void;
+    addSubFolder: (name: string, options?: Record<string, unknown>) => DevToolsFolder;
+    addReadonly: <T extends object>(target: T, key: keyof T, params?: Record<string, unknown>) => void;
+    folder: {children: ReadonlyArray<unknown>; expanded: boolean; disabled: boolean};
 };
+
+export interface IDevTools {
+    addFolder: (name: string, options?: Record<string, unknown>) => DevToolsFolder;
+    removeFolder: (name: string) => void;
+}
 
 type Metadata = {
     target: Record<string, unknown>;
@@ -217,7 +222,7 @@ export class DevTools implements IControl {
             }
         }
 
-        const folder = this._addFolder(this._pane, Object.assign({title: name}, options));
+        const folder = this._addFolder(this._pane, {title: name, ...options});
         const entry = this._folders.get(folder);
         if (entry) entry.name = name;
 
@@ -275,13 +280,13 @@ export class DevTools implements IControl {
                     }
                 }
 
-                const sub = this._addFolder(folder, Object.assign({title: name}, options));
+                const sub = this._addFolder(folder, {title: name, ...options});
                 const subEntry = this._folders.get(sub);
                 if (subEntry) subEntry.name = name;
                 return this._createFolderHandle(sub);
             },
             addReadonly: <T extends object>(target: T, key: keyof T, params?: BindingParams): BindingApi => {
-                return folder.addBinding(target, key, Object.assign({}, params, {readonly: true}) as BindingParams);
+                return folder.addBinding(target, key, {...params, readonly: true});
             },
             folder
         };
@@ -585,7 +590,7 @@ export class DevTools implements IControl {
         this._addParameter(folder, map, 'showLayers2DWireframe');
         this._addParameter(folder, map, 'showLayers3DWireframe');
         this._addParameter(folder, map, '_scaleFactor', {label: 'scaleFactor', min: 0.1, max: 10.0, step: 0.1}, () => map.setScaleFactor(map._scaleFactor));
-        this._addParameter(folder, map.painter._debugParams, 'lodSwitchDistance', {min: 0, max: 10000, step: 100}, () => map.triggerRepaint());
+        this._addParameter(folder, map.painter._debugParams, 'lodSwitchDistance', {min: -1, max: 10000, step: 100}, () => map.triggerRepaint());
         this._addParameter(folder, map.painter._debugParams, 'lodSwitchFadeDuration', {min: 0, max: 5, step: 0.1}, () => map.triggerRepaint());
 
         const layersFolder = this._addFolder(folder, {title: 'Enabled Layers'});

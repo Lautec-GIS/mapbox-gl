@@ -28,22 +28,15 @@ import {transitionTileAABBinECEF, globeNormalizeECEF, tileCoordToECEF, globeToMe
 import {vec3, mat4} from 'gl-matrix';
 
 import type RasterParticleState from '../render/raster_particle_state';
-/**
- * Which render source partition this tile is parsed for.
- * Mirrors C++ RenderVectorSource splits in vector_source_factory.cpp.
- * Undefined/null = no filtering (single source, all layers).
- */
-export const RenderSourceType = {
-    Other: 0,
-    Symbol: 1,
-    FillExtrusion: 2,
-} as const;
-export type RenderSourceType = typeof RenderSourceType[keyof typeof RenderSourceType];
+import type {RenderSourceType} from './render_source_type';
 import type FeatureIndex from '../data/feature_index';
 import type {Bucket} from '../data/bucket';
 import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
 import type {WorkerSourceVectorTileResult, WorkerSourceVectorTileCallback} from './worker_source';
+import type {FrcCoveragePolygons} from './frc_coverage_snapshot';
+import type {ElevationFeature} from '../../3d-style/elevation/elevation_feature';
 import type Actor from '../util/actor';
+import type {WorkerInbox} from '../util/actor_messages';
 import type DEMData from '../data/dem_data';
 import type {AlphaImage, SpritePositions} from '../util/image';
 import type ImageAtlas from '../render/image_atlas';
@@ -54,7 +47,6 @@ import type {CanonicalTileID, OverscaledTileID} from './tile_id';
 import type Framebuffer from '../gl/framebuffer';
 import type Transform from '../geo/transform';
 import type {FeatureStates, LayerFeatureStates} from './source_state';
-import type {Cancelable} from '../types/cancelable';
 import type {FilterSpecification} from '../style-spec/types';
 import type {TilespaceQueryGeometry} from '../style/query_geometry';
 import type VertexBuffer from '../gl/vertex_buffer';
@@ -109,6 +101,9 @@ function getPixelPosMatrix(transform: Transform, tileID: OverscaledTileID) {
     return Float32Array.from(t);
 }
 
+// Assigned on main thread (single-threaded) so generations are unique across workers.
+let _elevationGenerationCounter = 0;
+
 /**
  * A tile object is the combination of a Coordinate, which defines
  * its place, as well as a unique ID and data tracking for its content
@@ -141,11 +136,17 @@ class Tile {
     redoWhenDone: boolean;
     showCollisionBoxes: boolean;
     placementSource: unknown;
-    actor: Actor | null | undefined;
+    actor: Actor<WorkerInbox> | null | undefined;
     vtLayers: {
         [_: string]: VectorTileLayer;
     };
     renderSourceType: RenderSourceType | null | undefined;
+    frcCoveragePolygons: FrcCoveragePolygons | null | undefined;
+    hasDeferredRoadStructure: boolean;
+    parsedElevationFeatures: ElevationFeature[] | undefined;
+    // Monotonic parse generation for change detection (avoids content comparison).
+    parsedElevationGeneration: number;
+    hasDeferredElevationFeatures: boolean;
     isExtraShadowCaster: boolean | null | undefined;
     isRaster: boolean | null | undefined;
     _tileTransform: TileTransform;
@@ -157,7 +158,7 @@ class Tile {
     aborted: boolean | null | undefined;
     needsHillshadePrepare: boolean | null | undefined;
     needsDEMTextureUpload: boolean | null | undefined;
-    request: Cancelable | null | undefined;
+    request: AbortController | null | undefined;
     texture: Texture | null | undefined | UserManagedTexture;
     emissiveTexture: Texture | null | undefined | UserManagedTexture;
     hillshadeFBO: Framebuffer | null | undefined;
@@ -292,6 +293,17 @@ class Tile {
         }
         this.collisionBoxArray = data.collisionBoxArray;
         this.buckets = deserializeBucket(data.buckets, painter.style);
+
+        if (data.frcCoveragePolygons && data.frcCoveragePolygons.length > 0) {
+            this.frcCoveragePolygons = data.frcCoveragePolygons;
+        }
+        this.hasDeferredRoadStructure = !!data.hasDeferredRoadStructure;
+        if (data.parsedElevationFeatures !== undefined) {
+            this.parsedElevationFeatures = data.parsedElevationFeatures;
+            // Fresh generation on every parse result (empty array = content too).
+            this.parsedElevationGeneration = ++_elevationGenerationCounter;
+        }
+        this.hasDeferredElevationFeatures = !!data.hasDeferredElevationFeatures;
 
         this.hasSymbolBuckets = false;
         this.hasTunnelGeometry = !!data.hasTunnelGeometry;
@@ -434,7 +446,7 @@ class Tile {
 
         if (data.resourceTiming) this.resourceTiming = data.resourceTiming;
 
-        this.buckets = Object.assign({}, this.buckets, deserializeBucket(data.buckets, painter.style));
+        this.buckets = {...this.buckets, ...deserializeBucket(data.buckets, painter.style)};
 
         if (data.featureIndex) {
             this.latestFeatureIndex = data.featureIndex;

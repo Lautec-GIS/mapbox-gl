@@ -22,6 +22,7 @@ import type {TextureImage, TextureWrap, TextureFilter} from '../../src/render/te
 import type Transform from '../../src/geo/transform';
 import type {Footprint} from '../util/conflation';
 import type {ModelBVH} from '../source/model_bvh';
+import type {LightOverrides} from '../render/lights';
 
 export type Sampler = {
     minFilter: TextureFilter;
@@ -82,7 +83,9 @@ export type MaterialOverride = {
 };
 
 export type NodeOverride = {
-    orientation: vec3; // euler ZXY
+    orientation?: vec3; // euler ZXY
+    minZoom?: number;
+    maxZoom?: number;
 };
 
 export const HEIGHTMAP_DIM = 64;
@@ -136,6 +139,8 @@ export type ModelNode = {
     anchor: vec2;
     hidden: boolean;
     isGeometryBloom: boolean;
+    minZoom?: number;
+    maxZoom?: number;
     footprintDebugMesh?: {
         vertexBuffer: VertexBuffer;
         indexBuffer: IndexBuffer;
@@ -305,6 +310,7 @@ export default class Model {
     materialOverrideNames: string[] = [];
     nodeOverrideNames: string[] = [];
     featureProperties: Record<string, unknown> = {};
+    lightOverrides?: LightOverrides;
 
     uri: string;
 
@@ -327,9 +333,17 @@ export default class Model {
         const nodeOverride = this.nodeOverrides.get(node.name);
         if (nodeOverride !== undefined) {
             // Apply orientation override
-            const m = [] as unknown as mat4;
-            rotationYZX(m, nodeOverride.orientation);
-            mat4.multiply(node.globalMatrix, node.globalMatrix, m);
+            if (nodeOverride.orientation) {
+                const m = [] as unknown as mat4;
+                rotationYZX(m, nodeOverride.orientation);
+                mat4.multiply(node.globalMatrix, node.globalMatrix, m);
+            }
+            if (nodeOverride.minZoom) {
+                node.minZoom = nodeOverride.minZoom;
+            }
+            if (nodeOverride.maxZoom) {
+                node.maxZoom = nodeOverride.maxZoom;
+            }
         }
 
         // apply local transform to bounding volume
@@ -347,7 +361,7 @@ export default class Model {
     }
 
     computeBoundsAndApplyParent() {
-        const localMatrix = mat4.identity([] as unknown as mat4);
+        const localMatrix = mat4.identity([]);
         this.aabb = new Aabb([Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]);
         for (const node of this.nodes) {
             this._applyTransformations(node, localMatrix);

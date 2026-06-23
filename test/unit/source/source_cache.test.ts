@@ -79,10 +79,8 @@ export function createSourceCache(options, used) {
 
     const eventedParent = new Evented();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    const sc = new SourceCache('id', create('id', Object.assign({
-        tileSize: 512,
-        type: 'mock-source-type'
-    }, spec), /* dispatcher */ {}, eventedParent));
+    const sc = new SourceCache('id', create('id', {tileSize: 512,
+        type: 'mock-source-type', ...spec}, /* dispatcher */ {}, eventedParent));
     sc.used = typeof used === 'boolean' ? used : true;
     sc.transform = new Transform();
     sc.map = {painter: {transform: sc.transform}};
@@ -2157,6 +2155,15 @@ test('sortCoordinatesByDistance', () => {
         }
     });
     sourceCache.getSource().onAdd();
+});
+
+test('sortCoordinatesByDistance without transform', () => {
+    const {sourceCache} = createSourceCache({});
+    const coords = [
+        new OverscaledTileID(2, 0, 2, 1, 1),
+        new OverscaledTileID(2, 0, 2, 0, 0),
+    ];
+    expect(sourceCache.sortCoordinatesByDistance(coords)).toStrictEqual(coords);
 });
 
 describe('shadow caster tiles', () => {

@@ -1,4 +1,4 @@
-import Protobuf from 'pbf';
+import {PbfReader} from 'pbf';
 import {getArrayBuffer, ResourceType} from "../util/ajax";
 import {readIconSet, type Icon} from "../data/usvg/usvg_pb_decoder";
 import browser from '../util/browser';
@@ -34,20 +34,18 @@ function getStretchArea(stretchArea: [number, number][] | undefined): [number, n
     return stretchArea.map(([l, r]) => [l * browser.devicePixelRatio, r * browser.devicePixelRatio]);
 }
 
-export function loadIconset(
+export async function loadIconset(
     loadURL: string,
     requestManager: RequestManager,
+    signal: AbortSignal,
     callback: Callback<StyleImages>
 ) {
-    return getArrayBuffer(requestManager.transformRequest(requestManager.normalizeIconsetURL(loadURL), ResourceType.Iconset), (err, data) => {
-        if (err) {
-            callback(err);
-            return;
-        }
-
+    try {
+        const request = await requestManager.transformRequest(requestManager.normalizeIconsetURL(loadURL), ResourceType.Iconset, signal);
+        const {data} = await getArrayBuffer(request, signal);
         const result: StyleImages = {};
 
-        const iconSet = readIconSet(new Protobuf(data));
+        const iconSet = readIconSet(new PbfReader(data));
 
         for (const icon of iconSet.icons) {
             const styleImage: StyleImage = {
@@ -65,5 +63,7 @@ export function loadIconset(
         }
 
         callback(null, result);
-    });
+    } catch (err) {
+        if (!signal.aborted) callback(err as Error);
+    }
 }

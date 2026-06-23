@@ -20,14 +20,17 @@ import {makeFQID} from "../util/fqid";
 import {type SpritePositions} from '../util/image';
 import {PROPERTY_ELEVATION_ID} from '../../3d-style/elevation/elevation_constants';
 import * as HD from '../../modules/hd_worker';
+import * as Standard from '../../modules/standard_worker';
 import {ImageId} from '../style-spec/expression/types/image_id';
-import {RenderSourceType} from './tile';
+import {RenderSourceType} from './render_source_type';
+import {HD_ROAD_COVERAGE_SOURCE_LAYER} from './frc_coverage_snapshot';
 
+import type {FrcCoveragePolygons, FrcCoverageParams} from './frc_coverage_snapshot';
+import type {ElevationParams} from './elevation_coverage_snapshot';
 import type {VectorTile} from '@mapbox/vector-tile';
 import type {CanonicalTileID} from './tile_id';
 import type Projection from '../geo/projection/projection';
 import type {Bucket, PopulateParameters, ImageDependenciesMap, IndexedFeature} from '../data/bucket';
-import type Actor from '../util/actor';
 import type StyleLayer from '../style/style_layer';
 import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
 import type StyleLayerIndex from '../style/style_layer_index';
@@ -35,13 +38,14 @@ import type {StyleImageMap} from '../style/style_image';
 import type {
     WorkerSourceVectorTileRequest,
     WorkerSourceVectorTileCallback,
+    WorkerSourceActor,
 } from '../source/worker_source';
 import type {PromoteIdSpecification} from '../style-spec/types';
 import type {TileTransform} from '../geo/projection/tile_transform';
 import type {LUT} from "../util/lut";
 import type {GlyphMap} from '../render/glyph_manager';
 import type {ImagePositionMap} from '../render/image_atlas';
-import type {RasterizedImageMap, ImageRasterizationTasks} from '../render/image_manager';
+import type {ImageRasterizationTasks} from '../render/image_manager';
 import type {StringifiedImageId} from '../style-spec/expression/types/image_id';
 import type {ImageVariant, StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
 import type {StyleModelMap} from '../style/style_mode';
@@ -51,14 +55,20 @@ import type {IndoorTileOptions} from '../style/indoor_data';
 // be deserialized. Covers two cases:
 //   1. Fill/line/circle/symbol buckets carrying an `hdExt` — the extension class lives
 //      only in the HD module, so `deserialize` throws "unregistered class" without it.
-//   2. Buckets whose constructor advertises `requiresHDRuntime = true` — classes that
-//      live entirely in the HD chunk (e.g. `BuildingBucket`) and cannot be reconstructed
-//      on main without HD. Checked via a static on the constructor so core doesn't need
-//      to statically import the HD class.
+//   2. Buckets that advertise `requiresHDRuntime = true` — classes that live entirely
+//      in the HD chunk (e.g. `BuildingBucket`) and cannot be reconstructed on main
+//      without HD.
 function anyBucketRequiresHD(buckets: Array<Bucket>): boolean {
     for (const bucket of buckets) {
         if ((bucket as {hdExt?: unknown}).hdExt != null) return true;
-        if ((bucket.constructor as {requiresHDRuntime?: boolean}).requiresHDRuntime) return true;
+        if (bucket.requiresHDRuntime) return true;
+    }
+    return false;
+}
+
+function anyBucketRequiresStandard(buckets: Array<Bucket>): boolean {
+    for (const bucket of buckets) {
+        if (bucket.requiresStandardRuntime) return true;
     }
     return false;
 }
@@ -80,6 +90,11 @@ class WorkerTile {
     showElevationIdDebug: boolean;
     collectResourceTiming: boolean;
     renderSourceType: RenderSourceType | null | undefined;
+    frcCoverage: FrcCoverageParams | null;
+    elevation: ElevationParams | null;
+    crossSourceElevationEnabled: boolean;
+    terrainEnabled: boolean;
+    deferRoadStructure: boolean;
     extraShadowCaster: boolean | null | undefined;
     tessellationStep: number | null | undefined;
     projection: Projection;
@@ -91,7 +106,6 @@ class WorkerTile {
     indoor: IndoorTileOptions | null;
     maxUniformBufferBindings: number | null | undefined;
     maxUniformBlockSizeDwords: number | null | undefined;
-    disableSymbolUBO: boolean | null | undefined;
 
     status: 'parsing' | 'done';
     data: VectorTile;
@@ -100,7 +114,7 @@ class WorkerTile {
     abort: () => void | null | undefined;
     reloadCallback?: WorkerSourceVectorTileCallback | null | undefined;
     vectorTile: VectorTile;
-    rasterizeTask: {cancel: () => void} | null | undefined;
+    rasterizeTask: AbortController | null | undefined;
 
     constructor(params: WorkerSourceVectorTileRequest) {
         this.tileID = new OverscaledTileID(params.tileID.overscaledZ, params.tileID.wrap, params.tileID.canonical.z, params.tileID.canonical.x, params.tileID.canonical.y);
@@ -119,6 +133,11 @@ class WorkerTile {
         this.collectResourceTiming = params.request ? params.request.collectResourceTiming : false;
         this.promoteId = params.promoteId;
         this.renderSourceType = params.renderSourceType;
+        this.frcCoverage = params.frcCoverage || null;
+        this.elevation = params.elevation || null;
+        this.crossSourceElevationEnabled = !!params.crossSourceElevationEnabled;
+        this.terrainEnabled = !!params.terrainEnabled;
+        this.deferRoadStructure = false;
         this.tileTransform = tileTransform(params.tileID.canonical, params.projection);
         this.projection = params.projection;
         this.worldview = params.worldview;
@@ -138,52 +157,57 @@ class WorkerTile {
         if (this.renderSourceType === RenderSourceType.Symbol && layer.type !== 'symbol') return false;
         if (this.renderSourceType === RenderSourceType.FillExtrusion && layer.type !== 'fill-extrusion') return false;
         if (this.renderSourceType === RenderSourceType.Other && (layer.type === 'symbol' || layer.type === 'fill-extrusion')) return false;
+        if (this.renderSourceType === RenderSourceType.HdRoadElevation) return false;
         if (layer.minzoom && this.zoom < Math.floor(layer.minzoom)) return false;
         if (layer.maxzoom && this.zoom >= layer.maxzoom) return false;
         if (layer.visibility === 'none') return false;
         return true;
     }
 
-    parse(data: VectorTile, layerIndex: StyleLayerIndex, availableImages: ImageId[], availableModels: StyleModelMap, actor: Actor, callback: WorkerSourceVectorTileCallback) {
+    parse(data: VectorTile, layerIndex: StyleLayerIndex, availableImages: ImageId[], availableModels: StyleModelMap, actor: WorkerSourceActor, callback: WorkerSourceVectorTileCallback) {
         // Tile-level HD gate. If any layer in this tile's source may use HD and the HD
         // module hasn't loaded yet on this worker, wait for it before parsing. Otherwise
         // the bucket creation loop would skip `HD.attachExtension` and any features that
         // rely on HD would render without elevation. Non-HD tiles bypass the gate
         // entirely and stay fully synchronous.
         const layerFamilies = layerIndex.familiesBySource[this.source];
-        if ((layerFamilies || this.indoor) && !HD.loaded) {
-            let needsHD = !!this.indoor; // Indoor parsing requires HD.parseActiveFloors
+        if ((layerFamilies || this.indoor) && (!HD.loaded || !Standard.loaded)) {
+            let needsHD = !!this.indoor || !!this.frcCoverage; // Indoor needs HD.parseActiveFloors; FRC needs HD.attachExtension
+            let needsStandard = false;
             for (const sourceLayerId in layerFamilies || {}) {
                 for (const family of layerFamilies[sourceLayerId]) {
                     const layer = family[0];
-                    // Layers that won't actually parse for this tile shouldn't force an
-                    // HD module load. The same predicate is applied inside `_parseAfterHD`.
+                    // Layers that won't actually parse for this tile shouldn't force a
+                    // module load. The same predicate is applied inside `_parseAfterHD`.
                     if (!this.isLayerActiveForTile(layer)) continue;
-                    if (layer.mayUseHD()) {
-                        needsHD = true;
-                        break;
-                    }
+                    if (!HD.loaded && layer.mayUse('HD')) needsHD = true;
+                    if (!Standard.loaded && layer.mayUse('Standard')) needsStandard = true;
                 }
-                if (needsHD) break;
             }
-            if (needsHD) {
-                // If HD fails to load, `_parseAfterHD`'s `if (HD.attachExtension)` guards
-                // skip augmentation — HD-flagged features parse without elevation and
-                // render flat. Matches the Buildings/Rain/Snow precedent: optional feature
-                // modules fail soft on the worker; the main thread may still fail loudly
-                // on deserialize if a tile already carries hdExt payloads.
+            if (needsHD || needsStandard) {
                 const proceed = () => this._parseAfterHD(data, layerIndex, availableImages, availableModels, actor, callback);
-                HD.prepareHD().then(proceed, proceed);
+                const loads: Array<Promise<void>> = [];
+                if (needsHD) loads.push(HD.prepareHD());
+                if (needsStandard) loads.push(Standard.prepareStandard());
+                Promise.all(loads).then(proceed, proceed);
                 return;
             }
         }
         this._parseAfterHD(data, layerIndex, availableImages, availableModels, actor, callback);
     }
 
-    _parseAfterHD(data: VectorTile, layerIndex: StyleLayerIndex, availableImages: ImageId[], availableModels: StyleModelMap, actor: Actor, callback: WorkerSourceVectorTileCallback) {
+    _parseAfterHD(data: VectorTile, layerIndex: StyleLayerIndex, availableImages: ImageId[], availableModels: StyleModelMap, actor: WorkerSourceActor, callback: WorkerSourceVectorTileCallback) {
         const m = PerformanceUtils.beginMeasure('parseTile1');
         this.status = 'parsing';
         this.data = data;
+
+        // Parse FRC coverage polygons early (before normal bucket creation).
+        // Coverage tiles also create normal buckets so layers like hd-coverage-helper render.
+        let frcCoveragePolygons: FrcCoveragePolygons | undefined;
+        if (this.renderSourceType === RenderSourceType.HdRoadCoverage) {
+            const coverageLayer = data.layers[HD_ROAD_COVERAGE_SOURCE_LAYER];
+            frcCoveragePolygons = coverageLayer && HD.parseFrcCoverageFromLayer ? HD.parseFrcCoverageFromLayer(coverageLayer) : [];
+        }
 
         this.collisionBoxArray = new CollisionBoxArray();
         const sourceLayerCoder = new DictionaryCoder(Object.keys(data.layers).sort());
@@ -207,7 +231,10 @@ class WorkerTile {
             scaleFactor: this.scaleFactor,
             showElevationIdDebug: this.showElevationIdDebug,
             elevationFeatures: undefined,
-            activeFloors: undefined
+            elevationParams: this.elevation,
+            crossSourceElevationEnabled: this.crossSourceElevationEnabled,
+            terrainEnabled: this.terrainEnabled,
+            activeFloors: undefined,
         };
 
         if (this.indoor && HD.parseActiveFloors) {
@@ -216,6 +243,46 @@ class WorkerTile {
 
         const asyncBucketLoads: Promise<unknown>[] = [];
         const layerFamilies = layerIndex.familiesBySource[this.source];
+
+        // Dedicated elevation provider tiles only extract hd_road_elevation features
+        // for the main-thread snapshot; they must not run the feature-source bucket path.
+        if (this.renderSourceType === RenderSourceType.HdRoadElevation) {
+            const parsedElevationFeatures = HD.parseElevationFeatures ?
+                (HD.parseElevationFeatures(data, this.canonical) || []) :
+                [];
+            const glyphAtlas = new GlyphAtlas({});
+            this.status = 'done';
+            callback(null, {
+                buckets: [],
+                containsHdExt: false,
+                containsStandardExt: false,
+                featureIndex,
+                collisionBoxArray: this.collisionBoxArray,
+                glyphAtlasImage: glyphAtlas.image,
+                lineAtlas,
+                imageAtlas: null,
+                brightness: this.brightness,
+                parsedElevationFeatures,
+            });
+            PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
+            return;
+        }
+
+        // Defer configured coverage source layers when HD coverage hasn't resolved yet.
+        // When coverage arrives, tiles are reparsed with coverageFrcMask set,
+        // allowing fully covered features to be skipped at parse time.
+        this.deferRoadStructure = false;
+        if (this.renderSourceType !== RenderSourceType.HdRoadCoverage &&
+            this.frcCoverage != null &&
+            !this.frcCoverage.resolved &&
+            this.frcCoverage.frcMask === null) {
+            for (const sourceLayerId in layerFamilies) {
+                if (HD.matchesCoverageSourceLayer && HD.matchesCoverageSourceLayer(this.frcCoverage.sourceLayers, this.source, sourceLayerId)) {
+                    this.deferRoadStructure = true;
+                    break;
+                }
+            }
+        }
 
         for (const sourceLayerId in layerFamilies) {
             const sourceLayer = data.layers[sourceLayerId];
@@ -250,7 +317,14 @@ class WorkerTile {
                 continue;
             } else if (this.renderSourceType === RenderSourceType.FillExtrusion && !anyFillExtrusionLayers) {
                 continue;
-            } else if (this.renderSourceType === RenderSourceType.Other && !anyOtherLayers) {
+            } else if ((this.renderSourceType === RenderSourceType.Other ||
+                        this.renderSourceType === RenderSourceType.HdRoadCoverage) && !anyOtherLayers) {
+                continue;
+            }
+
+            // Defer configured coverage source layers when coverage hasn't resolved.
+            const isRoadOrStructureLayer = this.frcCoverage != null && !!HD.matchesCoverageSourceLayer && HD.matchesCoverageSourceLayer(this.frcCoverage.sourceLayers, this.source, sourceLayerId);
+            if (this.deferRoadStructure && isRoadOrStructureLayer) {
                 continue;
             }
 
@@ -289,6 +363,12 @@ class WorkerTile {
                     elevationDependency = true;
                 }
 
+                // Skip features fully covered by FRC mask on road/structure source layers
+                if (isRoadOrStructureLayer && this.frcCoverage && this.frcCoverage.frcMask && feature.properties && HD.isFeatureCoveredByFrcMask &&
+                    HD.isFeatureCoveredByFrcMask(feature.properties, this.frcCoverage.frcMask)) {
+                    continue;
+                }
+
                 features.push({feature, id, index: currentFeatureIndex, sourceLayerIndex});
                 currentFeatureIndex++;
             }
@@ -305,6 +385,11 @@ class WorkerTile {
                     continue;
                 }
                 // Three-way render source type filtering:
+                if (this.renderSourceType === RenderSourceType.Symbol && layer.type !== 'symbol') continue;
+                if (this.renderSourceType === RenderSourceType.FillExtrusion && layer.type !== 'fill-extrusion') continue;
+                if ((this.renderSourceType === RenderSourceType.Other ||
+                     this.renderSourceType === RenderSourceType.HdRoadCoverage) &&
+                    (layer.type === 'symbol' || layer.type === 'fill-extrusion')) continue;
                 assert(layer.source === this.source);
                 if (!this.isLayerActiveForTile(layer)) continue;
 
@@ -331,6 +416,7 @@ class WorkerTile {
                         overscaling: this.overscaling,
                         collisionBoxArray: this.collisionBoxArray,
                         sourceLayerIndex,
+                        sourceLayerName: sourceLayerId,
                         sourceID: this.source,
                         projection: this.projection.spec,
                         tessellationStep: this.tessellationStep,
@@ -339,26 +425,24 @@ class WorkerTile {
                         localizable,
                         availableImages,
                         maxUniformBufferBindings: this.maxUniformBufferBindings,
-                        maxUniformBlockSizeDwords: this.maxUniformBlockSizeDwords,
-                        disableSymbolUBO: this.disableSymbolUBO
+                        maxUniformBlockSizeDwords: this.maxUniformBlockSizeDwords
                     });
 
                     assert(this.tileTransform.projection.name === this.projection.name);
 
-                    // Attach HD extension when the layer declares HD elevation. Dispatching
-                    // through HD.attachExtension keeps the relevance check and the concrete
-                    // extension classes in the HD module — core stays unaware of which
-                    // bucket types are HD-augmentable.
-                    if (HD.attachExtension) HD.attachExtension(bucket);
+                    // Attach HD extension when the layer declares HD elevation OR when the
+                    // bucket's source layer participates in FRC coverage. Dispatching through
+                    // HD.attachExtension keeps the relevance checks and the concrete extension
+                    // classes in the HD module — core stays unaware of which bucket types are
+                    // HD-augmentable.
+                    if (HD.attachExtension) HD.attachExtension(bucket, this.frcCoverage ? this.frcCoverage.sourceLayers : null);
 
                     bucket.populate(features, options, this.tileID.canonical, this.tileTransform);
                 };
 
-                // Only HD-relevant layers go through the async prepare() path; everything
-                // else stays fully synchronous so non-HD tiles pay no microtask overhead.
-                // For HD layers, `prepare()` returns the pending `prepareHD()` promise that
-                // must resolve before the bucket can populate safely.
-                if (layer.mayUseHD()) {
+                // Only module-relevant layers go through the async prepare() path; everything
+                // else stays fully synchronous so non-HD/Standard tiles pay no microtask overhead.
+                if (layer.mayUse('HD') || layer.mayUse('Standard')) {
                     asyncBucketLoads.push(layer.prepare().then(() => processBucket()));
                 } else {
                     processBucket();
@@ -387,9 +471,11 @@ class WorkerTile {
                     const m = PerformanceUtils.beginMeasure('parseTile2');
                     this.status = 'done';
                     const transferredBuckets = Object.values(buckets).filter(b => !b.isEmpty());
+                    const elevationSidecar = options.elevationFeatures;
                     callback(null, {
                         buckets: transferredBuckets,
                         containsHdExt: anyBucketRequiresHD(transferredBuckets),
+                        containsStandardExt: anyBucketRequiresStandard(transferredBuckets),
                         featureIndex,
                         collisionBoxArray: null,
                         hasTunnelGeometry,
@@ -397,6 +483,8 @@ class WorkerTile {
                         lineAtlas: null,
                         imageAtlas: null,
                         brightness: options.brightness,
+                        hasDeferredElevationFeatures: HD.anyDeferredElevationFeatures ? HD.anyDeferredElevationFeatures(buckets) : false,
+                        parsedElevationFeatures: elevationSidecar,
                         // Only used for benchmarking:
                         glyphMap: null,
                         iconMap: null,
@@ -418,24 +506,29 @@ class WorkerTile {
                         const bucket = buckets[key];
                         if (bucket instanceof SymbolBucket) {
                             recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages, this.worldview, options.activeFloors);
-                            symbolLayoutData[key] =
-                            performSymbolLayout(bucket,
-                                    glyphMap,
-                                    glyphAtlas.positions,
-                                    iconMap,
-                                    iconPositions,
-                                    this.tileID.canonical,
-                                    this.tileZoom,
-                                    this.scaleFactor,
-                                    this.pixelRatio,
-                                    iconRasterizationTasks,
-                                    this.worldview,
-                                    availableImages);
+                            symbolLayoutData[key] = performSymbolLayout(
+                                bucket,
+                                glyphMap,
+                                glyphAtlas.positions,
+                                iconMap,
+                                iconPositions,
+                                this.tileID.canonical,
+                                this.tileZoom,
+                                this.scaleFactor,
+                                this.pixelRatio,
+                                iconRasterizationTasks,
+                                this.worldview,
+                                availableImages,
+                                this.frcCoverage ? this.frcCoverage.frcMask : null,
+                                this.frcCoverage ? this.frcCoverage.polygons : null,
+                                this.frcCoverage ? this.frcCoverage.tileZoom : null,
+                                HD.isFeatureCoveredByFrcMask || null,
+                                HD.symbolAnchorInFrcCoverage || null);
                         }
                     }
 
                     if (iconRasterizationTasks.size || patternRasterizationTasks.size) {
-                        this.rasterizeTask = actor.send('rasterizeImages', {scope: this.scope, iconTasks: iconRasterizationTasks, patternTasks: patternRasterizationTasks}, (err: Error, rasterizedImages: RasterizedImageMap) => {
+                        this.rasterizeTask = actor.sendCancelable('rasterizeImages', {scope: this.scope, iconTasks: iconRasterizationTasks, patternTasks: patternRasterizationTasks}, {}, (err, rasterizedImages) => {
                             if (!err) {
                                 for (const [id, data] of rasterizedImages.entries()) {
                                     if (iconMap.has(id)) iconMap.set(id, Object.assign(iconMap.get(id), {data}));
@@ -458,19 +551,25 @@ class WorkerTile {
                 const hasSymbolLayout = Object.keys(symbolLayoutData).length > 0;
 
                 // If no images and no symbol layout, we can complete synchronously
+                const elevationSidecar = options.elevationFeatures;
                 if (!hasImages && !hasSymbolLayout) {
                     this.status = 'done';
                     const transferredBuckets = Object.values(buckets).filter(b => !b.isEmpty());
                     callback(null, {
                         buckets: transferredBuckets,
                         containsHdExt: anyBucketRequiresHD(transferredBuckets),
+                        containsStandardExt: anyBucketRequiresStandard(transferredBuckets),
                         featureIndex,
                         collisionBoxArray: this.collisionBoxArray,
                         hasTunnelGeometry,
                         glyphAtlasImage: glyphAtlas.image,
                         lineAtlas,
                         imageAtlas: null,
-                        brightness: options.brightness
+                        brightness: options.brightness,
+                        hasDeferredRoadStructure: this.deferRoadStructure,
+                        frcCoveragePolygons,
+                        hasDeferredElevationFeatures: HD.anyDeferredElevationFeatures ? HD.anyDeferredElevationFeatures(buckets) : false,
+                        parsedElevationFeatures: elevationSidecar,
                     });
                     PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
                     return;
@@ -497,13 +596,18 @@ class WorkerTile {
                     callback(null, {
                         buckets: transferredBuckets,
                         containsHdExt: anyBucketRequiresHD(transferredBuckets),
+                        containsStandardExt: anyBucketRequiresStandard(transferredBuckets),
                         featureIndex,
                         collisionBoxArray: this.collisionBoxArray,
                         hasTunnelGeometry,
                         glyphAtlasImage: glyphAtlas.image,
                         lineAtlas,
                         imageAtlas: imageAtlasForTransfer,
-                        brightness: options.brightness
+                        brightness: options.brightness,
+                        hasDeferredRoadStructure: this.deferRoadStructure,
+                        frcCoveragePolygons,
+                        hasDeferredElevationFeatures: HD.anyDeferredElevationFeatures ? HD.anyDeferredElevationFeatures(buckets) : false,
+                        parsedElevationFeatures: elevationSidecar,
                     });
                     PerformanceUtils.endMeasure(m, [["tileID", this.tileID.toString()], ["source", this.source]]);
                 };
@@ -518,28 +622,27 @@ class WorkerTile {
                     const sortedPatterns = sortImagesMap(patternMap, variantCache);
                     const descriptor = new AtlasContentDescriptor(sortedIcons, sortedPatterns, imageVersions, this.lut, variantCache);
 
-                    actor.send('checkAtlasCache', {descriptor, scope: this.scope}, (err: Error, cachedPositions: {iconPositions: ImagePositionMap; patternPositions: ImagePositionMap; sourceHash: number} | null) => {
-                        if (err) {
-                            warnOnce(`[Worker] Error checking atlas cache: ${err.message}`);
-                        }
+                    actor.send('checkAtlasCache', {descriptor, scope: this.scope})
+                        .then((cachedPositions) => {
+                            let imageAtlasForTransfer: ImageAtlas | ImageAtlasReference;
+                            let positions: {iconPositions: ImagePositionMap; patternPositions: ImagePositionMap};
 
-                        // Phase 2: Create atlas or use cached positions
-                        let imageAtlasForTransfer: ImageAtlas | ImageAtlasReference;
-                        let positions: {iconPositions: ImagePositionMap; patternPositions: ImagePositionMap};
+                            if (cachedPositions) {
+                                imageAtlasForTransfer = new ImageAtlasReference(cachedPositions.sourceHash);
+                                positions = cachedPositions;
+                            } else {
+                                const imageAtlas = new ImageAtlas(iconMap, patternMap, this.lut, imageVersions);
+                                imageAtlasForTransfer = imageAtlas;
+                                positions = imageAtlas;
+                            }
 
-                        if (cachedPositions) {
-                            // Cache hit: Create reference for transfer, use cached positions for buckets
-                            imageAtlasForTransfer = new ImageAtlasReference(cachedPositions.sourceHash);
-                            positions = cachedPositions;
-                        } else {
-                            // Cache miss: Create full atlas, use it for both transfer and buckets
+                            completeBucketProcessing(imageAtlasForTransfer, positions);
+                        })
+                        .catch((err: Error) => {
+                            if (err.name !== 'AbortError') warnOnce(`[Worker] Error checking atlas cache: ${err.message}`);
                             const imageAtlas = new ImageAtlas(iconMap, patternMap, this.lut, imageVersions);
-                            imageAtlasForTransfer = imageAtlas;
-                            positions = imageAtlas;
-                        }
-
-                        completeBucketProcessing(imageAtlasForTransfer, positions);
-                    });
+                            completeBucketProcessing(imageAtlas, imageAtlas);
+                        });
                 } else {
                     // No images but has symbol layout (text-only symbols) - complete synchronously
                     // Provide empty position maps for text-only symbols
@@ -554,13 +657,19 @@ class WorkerTile {
             if (!this.extraShadowCaster) {
                 const stacks = mapObject(options.glyphDependencies, (glyphs) => Object.keys(glyphs).map(Number));
                 if (Object.keys(stacks).length) {
-                    actor.send('getGlyphs', {uid: this.uid, stacks}, (err, result: GlyphMap) => {
-                        if (!error) {
-                            error = err;
-                            glyphMap = result;
-                            maybePrepare();
-                        }
-                    }, undefined, false, taskMetadata);
+                    actor.send('getGlyphs', {uid: this.uid, stacks}, {metadata: taskMetadata})
+                        .then((result: GlyphMap) => {
+                            if (!error) {
+                                glyphMap = result;
+                                maybePrepare();
+                            }
+                        })
+                        .catch((err: Error) => {
+                            if (!error) {
+                                error = err;
+                                maybePrepare();
+                            }
+                        });
                 } else {
                     glyphMap = {};
                 }
@@ -570,18 +679,24 @@ class WorkerTile {
                 const icons = Array.from(options.iconDependencies.keys()).map((id) => ImageId.parse(id));
                 const patterns = Array.from(options.patternDependencies.keys()).map((id) => ImageId.parse(id));
                 if (icons.length || patterns.length) {
-                    actor.send('getImages', {icons, patterns, source: this.source, scope: this.scope, tileID: this.tileID}, (err: Error, getImagesResult: {images: StyleImageMap<StringifiedImageId>; versions: Map<string, number>}) => {
-                        if (error) return;
-                        error = err;
-                        iconMap = new Map();
-                        patternMap = new Map();
-                        iconRasterizationTasks = this.updateImageMapAndGetImageTaskQueue(iconMap, getImagesResult.images, options.iconDependencies);
-                        patternRasterizationTasks = this.updateImageMapAndGetImageTaskQueue(patternMap, getImagesResult.images, options.patternDependencies);
-                        for (const [id, version] of getImagesResult.versions.entries()) {
-                            imageVersions.set(id, version);
-                        }
-                        maybePrepare();
-                    }, undefined, false, taskMetadata);
+                    actor.send('getImages', {icons, patterns, source: this.source, scope: this.scope, tileID: this.tileID}, {metadata: taskMetadata})
+                        .then((getImagesResult) => {
+                            if (error) return;
+                            iconMap = new Map();
+                            patternMap = new Map();
+                            iconRasterizationTasks = this.updateImageMapAndGetImageTaskQueue(iconMap, getImagesResult.images, options.iconDependencies);
+                            patternRasterizationTasks = this.updateImageMapAndGetImageTaskQueue(patternMap, getImagesResult.images, options.patternDependencies);
+                            for (const [id, version] of getImagesResult.versions.entries()) {
+                                imageVersions.set(id, version);
+                            }
+                            maybePrepare();
+                        })
+                        .catch((err: Error) => {
+                            if (!error) {
+                                error = err;
+                                maybePrepare();
+                            }
+                        });
                 } else {
                     iconMap = new Map();
                     patternMap = new Map();
@@ -617,6 +732,9 @@ class WorkerTile {
         this.lut = params.lut;
         this.worldview = params.worldview;
         this.indoor = params.indoor;
+        this.frcCoverage = params.frcCoverage || null;
+        this.elevation = params.elevation || null;
+        this.terrainEnabled = !!params.terrainEnabled;
     }
 
     updateImageMapAndGetImageTaskQueue(imageMap: StyleImageMap<StringifiedImageVariant>, images: StyleImageMap<StringifiedImageId>, imageDependencies: ImageDependenciesMap): ImageRasterizationTasks {
@@ -630,7 +748,7 @@ class WorkerTile {
                     imageMap.set(imageVariantStr, image);
                 } else if (!imageRasterizationTasks.has(imageVariantStr)) {
                     imageRasterizationTasks.set(imageVariantStr, imageVariant);
-                    imageMap.set(imageVariantStr, Object.assign({}, image));
+                    imageMap.set(imageVariantStr, {...image});
                 }
             }
         }
@@ -640,7 +758,7 @@ class WorkerTile {
 
     cancelRasterize() {
         if (this.rasterizeTask) {
-            this.rasterizeTask.cancel();
+            this.rasterizeTask.abort();
         }
     }
 }

@@ -1,6 +1,7 @@
 import type Actor from '../util/actor';
+import type {MainInbox} from '../util/actor_messages';
 import type StyleLayerIndex from '../style/style_layer_index';
-import type {RequestParameters, ResponseCallback} from '../util/ajax';
+import type {RequestParameters} from '../util/ajax';
 import type {AlphaImage} from '../util/image';
 import type {GlyphPositions} from '../render/glyph_atlas';
 import type ImageAtlas from '../render/image_atlas';
@@ -18,11 +19,11 @@ import type {PromoteIdSpecification} from '../style-spec/types';
 import type Projection from '../geo/projection/projection';
 import type {LUT} from '../util/lut';
 import type {Callback} from '../types/callback';
-import type {TDecodingResult} from '../data/mrt/types';
-import type {MapboxRasterTile} from '../data/mrt/mrt.esm.js';
-import type {RasterizedImageMap} from '../render/image_manager';
 import type {ImageId} from '../style-spec/expression/types/image_id';
-import type {RenderSourceType} from './tile';
+import type {RenderSourceType} from './render_source_type';
+import type {FrcCoverageParams, FrcCoveragePolygons} from './frc_coverage_snapshot';
+import type {ElevationFeature} from '../../3d-style/elevation/elevation_feature';
+import type {ElevationParams} from './elevation_coverage_snapshot';
 import type {StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
 import type {StyleModelMap} from '../style/style_mode';
 import type {IndoorTileOptions} from '../style/indoor_data.js';
@@ -82,11 +83,14 @@ export type WorkerSourceVectorTileRequest = WorkerSourceTileRequest & {
     zoom: number;
     data?: {
         rawData: ArrayBuffer;
-        expires?: string;
-        cacheControl?: string;
+        headers: Headers;
     };
     extraShadowCaster?: boolean;
     renderSourceType?: RenderSourceType | null;
+    frcCoverage?: FrcCoverageParams | null;
+    elevation?: ElevationParams | null;
+    crossSourceElevationEnabled?: boolean;
+    terrainEnabled?: boolean;
     partial?: boolean;
     tessellationStep?: number // test purpose only;
     worldview?: string | null;
@@ -138,16 +142,21 @@ export type WorkerSourceVectorTileResult = {
     // Main uses this flag to know whether to await the HD module before deserializing
     // the payload — without it, unregistered extension classes would cause a crash.
     containsHdExt?: boolean;
+    // True when any transferred bucket requires the Standard module on main before it
+    // can be deserialized (e.g. ModelBucket, Tiled3dModelBucket).
+    containsStandardExt?: boolean;
     rawTileData?: ArrayBuffer;
     resourceTiming?: Array<PerformanceResourceTiming>;
     brightness: number;
-    responseHeaders?: Map<string, string>;
+    headers?: Headers;
     // Only used for benchmarking:
     glyphMap?: GlyphMap;
     iconMap?: StyleImageMap<StringifiedImageVariant>;
     glyphPositions?: GlyphPositions;
-    cacheControl?: string;
-    expires?: string;
+    frcCoveragePolygons?: FrcCoveragePolygons;
+    hasDeferredRoadStructure?: boolean;
+    parsedElevationFeatures?: ElevationFeature[];
+    hasDeferredElevationFeatures?: boolean;
 };
 
 export type WorkerSourceDEMTileRequest = WorkerSourceTileRequest & {
@@ -159,8 +168,7 @@ export type WorkerSourceDEMTileRequest = WorkerSourceTileRequest & {
 export type WorkerSourceDEMTileResult = {
     dem: DEMData;
     borderReady: boolean;
-    expires?: string;
-    cacheControl?: string;
+    headers: Headers;
 };
 
 export type WorkerSourceRasterArrayTileRequest = WorkerSourceTileRequest & {
@@ -172,17 +180,13 @@ export type WorkerSourceRasterArrayTileRequest = WorkerSourceTileRequest & {
 };
 
 export type WorkerSourceVectorTileCallback = Callback<WorkerSourceVectorTileResult>;
-export type WorkerSourceDEMTileCallback = Callback<WorkerSourceDEMTileResult>;
-export type WorkerSourceRasterArrayTileCallback = ResponseCallback<MapboxRasterTile>;
-export type WorkerSourceRasterArrayDecodingCallback = Callback<TDecodingResult[]>;
-export type WorkerSourceImageRaserizeCallback = Callback<RasterizedImageMap>;
 
 /**
  * May be implemented by custom source types to provide code that can be run on
  * the WebWorkers. In addition to providing a custom
  * {@link WorkerSource#loadTile}, any other methods attached to a `WorkerSource`
  * implementation may also be targeted by the {@link Source} via
- * `dispatcher.getActor().send('source-type.methodname', params, callback)`.
+ * `dispatcher.getActor().send('source-type.methodname', params, {signal})`.
  *
  * @see {@link Map#addSourceType}
  * @private
@@ -194,33 +198,43 @@ export interface WorkerSource {
 
     /**
      * Loads a tile from the given params and parse it into buckets ready to send
-     * back to the main thread for rendering. Should call the callback with:
+     * back to the main thread for rendering. Resolves with:
      * `{ buckets, featureIndex, collisionIndex, rawTileData}`.
      */
-    loadTile: (params: WorkerSourceTileRequest, callback: Callback<unknown>) => void;
+    loadTile: (params: WorkerSourceTileRequest) => Promise<unknown>;
     /**
      * Re-parses a tile that has already been loaded. Yields the same data as
      * {@link WorkerSource#loadTile}.
      */
-    reloadTile: (params: WorkerSourceTileRequest, callback: Callback<unknown>) => void;
+    reloadTile: (params: WorkerSourceTileRequest) => Promise<unknown>;
     /**
      * Aborts loading a tile that is in progress.
      */
-    abortTile: (params: WorkerSourceTileRequest, callback: Callback<unknown>) => void;
+    abortTile: (params: WorkerSourceTileRequest) => void | Promise<void>;
     /**
      * Removes this tile from any local caches.
      */
-    removeTile: (params: WorkerSourceTileRequest, callback: Callback<unknown>) => void;
+    removeTile: (params: WorkerSourceTileRequest) => void | Promise<void>;
     /**
      * Tells the WorkerSource to abort in-progress tasks and release resources.
      * The foreground Source is responsible for ensuring that 'removeSource' is
      * the last message sent to the WorkerSource.
      */
-    removeSource?: (params: {source: string}, callback: Callback<void>) => void;
+    removeSource?: (params: {source: string}) => Promise<void>;
 }
 
+/**
+ * The subset of {@link Actor} that a {@link WorkerSource} is allowed to use.
+ * WorkerSources run in a worker shared by many maps, so {@link MapWorker} hands
+ * them a delegate that stamps `targetMapId` onto every message rather than the
+ * raw `Actor` (see {@link MapWorker#getWorkerSource}). Sourced from `Actor` via
+ * `Pick` so the signatures can't drift. Worker sources only send back to the
+ * main thread, hence `Actor<MainInbox>`.
+ */
+export type WorkerSourceActor = Pick<Actor<MainInbox>, 'send' | 'notify' | 'sendCancelable' | 'scheduler'>;
+
 export type WorkerSourceOptions = {
-    actor: Actor;
+    actor: WorkerSourceActor;
     layerIndex: StyleLayerIndex;
     availableImages: ImageId[];
     availableModels: StyleModelMap;
@@ -230,7 +244,6 @@ export type WorkerSourceOptions = {
     worldview?: string;
     maxUniformBufferBindings?: number;
     maxUniformBlockSizeDwords?: number;
-    disableSymbolUBO?: boolean | null;
 };
 
 export interface WorkerSourceConstructor {

@@ -40,7 +40,6 @@ export type CoreStyleLayer =
     | HeatmapStyleLayer
     | HillshadeStyleLayer
     | LineStyleLayer
-    | ModelStyleLayer
     | RasterStyleLayer
     | SkyStyleLayer
     | SymbolStyleLayer;
@@ -49,4 +48,7 @@ export type HDStyleLayer =
     | BuildingStyleLayer
     | RasterParticleStyleLayer;
 
-export type TypedStyleLayer = CoreStyleLayer | HDStyleLayer | FeaturelessStyleLayer;
+export type StandardStyleLayer =
+    | ModelStyleLayer;
+
+export type TypedStyleLayer = CoreStyleLayer | HDStyleLayer | StandardStyleLayer | FeaturelessStyleLayer;

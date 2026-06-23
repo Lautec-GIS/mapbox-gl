@@ -23,7 +23,6 @@ import {getLivePerformanceMetrics} from '../util/live_performance';
 
 import type {ResourceType as ResourceTypeEnum, RequestParameters} from './ajax';
 import type {LivePerformanceData} from '../util/live_performance';
-import type {Cancelable} from '../types/cancelable';
 import type {TileJSON} from '../types/tilejson';
 import type {Map as MapboxMap} from "../ui/map";
 
@@ -36,7 +35,7 @@ const TILE_PATH_RE = /^(\/v4\/|\/(raster|rasterarrays)\/v1\/)/;
 const ACCESS_TOKEN_PARAM_RE = /^access_token=(.*)$/;
 
 export type ResourceType = keyof typeof ResourceTypeEnum;
-export type RequestTransformFunction = (url: string, resourceTypeEnum?: ResourceType) => RequestParameters;
+export type RequestTransformFunction = (url: string, resourceType?: ResourceType, options?: {signal?: AbortSignal}) => RequestParameters | Promise<RequestParameters>;
 
 type UrlObject = {
     protocol: string;
@@ -73,12 +72,11 @@ export class RequestManager {
         return Date.now() > this._skuTokenExpiresAt;
     }
 
-    transformRequest(url: string, type: ResourceType): RequestParameters {
-        if (this._transformRequestFn) {
-            return this._transformRequestFn(url, type) || {url};
-        }
-
-        return {url};
+    async transformRequest(url: string, type: ResourceType, abortSignal?: AbortSignal): Promise<RequestParameters> {
+        if (!this._transformRequestFn) return {url};
+        const options = abortSignal ? {signal: abortSignal} : {};
+        const params = await this._transformRequestFn(url, type, options);
+        return params || {url};
     }
 
     normalizeStyleURL(url: string, accessToken?: string): string {
@@ -322,6 +320,38 @@ function isTelemetryEnabled(customAccessToken?: string | null): boolean {
     return true;
 }
 
+let sdkInfo: string | undefined;
+
+const SDK_INFO_RE = /^[\w.+-]+(\/[\w.+-]+)?$/;
+
+const EVENT_SCHEMA_VERSION = '2.2';
+
+/**
+ * Internal API used by Mapbox wrapper SDKs (e.g. the Flutter or React Native bridges) to
+ * self-identify in telemetry. Not part of the public API and subject to change. Pass a
+ * `Name/version` string (e.g. `'FlutterPlugin/3.0.0'`); call once at startup before any maps
+ * are created, as events from earlier maps won't carry it.
+ *
+ * @private
+ */
+export function setSdkInfo(info: string) {
+    if (typeof info !== 'string' || info.length > 64 || !SDK_INFO_RE.test(info)) {
+        warnOnce(`Invalid SDK info "${info}"; expected a "Name/version" string. Ignoring.`);
+        return;
+    }
+    sdkInfo = info;
+}
+
+// Whether the running bundle was served from the Mapbox CDN (vs. self-hosted or bundled into
+// the consumer's app), reported as the `bundleDistribution` telemetry field. The entry files
+// (index.ts / index.esm.ts) inspect their own script URL locally and pass only the resulting
+// enum here at import time — no URL is ever retained or transmitted.
+let bundleDistribution: 'cdn' | 'other' = 'other';
+
+export function setBundleDistribution(distribution: 'cdn' | 'other') {
+    bundleDistribution = distribution;
+}
+
 type TelemetryEventType = 'appUserTurnstile' | 'map.load' | 'map.auth' | 'gljs.performance' | 'style.load' | 'metrics';
 
 export class TelemetryEvent {
@@ -332,7 +362,7 @@ export class TelemetryEvent {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     queue: Array<any>;
     type: TelemetryEventType;
-    pendingRequest: Cancelable | null | undefined;
+    pendingRequest: boolean;
     _customAccessToken: string | null | undefined;
 
     constructor(type: TelemetryEventType) {
@@ -341,7 +371,7 @@ export class TelemetryEvent {
         this.anonIdTimestamp = null;
         this.eventData = {};
         this.queue = [];
-        this.pendingRequest = null;
+        this.pendingRequest = false;
     }
 
     getStorageKey(domain?: string | null): string {
@@ -449,12 +479,20 @@ export class TelemetryEvent {
             body: JSON.stringify([finalPayload])
         };
 
-        this.pendingRequest = postData(request, (error) => {
-            this.pendingRequest = null;
-            callback(error);
-            this.saveEventData();
-            this.processRequests(customAccessToken);
-        });
+        this.pendingRequest = true;
+        postData(request)
+            .then(() => {
+                this.pendingRequest = false;
+                callback(null);
+                this.saveEventData();
+                this.processRequests(customAccessToken);
+            })
+            .catch((err: Error) => {
+                this.pendingRequest = false;
+                callback(err);
+                this.saveEventData();
+                this.processRequests(customAccessToken);
+            });
     }
 
     queueRequest(event: unknown, customAccessToken?: string | null) {
@@ -543,13 +581,18 @@ export class MapLoadEvent extends TelemetryEvent {
             this.refreshUUID();
         }
 
-        const additionalPayload = {
+        const additionalPayload: Record<string, unknown> = {
+            version: EVENT_SCHEMA_VERSION,
             sdkIdentifier: 'mapbox-gl-js',
             sdkVersion,
             skuId: SKU_ID,
             skuToken: this.skuToken,
-            userId: this.anonId
+            userId: this.anonId,
+            bundleFormat: import.meta.env.format || 'unknown',
+            bundleDistribution
         };
+
+        if (sdkInfo) additionalPayload.sdkInfo = sdkInfo;
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this.postEvent(timestamp, additionalPayload, (err) => {
@@ -679,7 +722,7 @@ class MetricsEvent extends TelemetryEvent {
             this.refreshUUID();
         }
 
-        const payload: MetricsEventPayload = Object.assign({}, this.data, {sessionId: this.anonId});
+        const payload = {...this.data, sessionId: this.anonId} as MetricsEventPayload;
 
         this.queueRequest({
             timestamp: Date.now(),
@@ -727,12 +770,20 @@ export class MapSessionAPI extends TelemetryEvent {
             }
         };
 
-        this.pendingRequest = getData(request, (error) => {
-            this.pendingRequest = null;
-            callback(error);
-            this.saveEventData();
-            this.processRequests(customAccessToken);
-        });
+        this.pendingRequest = true;
+        getData(request)
+            .then(() => {
+                this.pendingRequest = false;
+                callback(null);
+                this.saveEventData();
+                this.processRequests(customAccessToken);
+            })
+            .catch((err: Error) => {
+                this.pendingRequest = false;
+                callback(err);
+                this.saveEventData();
+                this.processRequests(customAccessToken);
+            });
     }
 
     getSessionAPI(mapId: number, skuToken: string, customAccessToken: string | null | undefined, callback: EventCallback) {
@@ -832,13 +883,18 @@ export class TurnstileEvent extends TelemetryEvent {
             return;
         }
 
-        const additionalPayload = {
+        const additionalPayload: Record<string, unknown> = {
+            version: EVENT_SCHEMA_VERSION,
             sdkIdentifier: 'mapbox-gl-js',
             sdkVersion,
             skuId: SKU_ID,
             "enabled.telemetry": false,
-            userId: this.anonId
+            userId: this.anonId,
+            bundleFormat: import.meta.env.format || 'unknown',
+            bundleDistribution
         };
+
+        if (sdkInfo) additionalPayload.sdkInfo = sdkInfo;
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         this.postEvent(nextUpdate, additionalPayload, (err) => {

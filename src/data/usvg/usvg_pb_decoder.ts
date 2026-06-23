@@ -2,7 +2,7 @@
 
 import Color from "../../style-spec/util/color";
 
-import type Pbf from "pbf";
+import type {PbfReader} from "pbf";
 
 const defaultColor = new Color(0, 0, 0);
 
@@ -73,12 +73,13 @@ export interface IconSet {
     icons: Icon[];
 }
 
-export function readIconSet(pbf: Pbf, end?: number): IconSet {
-    return pbf.readFields(readIconSetField, {icons: []}, end);
-}
-
-function readIconSetField(tag: number, obj: IconSet, pbf: Pbf) {
-    if (tag === 1) obj.icons.push(readIcon(pbf, pbf.readVarint() + pbf.pos));
+export function readIconSet(pbf: PbfReader, end?: number): IconSet {
+    const obj: IconSet = {icons: []};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.icons.push(readIcon(pbf, pbf.readVarint() + pbf.pos));
+    }
+    return obj;
 }
 
 export function buildStretchedAreas(metadata: {stretch_x?: number[]; stretch_y?: number[]}, axis: "x" | "y"): void {
@@ -164,14 +165,15 @@ export interface Icon {
     data?: "usvg_tree";
 }
 
-export function readIcon(pbf: Pbf, end?: number): Icon {
-    return postProcessIcon(pbf.readFields(readIconField, {name: undefined}, end));
-}
-
-function readIconField(tag: number, obj: Icon, pbf: Pbf) {
-    if (tag === 1) obj.name = pbf.readString();
-    else if (tag === 2) obj.metadata = readIconMetadata(pbf, pbf.readVarint() + pbf.pos);
-    else if (tag === 3) { obj.usvg_tree = readUsvgTree(pbf, pbf.readVarint() + pbf.pos); obj.data = "usvg_tree"; }
+export function readIcon(pbf: PbfReader, end?: number): Icon {
+    const obj: Icon = {name: undefined};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.name = pbf.readString();
+        else if (field === 2) obj.metadata = readIconMetadata(pbf, pbf.readVarint() + pbf.pos);
+        else if (field === 3) { obj.usvg_tree = readUsvgTree(pbf, pbf.readVarint() + pbf.pos); obj.data = "usvg_tree"; }
+    }
+    return postProcessIcon(obj);
 }
 
 export interface IconMetadata {
@@ -184,22 +186,23 @@ export interface IconMetadata {
     variables: Variable[];
 }
 
-export function readIconMetadata(pbf: Pbf, end?: number): IconMetadata {
-    return pbf.readFields(readIconMetadataField, {
+export function readIconMetadata(pbf: PbfReader, end?: number): IconMetadata {
+    const obj: IconMetadata = {
         stretch_x: null,
         stretch_y: null,
         stretch_x_areas: null,
         stretch_y_areas: null,
         variables: []
-    }, end);
-}
-
-function readIconMetadataField(tag: number, obj: IconMetadata, pbf: Pbf) {
-    if (tag === 1) obj.stretch_x = pbf.readPackedVarint();
-    else if (tag === 2) obj.stretch_y = pbf.readPackedVarint();
-    else if (tag === 3) obj.content_area = readNonEmptyArea(pbf, pbf.readVarint() + pbf.pos);
-    else if (tag === 4) obj.variables.push(readVariable(pbf, pbf.readVarint() + pbf.pos));
-    else if (tag === 5) obj.text_placeholder = readNonEmptyArea(pbf, pbf.readVarint() + pbf.pos);
+    };
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.stretch_x = pbf.readPackedVarint();
+        else if (field === 2) obj.stretch_y = pbf.readPackedVarint();
+        else if (field === 3) obj.content_area = readNonEmptyArea(pbf, pbf.readVarint() + pbf.pos);
+        else if (field === 4) obj.variables.push(readVariable(pbf, pbf.readVarint() + pbf.pos));
+        else if (field === 5) obj.text_placeholder = readNonEmptyArea(pbf, pbf.readVarint() + pbf.pos);
+    }
+    return obj;
 }
 
 export interface NonEmptyArea {
@@ -209,15 +212,16 @@ export interface NonEmptyArea {
     height: number;
 }
 
-export function readNonEmptyArea(pbf: Pbf, end?: number): NonEmptyArea {
-    return pbf.readFields(readNonEmptyAreaField, {} as NonEmptyArea, end);
-}
-
-function readNonEmptyAreaField(tag: number, obj: NonEmptyArea, pbf: Pbf) {
-    if (tag === 1) obj.left = pbf.readVarint();
-    else if (tag === 2) obj.width = pbf.readVarint();
-    else if (tag === 3) obj.top = pbf.readVarint();
-    else if (tag === 4) obj.height = pbf.readVarint();
+export function readNonEmptyArea(pbf: PbfReader, end?: number): NonEmptyArea {
+    const obj = {} as NonEmptyArea;
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.left = pbf.readVarint();
+        else if (field === 2) obj.width = pbf.readVarint();
+        else if (field === 3) obj.top = pbf.readVarint();
+        else if (field === 4) obj.height = pbf.readVarint();
+    }
+    return obj;
 }
 
 export interface Variable {
@@ -226,13 +230,14 @@ export interface Variable {
     value?: "rgb_color";
 }
 
-export function readVariable(pbf: Pbf, end?: number): Variable {
-    return pbf.readFields(readVariableField, {name: undefined}, end);
-}
-
-function readVariableField(tag: number, obj: Variable, pbf: Pbf) {
-    if (tag === 1) obj.name = pbf.readString();
-    else if (tag === 2) { obj.rgb_color = readColor(pbf.readVarint()); obj.value = "rgb_color"; }
+export function readVariable(pbf: PbfReader, end?: number): Variable {
+    const obj: Variable = {name: undefined};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.name = pbf.readString();
+        else if (field === 2) { obj.rgb_color = readColor(pbf.readVarint()); obj.value = "rgb_color"; }
+    }
+    return obj;
 }
 
 export interface UsvgTree {
@@ -245,18 +250,19 @@ export interface UsvgTree {
     masks: Mask[];
 }
 
-export function readUsvgTree(pbf: Pbf, end?: number): UsvgTree {
-    return pbf.readFields(readUsvgTreeField, {width: 20, children: [], linear_gradients: [], radial_gradients: [], clip_paths: [], masks: []} as UsvgTree, end);
-}
-
-function readUsvgTreeField(tag: number, obj: UsvgTree, pbf: Pbf) {
-    if (tag === 1) obj.width = obj.height = pbf.readVarint();
-    else if (tag === 2) obj.height = pbf.readVarint();
-    else if (tag === 3) obj.children.push(readNode(pbf, pbf.readVarint() + pbf.pos));
-    else if (tag === 4) obj.linear_gradients.push(readLinearGradient(pbf, pbf.readVarint() + pbf.pos));
-    else if (tag === 5) obj.radial_gradients.push(readRadialGradient(pbf, pbf.readVarint() + pbf.pos));
-    else if (tag === 7) obj.clip_paths.push(readClipPath(pbf, pbf.readVarint() + pbf.pos));
-    else if (tag === 8) obj.masks.push(readMask(pbf, pbf.readVarint() + pbf.pos));
+export function readUsvgTree(pbf: PbfReader, end?: number): UsvgTree {
+    const obj = {width: 20, children: [], linear_gradients: [], radial_gradients: [], clip_paths: [], masks: [], height: 20} as UsvgTree;
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.width = obj.height = pbf.readVarint();
+        else if (field === 2) obj.height = pbf.readVarint();
+        else if (field === 3) obj.children.push(readNode(pbf, pbf.readVarint() + pbf.pos));
+        else if (field === 4) obj.linear_gradients.push(readLinearGradient(pbf, pbf.readVarint() + pbf.pos));
+        else if (field === 5) obj.radial_gradients.push(readRadialGradient(pbf, pbf.readVarint() + pbf.pos));
+        else if (field === 7) obj.clip_paths.push(readClipPath(pbf, pbf.readVarint() + pbf.pos));
+        else if (field === 8) obj.masks.push(readMask(pbf, pbf.readVarint() + pbf.pos));
+    }
+    return obj;
 }
 
 export interface Node {
@@ -265,13 +271,14 @@ export interface Node {
     node?: "group" | "path";
 }
 
-export function readNode(pbf: Pbf, end?: number): Node {
-    return pbf.readFields(readNodeField, {}, end);
-}
-
-function readNodeField(tag: number, obj: Node, pbf: Pbf) {
-    if (tag === 1) { obj.group = readGroup(pbf, pbf.readVarint() + pbf.pos); obj.node = "group"; }
-    else if (tag === 2) { obj.path = readPath(pbf, pbf.readVarint() + pbf.pos); obj.node = "path"; }
+export function readNode(pbf: PbfReader, end?: number): Node {
+    const obj: Node = {};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) { obj.group = readGroup(pbf, pbf.readVarint() + pbf.pos); obj.node = "group"; }
+        else if (field === 2) { obj.path = readPath(pbf, pbf.readVarint() + pbf.pos); obj.node = "path"; }
+    }
+    return obj;
 }
 
 export interface Group {
@@ -282,16 +289,17 @@ export interface Group {
     children: Node[];
 }
 
-export function readGroup(pbf: Pbf, end?: number): Group {
-    return pbf.readFields(readGroupField, {opacity: 255, children: []}, end);
-}
-
-function readGroupField(tag: number, obj: Group, pbf: Pbf) {
-    if (tag === 1) obj.transform = readTransform(pbf, pbf.readVarint() + pbf.pos);
-    else if (tag === 2) obj.opacity = pbf.readVarint();
-    else if (tag === 5) obj.clip_path_idx = pbf.readVarint();
-    else if (tag === 6) obj.mask_idx = pbf.readVarint();
-    else if (tag === 7) obj.children.push(readNode(pbf, pbf.readVarint() + pbf.pos));
+export function readGroup(pbf: PbfReader, end?: number): Group {
+    const obj: Group = {opacity: 255, children: []};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.transform = readTransform(pbf, pbf.readVarint() + pbf.pos);
+        else if (field === 2) obj.opacity = pbf.readVarint();
+        else if (field === 5) obj.clip_path_idx = pbf.readVarint();
+        else if (field === 6) obj.mask_idx = pbf.readVarint();
+        else if (field === 7) obj.children.push(readNode(pbf, pbf.readVarint() + pbf.pos));
+    }
+    return obj;
 }
 
 export interface Transform {
@@ -303,17 +311,18 @@ export interface Transform {
     ty?: number;
 }
 
-export function readTransform(pbf: Pbf, end?: number): Transform {
-    return pbf.readFields(readTransformField, {sx: 1, ky: 0, kx: 0, sy: 1, tx: 0, ty: 0}, end);
-}
-
-function readTransformField(tag: number, obj: Transform, pbf: Pbf) {
-    if (tag === 1) obj.sx = pbf.readFloat();
-    else if (tag === 2) obj.ky = pbf.readFloat();
-    else if (tag === 3) obj.kx = pbf.readFloat();
-    else if (tag === 4) obj.sy = pbf.readFloat();
-    else if (tag === 5) obj.tx = pbf.readFloat();
-    else if (tag === 6) obj.ty = pbf.readFloat();
+export function readTransform(pbf: PbfReader, end?: number): Transform {
+    const obj: Transform = {sx: 1, ky: 0, kx: 0, sy: 1, tx: 0, ty: 0};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.sx = pbf.readFloat();
+        else if (field === 2) obj.ky = pbf.readFloat();
+        else if (field === 3) obj.kx = pbf.readFloat();
+        else if (field === 4) obj.sy = pbf.readFloat();
+        else if (field === 5) obj.tx = pbf.readFloat();
+        else if (field === 6) obj.ty = pbf.readFloat();
+    }
+    return obj;
 }
 
 export interface Path {
@@ -326,18 +335,19 @@ export interface Path {
     rule?: PathRuleValue;
 }
 
-export function readPath(pbf: Pbf, end?: number): Path {
-    return pbf.readFields(readPathField, {paint_order: 1, commands: [], step: 1, diffs: [], rule: PathRule.PATH_RULE_NON_ZERO}, end);
-}
-
-function readPathField(tag: number, obj: Path, pbf: Pbf) {
-    if (tag === 1) obj.fill = readFill(pbf, pbf.readVarint() + pbf.pos);
-    else if (tag === 2) obj.stroke = readStroke(pbf, pbf.readVarint() + pbf.pos);
-    else if (tag === 3) obj.paint_order = pbf.readVarint() as PaintOrderValue;
-    else if (tag === 5) pbf.readPackedVarint(obj.commands);
-    else if (tag === 6) obj.step = pbf.readFloat();
-    else if (tag === 7) pbf.readPackedSVarint(obj.diffs);
-    else if (tag === 8) obj.rule = pbf.readVarint() as PathRuleValue;
+export function readPath(pbf: PbfReader, end?: number): Path {
+    const obj: Path = {paint_order: 1, commands: [], step: 1, diffs: [], rule: PathRule.PATH_RULE_NON_ZERO};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.fill = readFill(pbf, pbf.readVarint() + pbf.pos);
+        else if (field === 2) obj.stroke = readStroke(pbf, pbf.readVarint() + pbf.pos);
+        else if (field === 3) obj.paint_order = pbf.readVarint() as PaintOrderValue;
+        else if (field === 5) pbf.readPackedVarint(obj.commands);
+        else if (field === 6) obj.step = pbf.readFloat();
+        else if (field === 7) pbf.readPackedSVarint(obj.diffs);
+        else if (field === 8) obj.rule = pbf.readVarint() as PathRuleValue;
+    }
+    return obj;
 }
 
 export interface Fill {
@@ -348,15 +358,16 @@ export interface Fill {
     paint?: "rgb_color" | "linear_gradient_idx" | "radial_gradient_idx";
 }
 
-export function readFill(pbf: Pbf, end?: number): Fill {
-    return pbf.readFields(readFillField, {rgb_color: defaultColor, paint: "rgb_color", opacity: 255}, end);
-}
-
-function readFillField(tag: number, obj: Fill, pbf: Pbf) {
-    if (tag === 1) { obj.rgb_color = readColor(pbf.readVarint()); obj.paint = "rgb_color"; }
-    else if (tag === 2) { obj.linear_gradient_idx = pbf.readVarint(); obj.paint = "linear_gradient_idx"; }
-    else if (tag === 3) { obj.radial_gradient_idx = pbf.readVarint(); obj.paint = "radial_gradient_idx"; }
-    else if (tag === 5) obj.opacity = pbf.readVarint();
+export function readFill(pbf: PbfReader, end?: number): Fill {
+    const obj: Fill = {rgb_color: defaultColor, paint: "rgb_color", opacity: 255};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) { obj.rgb_color = readColor(pbf.readVarint()); obj.paint = "rgb_color"; }
+        else if (field === 2) { obj.linear_gradient_idx = pbf.readVarint(); obj.paint = "linear_gradient_idx"; }
+        else if (field === 3) { obj.radial_gradient_idx = pbf.readVarint(); obj.paint = "radial_gradient_idx"; }
+        else if (field === 5) obj.opacity = pbf.readVarint();
+    }
+    return obj;
 }
 
 export interface Stroke {
@@ -373,25 +384,26 @@ export interface Stroke {
     paint?: "rgb_color" | "linear_gradient_idx" | "radial_gradient_idx";
 }
 
-export function readStroke(pbf: Pbf, end?: number): Stroke {
-    return pbf.readFields(readStrokeField, {rgb_color: defaultColor, paint: "rgb_color", dasharray: [], dashoffset: 0, miterlimit: 4, opacity: 255, width: 1, linecap: 1, linejoin: 1}, end);
+export function readStroke(pbf: PbfReader, end?: number): Stroke {
+    const obj: Stroke = {rgb_color: defaultColor, paint: "rgb_color", dasharray: [], dashoffset: 0, miterlimit: 4, opacity: 255, width: 1, linecap: 1, linejoin: 1};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) { obj.rgb_color = readColor(pbf.readVarint()); obj.paint = "rgb_color"; }
+        else if (field === 2) { obj.linear_gradient_idx = pbf.readVarint(); obj.paint = "linear_gradient_idx"; }
+        else if (field === 3) { obj.radial_gradient_idx = pbf.readVarint(); obj.paint = "radial_gradient_idx"; }
+        else if (field === 5) pbf.readPackedFloat(obj.dasharray);
+        else if (field === 6) obj.dashoffset = pbf.readFloat();
+        else if (field === 7) obj.miterlimit = pbf.readFloat();
+        else if (field === 8) obj.opacity = pbf.readVarint();
+        else if (field === 9) obj.width = pbf.readFloat();
+        else if (field === 10) obj.linecap = pbf.readVarint() as LineCapValue;
+        else if (field === 11) obj.linejoin = pbf.readVarint() as LineJoinValue;
+    }
+    return obj;
 }
 
 export function readColor(number: number): Color {
     return new Color(((number >> 16) & 255) / 255, ((number >> 8) & 255) / 255, (number & 255) / 255, 1);
-}
-
-function readStrokeField(tag: number, obj: Stroke, pbf: Pbf) {
-    if (tag === 1) { obj.rgb_color = readColor(pbf.readVarint()); obj.paint = "rgb_color"; }
-    else if (tag === 2) { obj.linear_gradient_idx = pbf.readVarint(); obj.paint = "linear_gradient_idx"; }
-    else if (tag === 3) { obj.radial_gradient_idx = pbf.readVarint(); obj.paint = "radial_gradient_idx"; }
-    else if (tag === 5) pbf.readPackedFloat(obj.dasharray);
-    else if (tag === 6) obj.dashoffset = pbf.readFloat();
-    else if (tag === 7) obj.miterlimit = pbf.readFloat();
-    else if (tag === 8) obj.opacity = pbf.readVarint();
-    else if (tag === 9) obj.width = pbf.readFloat();
-    else if (tag === 10) obj.linecap = pbf.readVarint() as LineCapValue;
-    else if (tag === 11) obj.linejoin = pbf.readVarint() as LineJoinValue;
 }
 
 export interface LinearGradient {
@@ -404,18 +416,19 @@ export interface LinearGradient {
     y2?: number;
 }
 
-export function readLinearGradient(pbf: Pbf, end?: number): LinearGradient {
-    return pbf.readFields(readLinearGradientField, {spread_method: 1, stops: [], x1: 0, y1: 0, x2: 1, y2: 0}, end);
-}
-
-function readLinearGradientField(tag: number, obj: LinearGradient, pbf: Pbf) {
-    if (tag === 1) obj.transform = readTransform(pbf, pbf.readVarint() + pbf.pos);
-    else if (tag === 2) obj.spread_method = pbf.readVarint() as SpreadMethodValue;
-    else if (tag === 3) obj.stops.push(readStop(pbf, pbf.readVarint() + pbf.pos));
-    else if (tag === 4) obj.x1 = pbf.readFloat();
-    else if (tag === 5) obj.y1 = pbf.readFloat();
-    else if (tag === 6) obj.x2 = pbf.readFloat();
-    else if (tag === 7) obj.y2 = pbf.readFloat();
+export function readLinearGradient(pbf: PbfReader, end?: number): LinearGradient {
+    const obj: LinearGradient = {spread_method: 1, stops: [], x1: 0, y1: 0, x2: 1, y2: 0};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.transform = readTransform(pbf, pbf.readVarint() + pbf.pos);
+        else if (field === 2) obj.spread_method = pbf.readVarint() as SpreadMethodValue;
+        else if (field === 3) obj.stops.push(readStop(pbf, pbf.readVarint() + pbf.pos));
+        else if (field === 4) obj.x1 = pbf.readFloat();
+        else if (field === 5) obj.y1 = pbf.readFloat();
+        else if (field === 6) obj.x2 = pbf.readFloat();
+        else if (field === 7) obj.y2 = pbf.readFloat();
+    }
+    return obj;
 }
 
 export interface Stop {
@@ -424,14 +437,15 @@ export interface Stop {
     rgb_color?: Color;
 }
 
-export function readStop(pbf: Pbf, end?: number): Stop {
-    return pbf.readFields(readStopField, {offset: 0, opacity: 255, rgb_color: defaultColor}, end);
-}
-
-function readStopField(tag: number, obj: Stop, pbf: Pbf) {
-    if (tag === 1) obj.offset = pbf.readFloat();
-    else if (tag === 2) obj.opacity = pbf.readVarint();
-    else if (tag === 3) obj.rgb_color = readColor(pbf.readVarint());
+export function readStop(pbf: PbfReader, end?: number): Stop {
+    const obj: Stop = {offset: 0, opacity: 255, rgb_color: defaultColor};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.offset = pbf.readFloat();
+        else if (field === 2) obj.opacity = pbf.readVarint();
+        else if (field === 3) obj.rgb_color = readColor(pbf.readVarint());
+    }
+    return obj;
 }
 
 export interface RadialGradient {
@@ -446,20 +460,21 @@ export interface RadialGradient {
     fr?: number;
 }
 
-export function readRadialGradient(pbf: Pbf, end?: number): RadialGradient {
-    return pbf.readFields(readRadialGradientField, {spread_method: 1, stops: [], cx: 0.5, cy: 0.5, r: 0.5, fx: 0.5, fy: 0.5, fr: 0}, end);
-}
-
-function readRadialGradientField(tag: number, obj: RadialGradient, pbf: Pbf) {
-    if (tag === 1) obj.transform = readTransform(pbf, pbf.readVarint() + pbf.pos);
-    else if (tag === 2) obj.spread_method = pbf.readVarint() as SpreadMethodValue;
-    else if (tag === 3) obj.stops.push(readStop(pbf, pbf.readVarint() + pbf.pos));
-    else if (tag === 4) obj.cx = pbf.readFloat();
-    else if (tag === 5) obj.cy = pbf.readFloat();
-    else if (tag === 6) obj.r = pbf.readFloat();
-    else if (tag === 7) obj.fx = pbf.readFloat();
-    else if (tag === 8) obj.fy = pbf.readFloat();
-    else if (tag === 9) obj.fr = pbf.readFloat();
+export function readRadialGradient(pbf: PbfReader, end?: number): RadialGradient {
+    const obj: RadialGradient = {spread_method: 1, stops: [], cx: 0.5, cy: 0.5, r: 0.5, fx: 0.5, fy: 0.5, fr: 0};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.transform = readTransform(pbf, pbf.readVarint() + pbf.pos);
+        else if (field === 2) obj.spread_method = pbf.readVarint() as SpreadMethodValue;
+        else if (field === 3) obj.stops.push(readStop(pbf, pbf.readVarint() + pbf.pos));
+        else if (field === 4) obj.cx = pbf.readFloat();
+        else if (field === 5) obj.cy = pbf.readFloat();
+        else if (field === 6) obj.r = pbf.readFloat();
+        else if (field === 7) obj.fx = pbf.readFloat();
+        else if (field === 8) obj.fy = pbf.readFloat();
+        else if (field === 9) obj.fr = pbf.readFloat();
+    }
+    return obj;
 }
 
 export interface ClipPath {
@@ -468,14 +483,15 @@ export interface ClipPath {
     children: Node[];
 }
 
-export function readClipPath(pbf: Pbf, end?: number): ClipPath {
-    return pbf.readFields(readClipPathField, {children: []}, end);
-}
-
-function readClipPathField(tag: number, obj: ClipPath, pbf: Pbf) {
-    if (tag === 1) obj.transform = readTransform(pbf, pbf.readVarint() + pbf.pos);
-    else if (tag === 2) obj.clip_path_idx = pbf.readVarint();
-    else if (tag === 3) obj.children.push(readNode(pbf, pbf.readVarint() + pbf.pos));
+export function readClipPath(pbf: PbfReader, end?: number): ClipPath {
+    const obj: ClipPath = {children: []};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) obj.transform = readTransform(pbf, pbf.readVarint() + pbf.pos);
+        else if (field === 2) obj.clip_path_idx = pbf.readVarint();
+        else if (field === 3) obj.children.push(readNode(pbf, pbf.readVarint() + pbf.pos));
+    }
+    return obj;
 }
 
 export interface Mask {
@@ -488,8 +504,18 @@ export interface Mask {
     children: Node[];
 }
 
-export function readMask(pbf: Pbf, end?: number): Mask {
-    const mask = pbf.readFields(readMaskField, {left: 0, width: 20, mask_type: MaskType.MASK_TYPE_LUMINANCE, children: []}, end);
+export function readMask(pbf: PbfReader, end?: number): Mask {
+    const mask: Mask = {left: 0, width: 20, mask_type: MaskType.MASK_TYPE_LUMINANCE, children: []};
+    let field: number;
+    while ((field = pbf.nextField(end))) {
+        if (field === 1) mask.left = mask.top = pbf.readFloat();
+        else if (field === 2) mask.width = mask.height = pbf.readFloat();
+        else if (field === 3) mask.top = pbf.readFloat();
+        else if (field === 4) mask.height = pbf.readFloat();
+        else if (field === 5) mask.mask_type = pbf.readVarint() as MaskTypeValue;
+        else if (field === 6) mask.mask_idx = pbf.readVarint();
+        else if (field === 7) mask.children.push(readNode(pbf, pbf.readVarint() + pbf.pos));
+    }
 
     if (mask.height == null) {
         mask.height = mask.width;
@@ -500,14 +526,4 @@ export function readMask(pbf: Pbf, end?: number): Mask {
     }
 
     return mask;
-}
-
-function readMaskField(tag: number, obj: Mask, pbf: Pbf) {
-    if (tag === 1) obj.left = obj.top = pbf.readFloat();
-    else if (tag === 2) obj.width = obj.height = pbf.readFloat();
-    else if (tag === 3) obj.top = pbf.readFloat();
-    else if (tag === 4) obj.height = pbf.readFloat();
-    else if (tag === 5) obj.mask_type = pbf.readVarint() as MaskTypeValue;
-    else if (tag === 6) obj.mask_idx = pbf.readVarint();
-    else if (tag === 7) obj.children.push(readNode(pbf, pbf.readVarint() + pbf.pos));
 }

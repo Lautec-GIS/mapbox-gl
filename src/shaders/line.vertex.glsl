@@ -46,8 +46,6 @@ uniform float u_width_scale;
 // Note: This value is zero if line-z-offset has feature dependencies,
 // in that case the value is passed as a vertex attribute instead of a uniform.
 uniform float u_z_offset;
-uniform highp float u_floor_width_scale;
-uniform lowp float u_opacity_multiplier;
 
 #ifdef RENDER_LINE_CURVE
 // Encodes curve control points in 3x3 matrices for x, y, z
@@ -74,7 +72,6 @@ float sample_elevation(vec2 apos) {
 out vec2 v_normal;
 out vec4 v_width2_dilute; // xy fow width, z for dilute of whole line w for dilute of border
 out float v_gamma_scale;
-out highp vec3 v_uv;
 out vec2 v_tile_pos;
 
 #ifdef ELEVATED_ROADS
@@ -85,9 +82,14 @@ out float stub_side;
 #endif
 
 #ifdef RENDER_LINE_DASH
+uniform highp float u_floor_width_scale;
 uniform vec2 u_texsize;
 uniform float u_tile_units_to_pixels;
 out vec2 v_tex;
+#endif
+
+#if defined(RENDER_LINE_GRADIENT) || defined(RENDER_LINE_TRIM_OFFSET)
+out highp vec3 v_uv;
 #endif
 
 #ifdef RENDER_LINE_GRADIENT
@@ -220,9 +222,20 @@ void main() {
     line_progress = a_packed[2];
 #endif
 
-    // the distance over which the line edge fades out.
+    // The distance over which the line edge fades out.
     // Retina devices need a smaller distance to avoid aliasing.
     float ANTIALIASING = 1.0 / u_device_pixel_ratio / 2.0;
+#ifdef RENDER_LINE_BORDER
+#ifndef VARIABLE_LINE_WIDTH
+    // Increase distance for lines with border to improve distance based
+    // anti-aliasing (fwidth-based) of the border edges.
+    // The multiplier was determined experimentally to achieve pixel-perfect
+    // anti-aliasing of the border for extremely pitched lines near the
+    // horizon: lower values cause aliasing on the borders, while higher
+    // values yield no further visual improvement.
+    ANTIALIASING *= 8.0;
+#endif
+#endif
 
     vec2 a_extrude = vec2(a_data.xy) - 128.0;
     float a_direction = float(a_data.z & 3u) - 1.0;
@@ -289,7 +302,7 @@ void main() {
 #endif
 
     float inset = gapwidth + (gapwidth > 0.0 ? ANTIALIASING : 0.0);
-    float outset = gapwidth + halfwidth * (gapwidth > 0.0 ? 2.0 : 1.0) + (halfwidth == 0.0 ? 0.0 : ANTIALIASING);
+    float outset = gapwidth + halfwidth * (gapwidth > 0.0 ? 2.0 : 1.0) + (halfwidth > 0.0 ? ANTIALIASING : 0.0);
 
     // Scale the extrusion vector down to a normal and then up by the line width
     // of this vertex.

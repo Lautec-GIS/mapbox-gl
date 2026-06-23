@@ -4,9 +4,8 @@ import {Layout, Transitionable, PossiblyEvaluated, PossiblyEvaluatedPropertyValu
 import {supportsPropertyExpression} from '../style-spec/util/properties';
 import featureFilter from '../style-spec/feature_filter/index';
 import {makeFQID} from '../util/fqid';
-import {createExpression, type FeatureState} from '../style-spec/expression/index';
+import {type FeatureState} from '../style-spec/expression/index';
 import {isStateConstant} from '../style-spec/expression/is_constant';
-import latest from '../style-spec/reference/latest';
 import assert from '../style-spec/util/assert';
 import SymbolAppearance from './appearance';
 
@@ -35,10 +34,11 @@ import type Painter from '../render/painter';
 import type {LUT} from '../util/lut';
 import type {ImageId} from '../style-spec/expression/types/image_id';
 import type {ProgramName} from '../render/program';
-import type {AppearanceProps} from './appearance_properties';
 import type {QueryResult} from '../source/query_features';
 
 const TRANSITION_SUFFIX = '-transition';
+
+export type RuntimeModuleType = 'HD' | 'Standard';
 
 type LayerRenderingStats = {
     numRenderedVerticesInTransparentPass: number;
@@ -47,11 +47,6 @@ type LayerRenderingStats = {
 
 // Symbols are draped only on native and for certain cases only
 const drapedLayers = new Set(['fill', 'line', 'background', 'hillshade', 'raster']);
-
-type LayerExpressionDependencies = {
-    isIndoorDependent: boolean;
-    configDependencies: Set<string>;
-};
 
 class StyleLayer extends Evented {
     id: string;
@@ -67,7 +62,6 @@ class StyleLayer extends Evented {
     maxzoom: number | null | undefined;
     filter: FilterSpecification | undefined;
     visibility: 'visible' | 'none' | undefined;
-    expressionDependencies: LayerExpressionDependencies;
     iconImageUseTheme: string | null | undefined;
     appearances: Array<SymbolAppearance>;
     appearancesVersion: number;
@@ -113,10 +107,6 @@ class StyleLayer extends Evented {
 
         this._featureFilter = {filter: () => true, needGeometry: false, needFeature: false};
         this._filterCompiled = false;
-        this.expressionDependencies = {
-            isIndoorDependent: false,
-            configDependencies: new Set()
-        };
 
         if (layer.type === 'custom') return;
 
@@ -128,16 +118,6 @@ class StyleLayer extends Evented {
             this.source = layer.source;
             this.sourceLayer = layer['source-layer'];
             this.filter = layer.filter;
-
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const filterSpec = latest[`filter_${layer.type}`];
-            assert(filterSpec);
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            const compiledStaticFilter = createExpression(this.filter, filterSpec);
-            if (compiledStaticFilter.result !== 'error') {
-                this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...compiledStaticFilter.value.configDependencies]);
-                this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || compiledStaticFilter.value.isIndoorDependent;
-            }
         }
 
         if (layer.slot) this.slot = layer.slot;
@@ -148,8 +128,6 @@ class StyleLayer extends Evented {
 
         if (properties.layout) {
             this._unevaluatedLayout = new Layout(properties.layout, this.scope, options, this.iconImageUseTheme);
-            this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...this._unevaluatedLayout.configDependencies]);
-            this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || this._unevaluatedLayout.isIndoorDependent();
         }
 
         if (properties.paint) {
@@ -161,11 +139,8 @@ class StyleLayer extends Evented {
             }
             for (const property in layer.layout) {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-                this.setLayoutProperty(property as keyof LayoutSpecification, layer.layout[property]);
+                this.setLayoutProperty(property, layer.layout[property]);
             }
-            this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...this._transitionablePaint.configDependencies]);
-            this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || this._transitionablePaint.isIndoorDependent();
-
             this._transitioningPaint = this._transitionablePaint.untransitioned();
             this.paint = new PossiblyEvaluated(properties.paint);
         }
@@ -202,8 +177,6 @@ class StyleLayer extends Evented {
         if (!specProps[name]) return; // skip unrecognized properties
 
         layout.setValue(name, value);
-        this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...layout.configDependencies]);
-        this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || layout.isIndoorDependent();
         if (name === 'visibility') {
             this.possiblyEvaluateVisibility();
         }
@@ -212,7 +185,7 @@ class StyleLayer extends Evented {
     setAppearances(appearances: AppearanceSpecification[]) {
         this.appearances = [];
         appearances.forEach(a => {
-            this.appearances.push(new SymbolAppearance(a.condition, a.name, a.properties as AppearanceProps, this.scope, this.options, this.iconImageUseTheme));
+            this.appearances.push(new SymbolAppearance(a.condition, a.name, a.properties, this.scope, this.options, this.iconImageUseTheme));
         });
         this.appearancesVersion++;
     }
@@ -265,8 +238,6 @@ class StyleLayer extends Evented {
         const oldValue = transitionable.value;
 
         paint.setValue(name, value as PropertyValueSpecification<unknown>);
-        this.expressionDependencies.configDependencies = new Set([...this.expressionDependencies.configDependencies, ...paint.configDependencies]);
-        this.expressionDependencies.isIndoorDependent = this.expressionDependencies.isIndoorDependent || paint.isIndoorDependent();
         this._handleSpecialPaintPropertyUpdate(name);
 
         const newValue = paint._values[name].value;
@@ -361,20 +332,21 @@ class StyleLayer extends Evented {
         return false;
     }
 
-    // Conservative predicate used to preload the HD module on both threads before the
+    // Conservative predicate used to preload a lazy module on both threads before the
     // first relevant tile parses/deserializes. Reads the *raw* layout declaration via
     // `_unevaluatedLayout` because this runs on the worker before layers have been
     // recalculated, and on the main thread during recalculate. Data-driven expression
-    // declarations are reported as "may use HD" because we can't evaluate them without
-    // per-feature context — the worst case is an unnecessary HD preload.
-    mayUseHD(): boolean {
+    // declarations return true conservatively — the worst case is an unnecessary preload.
+    // Subclasses override this to indicate which module(s) they require.
+    mayUse(_type: RuntimeModuleType): boolean {
         return false;
     }
 
-    // Worker-side HD preload hook. Default no-op; HD-relevant subclasses return
-    // `prepareHD()` (from `modules/hd_worker`) when their layout declares HD use.
-    // Main-side preload stays at call sites — importing `prepareHDMain` here would
-    // pull the main-only chunk into the worker bundle.
+    // Worker-side module preload hook. Default no-op; subclasses return the relevant
+    // `prepare*()` promise (from `modules/hd_worker` or `modules/standard_worker`) when
+    // their layer type needs async module loading before bucket creation.
+    // Main-side preload stays at call sites to avoid pulling main-only chunks into the
+    // worker bundle.
     prepare(): Promise<void> {
         return Promise.resolve();
     }
@@ -513,7 +485,7 @@ class StyleLayer extends Evented {
  * Reads a raw layout declaration and evaluates `predicate` against it. Returns `true`
  * if the declaration is an expression (conservative — we can't evaluate without
  * feature/zoom context), `false` if the declaration is missing, otherwise defers to
- * `predicate`. Shared helper for `mayUseHD` implementations on subclasses.
+ * `predicate`. Shared helper for `mayUse('HD')` implementations on subclasses.
  *
  * @private
  */

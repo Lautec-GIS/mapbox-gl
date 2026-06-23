@@ -1336,6 +1336,24 @@
          "doc": "Override the orientation of the model node in euler angles [x, y, z]."
        }
   },
+   "modelLightOverrides": {
+    "light-ambient-color": {
+      "type": "color",
+      "doc": "Override the color of ambient lights."
+    },
+    "light-ambient-intensity": {
+      "type": "number",
+      "doc": "Override the intensity of light-ambient-color (on a scale from 0 to 1)."
+    },
+     "light-directional-color": {
+      "type": "color",
+      "doc": "Override the color of directional lights."
+    },
+    "light-directional-intensity": {
+      "type": "number",
+      "doc": "Override the intensity of light-directional-color (on a scale from 0 to 1)."
+    }
+  },
   "modelNodeOverrides": {
     "*": {
        "type": "modelNodeOverride",
@@ -1392,6 +1410,11 @@
         "period": 360,
         "units": "degrees",
         "doc": "Orientation of the model in euler angles [x, y, z]."
+      },
+      "lightOverrides": {
+        "type": "modelLightOverrides",
+        "required": false,
+        "doc": "A collection of light overrides."
       },
       "nodeOverrides": {
         "type": "modelNodeOverrides",
@@ -6674,13 +6697,6 @@
           "doc": "Projection where objects are of the same scale regardless of whether they are far away or near to the camera. Parallel lines remains parallel and there is no vanishing point."
         }
       },
-      "transition": true,
-      "expression": {
-        "interpolated": true,
-        "parameters": [
-          "zoom"
-        ]
-      },
       "sdk-support": {
         "basic functionality": {
           "js": "3.0.0",
@@ -11438,27 +11454,6 @@
       },
       "transition": true
     },
-    "model-lightmap-intensity": {
-      "type": "number",
-      "default": 0.0,
-      "minimum": 0,
-      "doc": "Controls the intensity of the model lightmap contribution. Values less than or equal to 0.001 are treated as off.",
-      "private": true,
-      "experimental": true,
-      "expression": {
-        "interpolated": true,
-        "parameters": ["zoom"]
-      },
-      "sdk-support": {
-          "basic functionality": {
-          "js": "3.25.0",
-          "android": "11.25.0",
-          "ios": "11.25.0"
-        }
-      },
-      "property-type": "data-constant",
-      "transition": true
-    },
     "model-type": {
       "type": "enum",
       "values": {
@@ -11678,10 +11673,21 @@
         }
       }
     },
-    "model-ignore-line-cutout": {
-      "type": "boolean",
-      "doc": "When set to true, the layer is not going to be affected by the line cutout effect.",
-      "default": false,
+    "model-line-cutout-mode": {
+      "type": "enum",
+      "doc": "Selects the way the line cutout effect is applied to the model.",
+      "default": "enabled",
+      "values": {
+        "enabled": {
+          "doc": "The model receives the cutout without any special handling."
+        },
+        "disabled": {
+          "doc": "The cutout effect is disabled for the model."
+        },
+        "enabled-above-cutout": {
+          "doc": "Only enabled if the model is above the cutout plane, such as for models above cut tunnels."
+        }
+      },
       "transition": false,
       "expression": {
         "interpolated": false
@@ -11691,8 +11697,9 @@
       "private": true,
       "sdk-support": {
         "basic functionality": {
-          "android": "11.21.0",
-          "ios": "11.21.0"
+          "js": "3.26.0",
+          "android": "11.26.0",
+          "ios": "11.26.0"
         }
       }
     }

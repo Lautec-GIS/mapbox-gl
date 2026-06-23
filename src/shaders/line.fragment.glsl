@@ -4,20 +4,13 @@
 
 uniform lowp float u_device_pixel_ratio;
 uniform highp float u_width_scale;
-uniform highp float u_floor_width_scale;
 uniform float u_alpha_discard_threshold;
 uniform lowp float u_opacity_multiplier;
-uniform highp vec2 u_trim_offset;
-uniform highp vec2 u_trim_fade_range;
-uniform highp vec2 u_trim_gradient_mix_range;
-uniform lowp vec4 u_trim_color;
-uniform bool u_emissive_in_shadows;
 uniform bool u_clip_to_tile_borders;
 
 in vec4 v_width2_dilute;
 in vec2 v_normal;
 in float v_gamma_scale;
-in highp vec3 v_uv;
 in vec2 v_tile_pos;
 
 #ifdef ELEVATED_ROADS
@@ -29,6 +22,7 @@ in float stub_side;
 
 #ifdef RENDER_LINE_DASH
 uniform sampler2D u_dash_image;
+uniform highp float u_floor_width_scale;
 
 in vec2 v_tex;
 #endif
@@ -37,8 +31,19 @@ in vec2 v_tex;
 in vec3 v_elevation_id_col;
 #endif
 
+#if defined(RENDER_LINE_GRADIENT) || defined(RENDER_LINE_TRIM_OFFSET)
+in highp vec3 v_uv;
+#endif
+
 #ifdef RENDER_LINE_GRADIENT
 uniform sampler2D u_gradient_image;
+#endif
+
+#ifdef RENDER_LINE_TRIM_OFFSET
+uniform highp vec2 u_trim_offset;
+uniform highp vec2 u_trim_fade_range;
+uniform highp vec2 u_trim_gradient_mix_range;
+uniform lowp vec4 u_trim_color;
 #endif
 
 #ifdef INDICATOR_CUTOUT
@@ -46,6 +51,7 @@ in highp float v_z_offset;
 #endif
 
 #ifdef RENDER_SHADOWS
+uniform bool u_emissive_in_shadows;
 uniform vec3 u_ground_shadow_factor;
 
 in highp vec4 v_pos_light_view_0;
@@ -72,13 +78,6 @@ float linearstep(float edge0, float edge1, float x) {
     return  clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
 }
 
-/// Calculate the distance from point 'x' to the closer edge of the line.
-float closerDistance(float x, float outset, float inset) {
-    float out_edge = outset - x;
-    float in_edge = x - inset;
-    return inset > 0.0 ? min(in_edge, out_edge) : out_edge;
-}
-
 void main() {
     #pragma mapbox: initialize highp vec4 color
     #pragma mapbox: initialize lowp float floorwidth
@@ -94,8 +93,13 @@ void main() {
     float dist = length(v_normal) * v_width2_dilute.x;
 
     // The distance over which the line edge fades out.
-    // Note: the same value is used in line vertex shader as a padding for extrusion.
+    // Note: the same ANTIALIASING value is used in the line vertex shader.
     float ANTIALIASING = 1.0 / u_device_pixel_ratio / 2.0;
+#ifdef RENDER_LINE_BORDER
+#ifndef VARIABLE_LINE_WIDTH
+    ANTIALIASING *= 8.0;
+#endif
+#endif
 
     // Calculate the antialiasing fade factor. This is either when fading in
     // the line in case of an offset line (v_width2_dilute.y) or when fading out
@@ -117,9 +121,14 @@ void main() {
     // Calculate the rate of change of the distance across the line.
     pxStep = fwidth(dist);
     // Find the distance to the closer edge of the line.
-    delta = closerDistance(dist, v_width2_dilute.x, v_width2_dilute.y);
+    // Note: outset (v_width2_dilute.x) and inset (v_width2_dilute.y) are computed in the
+    // line vertex shader with an extra ANTIALIASING gap. Take this into account when
+    // finding the exact inner and outer edge positions.
+    float out_edge = v_width2_dilute.x - dist;
+    float in_edge = dist - (v_width2_dilute.y - 2.0 * ANTIALIASING);
+    delta = v_width2_dilute.y > 0.0 ? min(in_edge, out_edge) : out_edge;
     // Compute distance based anti-aliasing alpha factor to smooth line edges.
-    float edge = ANTIALIASING * v_gamma_scale;
+    float edge = ANTIALIASING;
     alpha = delta > 0.0 ? smoothstep(edge - pxStep, u_width_scale * blur + edge + pxStep, delta) : 0.0;
 #endif
 #endif
@@ -174,11 +183,6 @@ void main() {
 
 #ifdef RENDER_LINE_BORDER
 #ifndef VARIABLE_LINE_WIDTH
-    // The following half of the line notation being used is aligned with the line vertex shader:
-    //  |      | inner border |       body       | outer border |     
-    //  |------|**************|##################|**************|---------->
-    // (0)  (inset)        (inset+h)          (outset-h)      (outset)      x
-    //
     // Compute distance based anti-aliasing alpha factor to smooth line borders.
     float edge2 = border_width * u_width_scale + ANTIALIASING;
     float alpha2 = smoothstep(edge2 - pxStep, edge2 + pxStep, delta);

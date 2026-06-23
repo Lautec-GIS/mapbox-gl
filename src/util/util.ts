@@ -1,5 +1,5 @@
 import {mat4} from 'gl-matrix';
-import UnitBezier from '@mapbox/unitbezier';
+import bezier from '@mapbox/unitbezier';
 import Point from '@mapbox/point-geometry';
 import assert from '../style-spec/util/assert';
 import deepEqual from '../style-spec/util/deep_equal';
@@ -7,13 +7,12 @@ import deepEqual from '../style-spec/util/deep_equal';
 import type {vec4} from 'gl-matrix';
 import type {Range} from '../../3d-style/elevation/elevation_feature';
 import type {Callback} from '../types/callback';
+import type {ExpiryData} from '../source/tile';
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const IOS_DEVICE_RE = /\b(iPad|iPhone|iPod)\b/;
-const SAFARI_BUG_OS_RE = /CPU (OS|iPhone OS) (15_4|15_5) like Mac OS X/;
 
 /**
  * Converts an angle in degrees to radians
@@ -178,24 +177,7 @@ export function bufferConvexPolygon(ring: Point[], buffer: number): Point[] {
     return output;
 }
 
-type EaseFunction = (t: number) => number;
-
-/**
- * Given given (x, y), (x1, y1) control points for a bezier curve,
- * return a function that interpolates along that curve.
- *
- * @param p1x control point 1 x coordinate
- * @param p1y control point 1 y coordinate
- * @param p2x control point 2 x coordinate
- * @param p2y control point 2 y coordinate
- * @private
- */
-export function bezier(p1x: number, p1y: number, p2x: number, p2y: number): EaseFunction {
-    const bezier = new UnitBezier(p1x, p1y, p2x, p2y);
-    return function (t: number) {
-        return bezier.solve(t);
-    };
-}
+export {bezier};
 
 /**
  * A default bezier-curve powered easing function with
@@ -203,7 +185,7 @@ export function bezier(p1x: number, p1y: number, p2x: number, p2y: number): Ease
  *
  * @private
  */
-export const ease: EaseFunction = bezier(0.25, 0.1, 0.25, 1);
+export const ease = bezier(0.25, 0.1, 0.25, 1);
 
 /**
  * constrain n to the given range via min + max
@@ -466,21 +448,6 @@ export function filterObject<T extends Record<PropertyKey, unknown>>(
 }
 
 /**
- * Deeply clones two objects.
- *
- * @private
- */
-export function clone<T>(input: T): T {
-    if (Array.isArray(input)) {
-        return input.map(clone) as T;
-    } else if (typeof input === 'object' && input) {
-        return mapObject(input as Record<PropertyKey, unknown>, clone) as T;
-    } else {
-        return input;
-    }
-}
-
-/**
  * Maps a value from a range between [min, max] to the range [outMin, outMax]
  *
  * @private
@@ -653,47 +620,11 @@ export function parseCacheControl(cacheControl: string): Record<string, number> 
     return header as Record<string, number>;
 }
 
-export function getExpiryDataFromHeaders(responseHeaders: Headers | Map<string, string> | undefined) {
+export function parseExpiryData(responseHeaders: Headers | undefined): ExpiryData {
     if (!responseHeaders) return {cacheControl: undefined, expires: undefined};
     const cacheControl = responseHeaders.get('cache-control');
     const expires = responseHeaders.get('expires');
     return {cacheControl, expires};
-}
-
-let _isSafari: boolean | null = null;
-
-export function _resetSafariCheckForTest() {
-    _isSafari = null;
-}
-
-/**
- * Returns true when run in WebKit derived browsers.
- * This is used as a workaround for a memory leak in Safari caused by using Transferable objects to
- * transfer data between WebWorkers and the main thread.
- * https://github.com/mapbox/mapbox-gl-js/issues/8771
- *
- * This should be removed once the underlying Safari issue is fixed.
- *
- * @private
- * @param scope {WindowOrWorkerGlobalScope} Since this function is used both on the main thread and WebWorker context,
- *      let the calling scope pass in the global scope object.
- * @returns {boolean}
- */
-export function isSafari(scope: WindowOrWorkerGlobalScope): boolean {
-    if (_isSafari == null) {
-        const userAgent = (scope as Window).navigator ? (scope as Window).navigator.userAgent : null;
-        _isSafari = !!(scope as {safari?: boolean}).safari ||
-        !!(userAgent && (IOS_DEVICE_RE.test(userAgent) || (!!userAgent.match('Safari') && !userAgent.match('Chrome'))));
-    }
-    return _isSafari;
-}
-
-export function isSafariWithAntialiasingBug(scope: WindowOrWorkerGlobalScope): boolean | null | undefined {
-    const userAgent: Navigator['userAgent'] = (scope as Window).navigator ? (scope as Window).navigator.userAgent : null;
-    if (!isSafari(scope)) return false;
-    // 15.4 is known to be buggy.
-    // 15.5 may or may not include the fix. Mark it as buggy to be on the safe side.
-    return !!(userAgent && (userAgent.match('Version/15.4') || userAgent.match('Version/15.5') || userAgent.match(SAFARI_BUG_OS_RE)));
 }
 
 export function isFullscreen(): boolean {

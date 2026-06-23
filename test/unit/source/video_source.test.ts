@@ -9,7 +9,7 @@ function createSource(options) {
     const c = (options && options.video) || window.document.createElement('video');
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    options = Object.assign({coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]]}, options);
+    options = {coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]], ...options};
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
     const source = new VideoSource('id', options, {send() {}}, options.eventedParent);
@@ -43,6 +43,16 @@ describe('VideoSource', () => {
         const serialized = source.serialize();
 
         expect(serialized.coordinates).toEqual(newCoordinates);
+    });
+
+    test('serialize reports configured urls before load resolves the transform', () => {
+        const urls = ["cropped.mp4", "https://static-assets.mapbox.com/mapbox-gl-js/drone.webm"];
+        const source = createSource({type: 'video', urls});
+
+        // urls is empty until load() resolves its async transforms; serialize() must still
+        // report the configured urls so getStyle()/diffing never sees a transient empty list.
+        expect(source.urls).toBeUndefined();
+        expect(source.serialize().urls).toEqual(urls);
     });
 
     //test video retrieval by first supplying the video element directly

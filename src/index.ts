@@ -1,6 +1,5 @@
-import {PerformanceUtils} from './util/performance';
 import assert from './style-spec/util/assert';
-import {supported} from '@mapbox/mapbox-gl-supported';
+import {isSupported as supported} from '@mapbox/mapbox-gl-supported';
 import {version} from '../package.json';
 import {Map} from './ui/map';
 import NavigationControl from './ui/control/navigation_control';
@@ -17,19 +16,24 @@ import Point from '@mapbox/point-geometry';
 import MercatorCoordinate from './geo/mercator_coordinate';
 import {Evented} from './util/evented';
 import config, {setAccessToken, setBaseApiUrl, setMaxParallelImageRequests, getDracoUrl, setDracoUrl, getMeshoptUrl, setMeshoptUrl, getBuildingGenUrl, setBuildingGenUrl} from './util/config';
-import {Debug} from './util/debug';
-import {isSafari} from './util/util';
 import {setRTLTextPlugin, getRTLTextPluginStatus} from './source/rtl_text_plugin';
 import {addTileProvider} from './source/tile_provider';
 import {getWorkerCount, setWorkerCount} from './util/worker_pool';
 import WorkerClass from './util/worker_class';
 import {prewarm, clearPrewarmedResources} from './util/worker_pool_factory';
 import {clearTileCache} from './util/tile_request_cache';
-import {WorkerPerformanceUtils} from './util/worker_performance_utils';
 import {FreeCameraOptions} from './ui/free_camera';
 import browser from './util/browser';
+import {isMapboxHTTPCDNURL} from './util/mapbox_url';
+import {setSdkInfo, setBundleDistribution} from './util/mapbox';
 
 import type {Class} from './types/class';
+
+// Detect whether this UMD/CSP bundle was served from the Mapbox CDN (telemetry only).
+// Classic scripts expose their URL via `document.currentScript`; the `typeof document`
+// guard keeps the bundle importable in Node/SSR.
+const currentScript = typeof document !== 'undefined' ? document.currentScript as HTMLScriptElement | null : null;
+setBundleDistribution(currentScript && currentScript.src && isMapboxHTTPCDNURL(currentScript.src) ? 'cdn' : 'other');
 
 // Explicit type re-exports
 export type * from './ui/events';
@@ -88,6 +92,7 @@ const exported = {
     supported,
     setRTLTextPlugin,
     getRTLTextPluginStatus,
+    setSdkInfo,
     addTileProvider,
     Map,
     NavigationControl,
@@ -278,14 +283,6 @@ const exported = {
         WorkerClass.workerClass = klass;
     },
 
-    get workerParams(): WorkerOptions {
-        return WorkerClass.workerParams;
-    },
-
-    set workerParams(params: WorkerOptions) {
-        WorkerClass.workerParams = params;
-    },
-
     /**
      * Provides an interface for loading Draco decoding library (draco_decoder_gltf.wasm v1.5.6) from a self-hosted URL.
      * This needs to be set only once, and before any call to `new mapboxgl.Map(..)` takes place.
@@ -356,9 +353,6 @@ const exported = {
      */
     restoreNow: browser.restoreNow
 };
-
-//This gets automatically stripped out in production builds.
-Debug.extend(exported, {isSafari, getPerformanceMetrics: PerformanceUtils.getPerformanceMetrics, getPerformanceMetricsAsync: WorkerPerformanceUtils.getPerformanceMetricsAsync});
 
 /**
  * Gets the version of Mapbox GL JS in use as specified in `package.json`,

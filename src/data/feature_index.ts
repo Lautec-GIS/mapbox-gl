@@ -5,7 +5,7 @@ import EXTENT from '../style-spec/data/extent';
 import Grid from '../symbol/grid_index';
 import DictionaryCoder from '../util/dictionary_coder';
 import {VectorTile} from '@mapbox/vector-tile';
-import Protobuf from 'pbf';
+import {PbfReader} from 'pbf';
 import Feature from '../util/vectortile_to_geojson';
 import {arraysIntersect, mapObject, warnOnce} from '../util/util';
 import {register} from '../util/web_worker_transfer';
@@ -119,7 +119,7 @@ class FeatureIndex {
 
     loadVTLayers(): Record<string, VectorTileLayer> {
         if (!this.vtLayers) {
-            this.vtLayers = new VectorTile(new Protobuf(this.rawTileData)).layers;
+            this.vtLayers = new VectorTile(new PbfReader(this.rawTileData)).layers;
             this.sourceLayerCoder = new DictionaryCoder(this.vtLayers ? Object.keys(this.vtLayers).sort() : ['_geojsonTileLayer']);
             this.vtFeatures = {};
             for (const layer in this.vtLayers) {
@@ -246,11 +246,12 @@ class FeatureIndex {
             geojsonFeature.source = serializedLayer.source;
             geojsonFeature.sourceLayer = serializedLayer['source-layer'];
 
-            geojsonFeature.layer = Object.assign({}, serializedLayer);
+            geojsonFeature.layer = {...serializedLayer};
             geojsonFeature.layer.paint = evaluateProperties(serializedLayer.paint, styleLayer.paint, feature, featureState, availableImages);
             geojsonFeature.layer.layout = evaluateProperties(serializedLayer.layout, styleLayer.layout, feature, featureState, availableImages);
 
             // Iterate over all targets to check if the feature should be included and add feature variants if necessary
+            const evaluationParameters = new EvaluationParameters(this.tileID.overscaledZ, {worldview});
             let shouldInclude = false;
             for (const target of targets) {
                 this.updateFeatureProperties(geojsonFeature, target);
@@ -259,10 +260,10 @@ class FeatureIndex {
                     feature.properties = geojsonFeature.properties;
                     if (filter.needGeometry) {
                         const evaluationFeature = toEvaluationFeature(feature, true);
-                        if (!filter.filter(new EvaluationParameters(this.tileID.overscaledZ, {worldview}), evaluationFeature, this.tileID.canonical)) {
+                        if (!filter.filter(evaluationParameters, evaluationFeature, this.tileID.canonical)) {
                             continue;
                         }
-                    } else if (!filter.filter(new EvaluationParameters(this.tileID.overscaledZ, {worldview}), feature)) {
+                    } else if (!filter.filter(evaluationParameters, feature)) {
                         continue;
                     }
                 }
@@ -340,9 +341,10 @@ class FeatureIndex {
             geojsonFeature.source = serializedLayer.source;
             geojsonFeature.sourceLayer = serializedLayer['source-layer'];
 
-            geojsonFeature.layer = Object.assign({}, serializedLayer);
+            geojsonFeature.layer = {...serializedLayer};
 
             // Iterate over all targets to check if the feature should be included and add feature variants if necessary
+            const evaluationParameters = new EvaluationParameters(this.tileID.overscaledZ, {worldview});
             let shouldInclude = false;
             for (const target of targets) {
                 this.updateFeatureProperties(geojsonFeature, target);
@@ -350,10 +352,10 @@ class FeatureIndex {
                 if (filter) {
                     feature.properties = geojsonFeature.properties;
                     if (filter.needGeometry) {
-                        if (!filter.filter(new EvaluationParameters(this.tileID.overscaledZ, {worldview}), feature, this.tileID.canonical)) {
+                        if (!filter.filter(evaluationParameters, feature, this.tileID.canonical)) {
                             continue;
                         }
-                    } else if (!filter.filter(new EvaluationParameters(this.tileID.overscaledZ, {worldview}), feature)) {
+                    } else if (!filter.filter(evaluationParameters, feature)) {
                         continue;
                     }
                 }

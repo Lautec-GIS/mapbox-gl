@@ -1,5 +1,5 @@
 import {VectorTile} from '@mapbox/vector-tile';
-import Protobuf from 'pbf';
+import {PbfReader} from 'pbf';
 import {getArrayBuffer, isHttpNotFound} from '../util/ajax';
 
 import type {Callback} from '../types/callback';
@@ -10,7 +10,7 @@ import type {default as Scheduler, TaskMetadata} from '../util/scheduler';
 export type LoadVectorTileResult = {
     rawData: ArrayBuffer;
     vectorTile?: VectorTile;
-    responseHeaders?: Map<string, string>;
+    headers?: Headers;
 };
 
 /**
@@ -98,8 +98,17 @@ export function loadVectorTile(
     const key = JSON.stringify(params.request);
 
     const makeRequest: VectorDataRequest = (callback: LoadVectorDataCallback) => {
-        const request = getArrayBuffer(params.request, (err?: Error | null, data?: ArrayBuffer | null, responseHeaders?: Headers) => {
-            if (err) {
+        const controller = new AbortController();
+        getArrayBuffer(params.request, controller.signal)
+            .then(({data, headers}) => {
+                callback(null, {
+                    rawData: data,
+                    vectorTile: skipParse ? undefined : new VectorTile(new PbfReader(data)),
+                    headers
+                });
+            })
+            .catch((err: Error) => {
+                if (controller.signal.aborted) return;
                 // HTTP 404 on a sparse tileset: the tile intentionally doesn't exist.
                 // Convert to empty result — no parent fallback for HTTP sources.
                 if (isHttpNotFound(err)) {
@@ -107,16 +116,9 @@ export function loadVectorTile(
                 } else {
                     callback(err);
                 }
-            } else if (data) {
-                callback(null, {
-                    rawData: data,
-                    vectorTile: skipParse ? undefined : new VectorTile(new Protobuf(data)),
-                    responseHeaders: new Map(responseHeaders.entries())
-                });
-            }
-        });
+            });
         return () => {
-            request.cancel();
+            controller.abort();
             callback(null, null);
         };
     };
@@ -126,6 +128,6 @@ export function loadVectorTile(
         this.deduped.entries[key] = {result: [null, params.data]};
     }
 
-    const callbackMetadata: TaskMetadata = {type: 'parseTile', renderSourceType: params.renderSourceType, zoom: params.tileZoom};
-    return this.deduped.request(key, callbackMetadata, makeRequest, callback);
+    const metadata: TaskMetadata = {type: 'parseTile', renderSourceType: params.renderSourceType, zoom: params.tileZoom};
+    return this.deduped.request(key, metadata, makeRequest, callback);
 }

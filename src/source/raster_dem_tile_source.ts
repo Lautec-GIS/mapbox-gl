@@ -1,4 +1,5 @@
 import {ResourceType} from '../util/ajax';
+import {parseExpiryData} from '../util/util';
 import {OverscaledTileID} from './tile_id';
 import {parseTileJSONRequest} from './load_tilejson';
 import {processTileJSON} from './tile_provider';
@@ -23,69 +24,81 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
         super(id, options, dispatcher, eventedParent);
         this.type = 'raster-dem';
         this.maxzoom = 22;
-        this._options = Object.assign({type: 'raster-dem'}, options);
+        this._options = {type: 'raster-dem', ...options};
         this.encoding = options.encoding || "mapbox";
     }
 
     override loadTileJSONWithProvider(tileProvider: {name: string; url: string}, callback: Callback<TileJSON>): Cancelable {
         this.provider = tileProvider.name;
-        const {request, options} = parseTileJSONRequest(this._options, this.map._requestManager);
-
         const controller = new AbortController();
-        this.dispatcher.broadcast('loadTileProvider', {
-            name: tileProvider.name,
-            url: tileProvider.url,
-            source: this.id,
-            scope: this.scope,
-            type: this.type,
-            options,
-            request,
-        }, (err, results) => {
+
+        const load = async () => {
+            const {request, options} = await parseTileJSONRequest(this._options, this.map._requestManager, controller.signal);
             if (controller.signal.aborted) return;
 
-            if (err) {
-                callback(err);
-                return;
-            }
+            const results = await this.dispatcher.send('loadTileProvider', {
+                name: tileProvider.name,
+                url: tileProvider.url,
+                source: this.id,
+                scope: this.scope,
+                type: this.type,
+                options,
+                request,
+            }, {signal: controller.signal});
 
-            const tileJSON = results ? results.find((r: Partial<TileJSON> | null) => r != null) : null;
+            if (controller.signal.aborted) return;
+
+            const tileJSON = results ? results.find((r) => r != null) : null;
             const result = processTileJSON(this._options, tileJSON, this.map._requestManager);
             if (result instanceof Error) {
                 callback(result);
             } else {
                 callback(null, result);
             }
+        };
+
+        load().catch((err: Error) => {
+            if (!controller.signal.aborted) callback(err);
         });
 
         return {cancel: () => controller.abort()};
     }
 
-    override loadTile(tile: Tile, callback: Callback<undefined>) {
+    override async loadTile(tile: Tile, callback: Callback<undefined>): Promise<void> {
+        if (tile.actor && tile.state !== 'expired') return;
+
         const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), false, this.tileSize);
-        const request = this.map._requestManager.transformRequest(url, ResourceType.Tile);
 
-        const params: WorkerSourceDEMTileRequest = {
-            uid: tile.uid,
-            tileID: tile.tileID,
-            source: this.id,
-            type: this.type,
-            scope: this.scope,
-            request,
-            encoding: this.encoding,
-        };
+        // tile.actor stays synchronous so an abort/reload sees the live actor immediately.
+        tile.actor = this.dispatcher.getActor();
+        const controller = new AbortController();
+        tile.request = controller;
 
-        if (!tile.actor || tile.state === 'expired') {
-            tile.actor = this.dispatcher.getActor();
-            tile.request = tile.actor.send('loadTile', params, done.bind(this), undefined, true);
+        try {
+            const request = await this.map._requestManager.transformRequest(url, ResourceType.Tile, controller.signal);
+            if (controller.signal.aborted) return callback(null);
+
+            const params: WorkerSourceDEMTileRequest = {
+                uid: tile.uid,
+                tileID: tile.tileID,
+                source: this.id,
+                type: this.type,
+                scope: this.scope,
+                request,
+                encoding: this.encoding,
+            };
+
+            tile.request = tile.actor.sendCancelable('loadTile', params, {}, done.bind(this));
+        } catch (err) {
+            if (controller.signal.aborted) return callback(null);
+            tile.state = 'errored';
+            callback(err as Error);
         }
 
         function done(this: RasterDEMTileSource, err?: Error | null, result?: WorkerSourceDEMTileResult | null) {
             delete tile.request;
 
-            if (tile.aborted) {
-                tile.state = 'unloaded';
-                return callback(null);
-            }
+            if (tile.aborted) return callback(null);
 
             if (err) {
                 tile.state = 'errored';
@@ -93,7 +106,7 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
             }
 
             if (result) {
-                if (this.map._refreshExpiredTiles) tile.setExpiryData(result);
+                if (this.map._refreshExpiredTiles) tile.setExpiryData(parseExpiryData(result.headers));
 
                 if (!result.borderReady && !tile.neighboringTiles) {
                     tile.neighboringTiles = this._getNeighboringTiles(tile.tileID);
@@ -112,11 +125,11 @@ class RasterDEMTileSource extends RasterTileSource<'raster-dem'> {
 
     override abortTile(tile: Tile, callback?: Callback<undefined>) {
         if (tile.request) {
-            tile.request.cancel();
+            tile.request.abort();
             delete tile.request;
         }
         if (tile.actor) {
-            tile.actor.send('abortTile', {uid: tile.uid, type: this.type, source: this.id, scope: this.scope});
+            tile.actor.notify('abortTile', {uid: tile.uid, type: this.type, source: this.id, scope: this.scope});
         }
         if (callback) callback();
     }

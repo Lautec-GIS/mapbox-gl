@@ -37,7 +37,6 @@ import {default as drawDebug, drawDebugPadding, drawDebugQueryGeometry} from './
 import custom from './draw_custom';
 import sky from './draw_sky';
 import Atmosphere from './draw_atmosphere';
-import {BuildingTileBorderManager} from '../../3d-style/render/building_tile_border_manager';
 import {GlobeSharedBuffers, globeToMercatorTransition} from '../geo/projection/globe_util';
 import {Terrain, defaultTerrainUniforms} from '../terrain/terrain';
 import {Debug} from '../util/debug';
@@ -45,15 +44,17 @@ import Tile from '../source/tile';
 import {RGBAImage} from '../util/image';
 import {LayerTypeMask} from '../../3d-style/util/conflation';
 import {ReplacementSource, ReplacementOrderLandmark, ReplacementOrderBuilding} from '../../3d-style/source/replacement_source';
-import model, {prepare as modelPrepare} from '../../3d-style/render/draw_model';
+import {Standard, prepareStandard} from '../../modules/standard_main';
 import {lightsUniformValues} from '../../3d-style/render/lights';
-import {ShadowRenderer} from '../../3d-style/render/shadow_renderer';
 import {WireframeDebugCache} from './wireframe_cache';
 import {FOG_OPACITY_THRESHOLD} from '../style/fog_helpers';
 import Framebuffer from '../gl/framebuffer';
 import {OcclusionParams} from './occlusion_params';
 import {PerformanceUtils} from '../util/performance';
 
+import type {FrcCoverageSnapshot} from '../source/frc_coverage_snapshot';
+import type {ElevationCoverageSnapshot} from '../source/elevation_coverage_snapshot';
+import type {FrcCoverageRenderer} from '../../3d-style/render/frc_coverage_renderer';
 import type {RainParams} from '../precipitation/draw_rain';
 import type {SnowParams} from '../precipitation/draw_snow';
 import type {PrecipitationRevealParams} from '../precipitation/precipitation_reveal_params';
@@ -62,6 +63,7 @@ import type {StarsParams} from './draw_atmosphere';
 import type ImageManager from './image_manager';
 import type IndexBuffer from '../gl/index_buffer';
 import type ModelManager from '../../3d-style/render/model_manager';
+import type {ShadowRenderer} from '../../3d-style/render/shadow_renderer';
 import type ProgramConfiguration from '../data/program_configuration';
 import type Style from '../style/style';
 import type Transform from '../geo/transform';
@@ -70,15 +72,15 @@ import type GlyphManager from './glyph_manager';
 import type {ContextOptions} from '../gl/context';
 import type {CutoffParams} from '../render/cutoff';
 import type {DepthRangeType, DepthMaskType, DepthFuncType} from '../gl/types';
-import type {LightsUniformsType} from '../../3d-style/render/lights';
+import type {LightOverrides, LightsUniformsType} from '../../3d-style/render/lights';
 import type {OverscaledTileID, UnwrappedTileID} from '../source/tile_id';
 import type {ProgramName} from './program';
 import type {ProgramUniformsType, DynamicDefinesType} from './program/program_uniforms';
 import type {Source, ISource} from '../source/source';
 import type {UniformBindings} from './uniform_binding';
 import type {CrossTileID, VariableOffset} from '../symbol/placement';
-import type {TypedStyleLayer, CoreStyleLayer, HDStyleLayer} from '../style/style_layer/typed_style_layer';
-import type {DevTools} from '../ui/control/devtools';
+import type {TypedStyleLayer, CoreStyleLayer, HDStyleLayer, StandardStyleLayer} from '../style/style_layer/typed_style_layer';
+import type {IDevTools} from '../ui/control/devtools';
 import type {ShadowCullCache} from './draw_fill_extrusion';
 
 export type RenderPass = 'offscreen' | 'opaque' | 'translucent' | 'sky' | 'shadow' | 'light-beam';
@@ -122,6 +124,7 @@ type PainterOptions = {
     isInitialLoad: boolean;
     speedIndexTiming: boolean;
     wireframe: WireframeOptions;
+    paintStartTimeStamp: number;
 };
 
 type TileBoundsBuffers = {
@@ -144,7 +147,7 @@ type DrawStyleLayer = (
 
 type PrepareStyleLayer = (layer: TypedStyleLayer, sourceCache: SourceCache, painter: Painter) => void;
 
-const draw: Record<CoreStyleLayer['type'], DrawStyleLayer> & Partial<Record<HDStyleLayer['type'], DrawStyleLayer>> = {
+const draw: Record<CoreStyleLayer['type'], DrawStyleLayer> & Partial<Record<HDStyleLayer['type'] | StandardStyleLayer['type'], DrawStyleLayer>> = {
     symbol,
     circle,
     'pie-chart': pieChart,
@@ -157,12 +160,10 @@ const draw: Record<CoreStyleLayer['type'], DrawStyleLayer> & Partial<Record<HDSt
     background,
     sky,
     custom,
-    model
 };
 
-const prepare: Partial<Record<CoreStyleLayer['type'] | HDStyleLayer['type'], PrepareStyleLayer>> = {
+const prepare: Partial<Record<CoreStyleLayer['type'] | HDStyleLayer['type'] | StandardStyleLayer['type'], PrepareStyleLayer>> = {
     line: prepareLine,
-    model: modelPrepare,
     raster: prepareRaster,
 };
 
@@ -175,6 +176,20 @@ async function setupHD() {
     Object.assign(prepare, {
         'raster-particle': HD.prepareRasterParticle,
     });
+}
+
+async function setupStandard(painter?: Painter) {
+    await prepareStandard();
+    Object.assign(draw, {
+        model: Standard.drawModels,
+    });
+    Object.assign(prepare, {
+        model: Standard.prepare,
+    });
+    if (painter && !painter._shadowRenderer) {
+        const SR = (Standard as {ShadowRenderer?: new (p: Painter) => ShadowRenderer}).ShadowRenderer;
+        if (SR) painter._shadowRenderer = new SR(painter);
+    }
 }
 
 /**
@@ -209,11 +224,21 @@ class Painter {
     imageManager: ImageManager;
     glyphManager: GlyphManager;
     modelManager: ModelManager;
-    buildingTileBorderManager: BuildingTileBorderManager;
+    buildingTileBorderManager?: InstanceType<NonNullable<typeof HD.BuildingTileBorderManager>>;
     depthRangeFor3D: DepthRangeType;
     depthOcclusion: boolean;
+    frcCoverageSnapshot: FrcCoverageSnapshot | null;
+    elevationCoverageSnapshot: ElevationCoverageSnapshot | null;
+    elevationProvidersReady: boolean | undefined;
+    frcCoverageFadeRange: [number, number] | null;
+    frcCoverageSourceLayers: string[];
+    // Lazy-constructed when the HD chunk loads (HD.FrcCoverageRenderer).
+    // Null when SD-HD conflation is not in use and HD hasn't been loaded.
+    frcCoverageRenderer: FrcCoverageRenderer | null;
     opaquePassCutoff: number;
     frameCounter: number;
+    frameTimeDelta: number;
+    lastPaintStartTimeStamp: number;
     renderPass: RenderPass;
     currentLayer: number;
     currentStencilSource: string | null | undefined;
@@ -238,8 +263,8 @@ class Painter {
     loadTimeStamps: Array<number>;
     _backgroundTiles: Record<number, Tile>;
     _atmosphere: Atmosphere | null | undefined;
-    _rain?: InstanceType<typeof HD.Rain>;
-    _snow?: InstanceType<typeof HD.Snow>;
+    _rain?: InstanceType<NonNullable<typeof HD.Rain>>;
+    _snow?: InstanceType<NonNullable<typeof HD.Snow>>;
     replacementSource: ReplacementSource;
     conflationActive: boolean;
     firstLightBeamLayer: number;
@@ -253,7 +278,7 @@ class Painter {
     _fogVisible: boolean;
     _cachedTileFogOpacities: Record<number, [number, number]>;
     _shadowRenderer?: ShadowRenderer;
-    _devtools?: DevTools;
+    _devtools?: IDevTools;
     _wireframeDebugCache: WireframeDebugCache;
 
     updateAverageFPS?: () => void;
@@ -263,8 +288,6 @@ class Painter {
         averageFPS: number;
         fpsHistory: Array<number>;
         fpsWindow: number;
-        dt: number;
-        timeStamp: number;
         continousRedraw: boolean;
         enabledLayers: Record<string, boolean>;
         // buildings
@@ -321,13 +344,18 @@ class Painter {
         this._tileTextures = {};
         this.frameCopies = [];
         this.loadTimeStamps = [];
+        this.frcCoverageSnapshot = null;
+        this.elevationCoverageSnapshot = null;
+        this.elevationProvidersReady = undefined;
+        this.frcCoverageFadeRange = null;
+        this.frcCoverageSourceLayers = [];
+        // Built when HD module is available (UMD: always; ESM: after prepareHD()).
+        this.frcCoverageRenderer = HD.FrcCoverageRenderer ? new HD.FrcCoverageRenderer() : null;
 
         this._debugParams = {
             averageFPS: 0,
             fpsHistory: [],
             fpsWindow: 30,
-            dt: 0,
-            timeStamp: browser.now(),
             continousRedraw: false,
             enabledLayers: { },
             buildingsShowNormals: false,
@@ -350,7 +378,7 @@ class Painter {
             starsParamsOverride: null,
             show3DModelFootprints: false,
             showElevationIdDebug: false,
-            lodSwitchDistance: 5000,
+            lodSwitchDistance: -1,
             lodSwitchFadeDuration: 0.5
         };
 
@@ -361,7 +389,7 @@ class Painter {
             }
 
             this.updateAverageFPS = () => {
-                const fps = this._debugParams.dt === 0 ? 0 : 1000.0 / this._debugParams.dt;
+                const fps = this.frameTimeDelta === 0 ? 0 : 1000.0 / this.frameTimeDelta;
 
                 this._debugParams.fpsHistory.push(fps);
                 if (this._debugParams.fpsHistory.length > this._debugParams.fpsWindow) {
@@ -386,6 +414,8 @@ class Painter {
         this.deferredRenderGpuTimeQueries = [];
         this.gpuTimers = {};
         this.frameCounter = 0;
+        this.frameTimeDelta = 0;
+        this.lastPaintStartTimeStamp = 0;
         this._shadowCullCache = null;
         this._backgroundTiles = {};
 
@@ -395,7 +425,6 @@ class Painter {
         this.minCutoffZoom = 0.0;
         this._fogVisible = false;
         this._cachedTileFogOpacities = {};
-        this._shadowRenderer = new ShadowRenderer(this);
 
         this._wireframeDebugCache = new WireframeDebugCache();
         this.renderDefaultNorthPole = true;
@@ -810,12 +839,10 @@ class Painter {
         // Prevents later uniform-set / draw calls in this frame from triggering sync stalls.
         this.context.sweepPendingPrograms();
 
-        Debug.run(() => {
-            // Update time delta and current timestamp
-            const curTime = browser.now();
-            this._debugParams.dt = curTime - this._debugParams.timeStamp;
-            this._debugParams.timeStamp = curTime;
+        this.frameTimeDelta = this.lastPaintStartTimeStamp === 0 ? 0 : options.paintStartTimeStamp - this.lastPaintStartTimeStamp;
+        this.lastPaintStartTimeStamp = options.paintStartTimeStamp;
 
+        Debug.run(() => {
             this.updateAverageFPS();
         });
 
@@ -828,6 +855,17 @@ class Painter {
 
         this.style = style;
         this.options = options;
+
+        // Update FRC coverage polygon GPU buffers from current snapshot
+        if (this.frcCoverageSnapshot && !this.frcCoverageSnapshot.empty()) {
+            // Ensure the renderer exists once HD has loaded after painter construction.
+            if (!this.frcCoverageRenderer && HD.FrcCoverageRenderer) {
+                this.frcCoverageRenderer = new HD.FrcCoverageRenderer();
+            }
+            if (this.frcCoverageRenderer) {
+                this.frcCoverageRenderer.update(this.context, this.frcCoverageSnapshot.tiles);
+            }
+        }
 
         const layers = this.style._mergedLayers;
 
@@ -1083,6 +1121,9 @@ class Painter {
             orderedLayers = layerIds.map(id => layers[id]);
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        if (this.style.enable3dLights() && !this._shadowRenderer) setupStandard(this);
+
         const shadowRenderer = this._shadowRenderer;
         if (shadowRenderer) {
             shadowRenderer.updateShadowParameters(this.transform, this.style.directionalLight);
@@ -1133,7 +1174,8 @@ class Painter {
 
         // Load HD for precipitation functionality
         if ((snow || rain) && !HD.loaded) {
-            void prepareHD();
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
+            prepareHD();
         }
 
         if (snow && !this._snow && HD.Snow) {
@@ -1160,13 +1202,15 @@ class Painter {
         }
 
         if (buildingLayer) {
-            if (!this.buildingTileBorderManager) {
-                this.buildingTileBorderManager = new BuildingTileBorderManager();
+            if (!this.buildingTileBorderManager && HD.BuildingTileBorderManager) {
+                this.buildingTileBorderManager = new HD.BuildingTileBorderManager();
             }
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            const buildingLayerSourceCache = this.style.getLayerSourceCache(buildingLayer);
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            this.buildingTileBorderManager.updateBorders(buildingLayerSourceCache, buildingLayer);
+            if (this.buildingTileBorderManager) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+                const buildingLayerSourceCache = this.style.getLayerSourceCache(buildingLayer);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+                this.buildingTileBorderManager.updateBorders(buildingLayerSourceCache, buildingLayer);
+            }
         }
 
         // Following line is billing related code. Do not change. See LICENSE.txt
@@ -1564,7 +1608,11 @@ class Painter {
             draw[layer.type](painter, sourceCache, layer, coords, this.style.placement.variableOffsets, this.options.isInitialLoad);
         }
         if (!draw[layer.type]) {
-            void setupHD(); // load HD drawing code & shaders; drawing will be possible once it loads
+            // Trigger lazy module loads so drawing will be possible once they load.
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
+            if (layer.mayUse('HD')) setupHD();
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
+            if (layer.mayUse('Standard')) setupStandard(painter);
         }
         this.gpuTimingEnd();
         PerformanceUtils.measureLowOverhead(PerformanceUtils.GROUP_RENDERING_DETAILED, `renderLayer: ${layer.type.toString()}`, startTime, undefined);
@@ -1687,7 +1735,7 @@ class Painter {
         ];
 
         const translatedMatrix = new Float32Array(16);
-        mat4.translate(translatedMatrix, matrix, translation as [number, number, number]);
+        mat4.translate(translatedMatrix, matrix, translation);
         return translatedMatrix;
     }
 
@@ -1717,7 +1765,7 @@ class Painter {
 
     terrainRenderModeElevated(): boolean {
         // Whether elevation sampling should be enabled in the vertex shader.
-        return (this.style && !!this.style.getTerrain() && !!this.terrain && !this.terrain.renderingToTexture) || this.forceTerrainMode;
+        return (this.style && this.style.hasTerrain() && !!this.terrain && !this.terrain.renderingToTexture) || this.forceTerrainMode;
     }
 
     linearFloatFilteringSupported(): boolean {
@@ -1774,7 +1822,11 @@ class Painter {
         const allDefines = globalDefines.concat(defines || []);
 
         const shaderSource = this.getShaderSource(name);
-        const uniforms = ((programUniforms as Record<string, (context: Context) => UniformBindings>)[name] || (HD.programUniforms as Record<string, (context: Context) => UniformBindings>)[name]) as (context: Context) => UniformBindings;
+        const hdUniforms = HD.programUniforms as Record<string, (context: Context) => UniformBindings> | undefined;
+        const standardUniforms = Standard.programUniforms as Record<string, (context: Context) => UniformBindings> | undefined;
+        const uniforms = (programUniforms as Record<string, (context: Context) => UniformBindings>)[name] ||
+            (hdUniforms && hdUniforms[name]) ||
+            (standardUniforms && standardUniforms[name]);
         const key = Program.cacheKey(shaderSource, name, allDefines, config);
 
         if (!this.cache[key]) {
@@ -1787,7 +1839,9 @@ class Painter {
     // Returns shader source metadata for a program name, including the usedDefines set
     // used to prune cartesian variant enumeration in the precompiler.
     getShaderSource(name: ProgramName) {
-        return shaders[name as keyof typeof shaders] || (HD.shaders && HD.shaders[name as keyof typeof HD.shaders]);
+        const hdShaders = HD.shaders;
+        const standardShaders = Standard.shaders;
+        return shaders[name as keyof typeof shaders] || (hdShaders && hdShaders[name as keyof typeof hdShaders]) || (standardShaders && standardShaders[name as keyof typeof standardShaders]);
     }
 
     /*
@@ -1865,20 +1919,20 @@ class Painter {
         }
     }
 
-    uploadCommonLightUniforms(context: Context, program: Program<LightsUniformsType>) {
+    uploadCommonLightUniforms(context: Context, program: Program<LightsUniformsType>, lightOverrides?: LightOverrides) {
         if (this.style.enable3dLights()) {
             const directionalLight = this.style.directionalLight;
             const ambientLight = this.style.ambientLight;
 
             if (directionalLight && ambientLight) {
-                const lightsUniforms = lightsUniformValues(directionalLight, ambientLight, this.style);
+                const lightsUniforms = lightsUniformValues(directionalLight, ambientLight, this.style, lightOverrides);
                 program.setLightsUniformValues(context, lightsUniforms);
             }
         }
     }
 
-    uploadCommonUniforms(context: Context, program: Program<ProgramUniformsType[ProgramName]>, tileID?: UnwrappedTileID | null, fogMatrix?: mat4 | null, cutoffParams?: CutoffParams | null) {
-        this.uploadCommonLightUniforms(context, program as unknown as Program<LightsUniformsType>);
+    uploadCommonUniforms(context: Context, program: Program<ProgramUniformsType[ProgramName]>, tileID?: UnwrappedTileID | null, fogMatrix?: mat4 | null, cutoffParams?: CutoffParams | null, lightOverrides?: LightOverrides) {
+        this.uploadCommonLightUniforms(context, program as unknown as Program<LightsUniformsType>, lightOverrides);
 
         // Fog is not enabled when rendering to texture so we
         // can safely skip uploading uniforms in that case

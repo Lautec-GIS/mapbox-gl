@@ -6,19 +6,17 @@
  *    - Particular, named StructArray subclasses, when fancy struct accessors are needed (e.g. CollisionBoxArray)
  */
 
-'use strict'; // eslint-disable-line strict
+'use strict';
 
 import fs from 'fs';
-import ejs from 'ejs';
+import {compile} from 'yeahjs';
 import {createLayout, viewTypes} from '../src/util/struct_array';
 
 // eslint-disable-next-line import-x/order
 import type {ViewType, StructArrayLayout, StructArrayMember} from '../src/util/struct_array';
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-const structArrayLayoutJs = ejs.compile(fs.readFileSync('src/util/struct_array_layout.js.ejs', 'utf8'), {strict: true});
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-const structArrayJs = ejs.compile(fs.readFileSync('src/util/struct_array.js.ejs', 'utf8'), {strict: true});
+const structArrayLayoutJs = compile(fs.readFileSync('src/util/struct_array_layout.js.ejs', 'utf8'));
+const structArrayJs = compile(fs.readFileSync('src/util/struct_array.js.ejs', 'utf8'));
 
 const typeAbbreviations = {
     'Int8': 'b',
@@ -52,7 +50,7 @@ function normalizeMembers(members: StructArrayMember[], usedTypes: Set<string | 
         return Object.assign(member, {
             size: sizeOf(member.type),
             view: member.type.toLowerCase()
-        }) as StructArrayMember;
+        });
     });
 }
 
@@ -96,10 +94,11 @@ function createStructArrayLayoutType({
         if (memo.length > 0 && memo.at(-1).type === member.type) {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const last = memo.at(-1);
-            return memo.slice(0, -1).concat(Object.assign({}, last, {
+            return memo.slice(0, -1).concat({
+                ...last,
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                 components: last.components + member.components,
-            }));
+            });
         }
         return memo.concat(member);
     }, []);
@@ -365,10 +364,8 @@ import {register} from '../util/web_worker_transfer';
 
 import type {IStructArrayLayout} from '../util/struct_array';
 
-${// eslint-disable-next-line @typescript-eslint/no-base-to-string, @typescript-eslint/no-unsafe-argument
-    layouts.map(structArrayLayoutJs).join('\n')}
-${// eslint-disable-next-line @typescript-eslint/no-base-to-string, @typescript-eslint/no-unsafe-argument
-    arraysWithStructAccessors.map(structArrayJs).join('\n')}
+${layouts.map(structArrayLayoutJs).join('\n')}
+${arraysWithStructAccessors.map(structArrayJs).join('\n')}
 export {
     ${layouts.map(layout => layout.className).join(',\n    ')},
     ${// eslint-disable-next-line @typescript-eslint/no-base-to-string

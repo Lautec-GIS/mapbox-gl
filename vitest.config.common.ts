@@ -2,7 +2,7 @@ import {resolve} from 'node:path';
 import {existsSync} from 'node:fs';
 import {writeFile} from 'node:fs/promises';
 import serveStatic from 'serve-static';
-import {tilesets, staticFolders} from './test/integration/lib/middlewares.js';
+import {staticFolders} from './test/integration/lib/middlewares.js';
 import {getAllStyleFixturePaths, generateFixtureJson} from './test/integration/lib/generate-fixture-json.js';
 import {getHTML, getDiagnosticsHTML} from './test/util/html_generator';
 
@@ -95,10 +95,7 @@ function detectReproduceCommand(): string | undefined {
     return undefined;
 }
 
-export function setupIntegrationTestsMiddlewares({reportPath, suiteName}: {
-    reportPath: string;
-    suiteName?: string;
-}): Plugin {
+export function setupIntegrationTestsMiddlewares({reportPath}: {reportPath: string;}): Plugin {
     return {
         name: 'setup-integration-tests-middlewares',
         configureServer(server) {
@@ -155,8 +152,6 @@ export function setupIntegrationTestsMiddlewares({reportPath, suiteName}: {
                 const diagnostics: DiagnosticInfo = {
                     platform: 'Mapbox GL JS (Web)',
                     generatedAt: new Date().toISOString(),
-                    testSuite: suiteName,
-                    configFile: detectConfigFileFromArgv(),
                     reproduceCommand: detectReproduceCommand(),
                     spriteFormat: process.env.SPRITE_FORMAT,
                     nodeVersion: process.version,
@@ -170,10 +165,8 @@ export function setupIntegrationTestsMiddlewares({reportPath, suiteName}: {
                 });
             });
 
-            // eslint-disable-next-line @typescript-eslint/no-misused-promises
-            server.middlewares.use('/tilesets', tilesets);
             // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
-            server.middlewares.use('/mapbox-gl-styles', serveStatic(resolve(__dirname, 'node_modules/mapbox-gl-styles'), staticCacheOptions));
+            server.middlewares.use('/mapbox-gl-styles', serveStatic(resolve(__dirname, 'node_modules/@mapbox/mapbox-gl-styles'), staticCacheOptions));
             // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
             server.middlewares.use('/mvt-fixtures', serveStatic(resolve(__dirname, 'node_modules/@mapbox/mvt-fixtures'), staticCacheOptions));
         }

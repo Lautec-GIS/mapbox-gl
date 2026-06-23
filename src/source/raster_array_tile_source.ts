@@ -13,7 +13,7 @@ import {getPointLonLat} from '../data/mrt/mrt.query';
 import LngLat from '../geo/lng_lat';
 import browser from '../util/browser';
 import {makeFQID} from '../util/fqid';
-import {getExpiryDataFromHeaders} from '../util/util';
+import {parseExpiryData} from '../util/util';
 
 import type RasterArrayTile from './raster_array_tile';
 import type Texture from '../render/texture';
@@ -23,6 +23,7 @@ import type {Evented} from '../util/evented';
 import type {Callback} from '../types/callback';
 import type {AJAXError} from '../util/ajax';
 import type {MapboxRasterTile} from '../data/mrt/mrt.esm.js';
+import type {RasterArrayTileLoadResult} from './raster_array_tile_worker_source';
 import type {TextureDescriptor} from './raster_array_tile';
 import type {StyleImage, StyleImageMap} from '../style/style_image';
 import type {RasterArraySourceSpecification} from '../style-spec/types';
@@ -52,7 +53,7 @@ export type RasterQueryParameters = {
  * @see [Example: Create a wind particle animation](https://docs.mapbox.com/mapbox-gl-js/example/raster-particle-layer/)
  */
 class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
-    private _loadTilePending: Record<string, Array<Callback<MapboxRasterTile>>>;
+    private _loadTilePending: Record<string, Promise<MapboxRasterTile>>;
     private _loadTileLoaded: Record<string, boolean>;
 
     override map: MapboxMap;
@@ -71,7 +72,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         this.partial = true;
         this._loadTilePending = {};
         this._loadTileLoaded = {};
-        this._options = Object.assign({type: 'raster-array'}, options);
+        this._options = {type: 'raster-array', ...options};
     }
 
     triggerRepaint(tile: RasterArrayTile) {
@@ -86,43 +87,28 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         this.map.triggerRepaint();
     }
 
-    override loadTile(tile: RasterArrayTile, callback: Callback<undefined>) {
+    override async loadTile(tile: RasterArrayTile, callback: Callback<undefined>): Promise<void> {
         const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), false, this.tileSize);
-        const request = this.map._requestManager.transformRequest(url, ResourceType.Tile);
-
-        const params: WorkerSourceRasterArrayTileRequest = {
-            request,
-            uid: tile.uid,
-            tileID: tile.tileID,
-            type: this.type,
-            source: this.id,
-            scope: this.scope,
-            partial: this.partial
-        };
 
         tile.source = this.id;
         tile.scope = this.scope;
-        tile.requestParams = request;
         if (!tile.actor) tile.actor = this.dispatcher.getActor();
 
-        const done = (error?: AJAXError | null, data?: MapboxRasterTile | ArrayBuffer | null, responseHeaders?: Headers) => {
+        const controller = new AbortController();
+        tile.request = controller;
+
+        const done = (error?: AJAXError | null, data?: MapboxRasterTile | ArrayBuffer | null, headers?: Headers) => {
             delete tile.request;
 
-            if (tile.aborted) {
-                tile.state = 'unloaded';
-                return callback(null);
-            }
+            if (tile.aborted) return callback(null);
 
             if (error) {
-                // silence AbortError
-                if (error.name === 'AbortError') return;
                 tile.state = 'errored';
                 return callback(error);
             }
 
             if (this.map._refreshExpiredTiles && data) {
-                const expiryData = getExpiryDataFromHeaders(responseHeaders);
-                tile.setExpiryData(expiryData);
+                tile.setExpiryData(parseExpiryData(headers));
             }
 
             if (this.partial && tile.state !== 'expired') {
@@ -138,23 +124,50 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
             callback(null);
         };
 
-        if (this.partial) {
-            // Load only the tile header in the main thread
-            tile.request = tile.fetchHeader(undefined, done.bind(this));
-        } else {
-            // Load and parse the entire tile in Worker
-            tile.request = tile.actor.send('loadTile', params, done.bind(this), undefined, true);
+        try {
+            const request = await this.map._requestManager.transformRequest(url, ResourceType.Tile, controller.signal);
+            if (controller.signal.aborted) return callback(null);
+
+            tile.requestParams = request;
+
+            const params: WorkerSourceRasterArrayTileRequest = {
+                request,
+                uid: tile.uid,
+                tileID: tile.tileID,
+                type: this.type,
+                source: this.id,
+                scope: this.scope,
+                partial: this.partial
+            };
+
+            if (this.partial) {
+                // Load only the tile header in the main thread
+                tile.request = tile.fetchHeader(undefined, (error, data, headers) => {
+                    done(error as AJAXError, data, headers);
+                });
+            } else {
+                // Load and parse the entire tile in Worker
+                tile.request = tile.actor.sendCancelable('loadTile', params, {}, (err, result: RasterArrayTileLoadResult | null | undefined) => {
+                    if (err) return done(err as AJAXError);
+                    if (!result) return done(null, null);
+                    done(null, result.mrt, result.headers);
+                });
+            }
+        } catch (err) {
+            if (controller.signal.aborted) return callback(null);
+            tile.state = 'errored';
+            callback(err as Error);
         }
     }
 
     override abortTile(tile: RasterArrayTile) {
         if (tile.request) {
-            tile.request.cancel();
+            tile.request.abort();
             delete tile.request;
         }
 
         if (tile.actor) {
-            tile.actor.send('abortTile', {uid: tile.uid, type: this.type, source: this.id, scope: this.scope});
+            tile.actor.notify('abortTile', {uid: tile.uid, type: this.type, source: this.id, scope: this.scope});
         }
     }
 
@@ -256,7 +269,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
 
         const textureDescriptor = tile.textureDescriptorPerLayer.get(layer.id);
 
-        return Object.assign({}, textureDescriptor, {texture: tile.texturePerLayer.get(layer.id)});
+        return {...textureDescriptor, texture: tile.texturePerLayer.get(layer.id)};
     }
 
     /**
@@ -321,7 +334,7 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
                                     resolve(queryResult);
                                 }
                             });
-                        }, false);
+                        });
                     }
                 }
             }
@@ -332,74 +345,60 @@ class RasterArrayTileSource extends RasterTileSource<'raster-array'> {
         });
     }
 
-    _loadTileForQuery(tile: RasterArrayTile, callback: Callback<MapboxRasterTile>) {
+    _loadTileForQuery(tile: RasterArrayTile): Promise<MapboxRasterTile> {
         if (this._loadTileLoaded[tile.uid]) {
-            callback(null, tile._mrt);
-            return;
+            return Promise.resolve(tile._mrt);
         }
 
-        if (this._loadTilePending[tile.uid]) {
-            this._loadTilePending[tile.uid].push(callback);
-            return;
+        // Concurrent queries on the same tile share one in-flight load.
+        if (tile.uid in this._loadTilePending) {
+            return this._loadTilePending[tile.uid];
         }
 
-        this._loadTilePending[tile.uid] = [callback];
-
-        const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), false, this.tileSize);
-        const request = this.map._requestManager.transformRequest(url, ResourceType.Tile);
-        const requestParams: WorkerSourceRasterArrayTileRequest = {
-            request,
-            uid: tile.uid,
-            tileID: tile.tileID,
-            type: this.type,
-            source: this.id,
-            scope: this.scope,
-            partial: false
-        };
-
-        tile.actor.send('loadTile', requestParams, (error: AJAXError | null, data?: MapboxRasterTile, responseHeaders?: Headers) => {
-            if (error) {
-                this._loadTilePending[tile.uid].forEach(cb => cb(error, null));
-                delete this._loadTilePending[tile.uid];
-                return;
-            }
-
-            if (!data) {
-                this._loadTilePending[tile.uid].forEach(cb => cb(null, null));
-                delete this._loadTilePending[tile.uid];
-                return;
-            }
-
-            if (this.map._refreshExpiredTiles && data) {
-                const expiryData = getExpiryDataFromHeaders(responseHeaders);
-                tile.setExpiryData(expiryData);
-            }
-
-            tile._mrt = data;
-            tile._isHeaderLoaded = true;
-            tile.state = 'loaded';
-
-            this._loadTilePending[tile.uid].forEach(cb => cb(null, data));
-            this._loadTileLoaded[tile.uid] = true;
-            delete this._loadTilePending[tile.uid];
-        }, undefined, true);
+        const promise = this._fetchTileForQuery(tile);
+        this._loadTilePending[tile.uid] = promise;
+        return promise;
     }
 
-    queryRasterArrayValueByAllBands(lngLat: LngLat, tile: RasterArrayTile, params: RasterQueryParameters): Promise<RasterQueryResult> {
-        return new Promise((resolve, reject) => {
-            this._loadTileForQuery(tile, (error, data) => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
-                if (!data) {
-                    resolve(null);
-                    return;
-                }
+    // No controller: the shared promise must settle (the `finally` drains the dedup entry),
+    // or a rejected load would block the tile forever.
+    private async _fetchTileForQuery(tile: RasterArrayTile): Promise<MapboxRasterTile> {
+        const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), false, this.tileSize);
 
-                resolve(this.queryRasterArrayValueByBandId(lngLat, tile, params));
-            });
-        });
+        try {
+            const request = await this.map._requestManager.transformRequest(url, ResourceType.Tile);
+            const requestParams: WorkerSourceRasterArrayTileRequest = {
+                request,
+                uid: tile.uid,
+                tileID: tile.tileID,
+                type: this.type,
+                source: this.id,
+                scope: this.scope,
+                partial: false
+            };
+
+            const data = await tile.actor.send('loadTile', requestParams);
+            const result = data as RasterArrayTileLoadResult | null | undefined;
+            if (!result) return null;
+
+            const mrtData = result.mrt;
+            if (this.map._refreshExpiredTiles) {
+                tile.setExpiryData(parseExpiryData(result.headers));
+            }
+            tile._mrt = mrtData;
+            tile._isHeaderLoaded = true;
+            tile.state = 'loaded';
+            this._loadTileLoaded[tile.uid] = true;
+            return mrtData;
+        } finally {
+            delete this._loadTilePending[tile.uid];
+        }
+    }
+
+    async queryRasterArrayValueByAllBands(lngLat: LngLat, tile: RasterArrayTile, params: RasterQueryParameters): Promise<RasterQueryResult> {
+        const data = await this._loadTileForQuery(tile);
+        if (!data) return null;
+        return this.queryRasterArrayValueByBandId(lngLat, tile, params);
     }
 
     queryRasterArrayValue(lngLatLike: LngLatLike, params: RasterQueryParameters): Promise<RasterQueryResult> {

@@ -13,19 +13,23 @@ import {lineBlendCompositeUniformValues, LINE_BLEND_MODE_MULTIPLY, LINE_BLEND_MO
 import {lineBlendReduceUniformValues} from './program/line_blend_reduce_program';
 import browser from '../util/browser';
 import {clamp, nextPowerOfTwo, warnOnce} from '../util/util';
-import {calculateGroundShadowFactor} from '../../3d-style/render/shadow_renderer';
+import {calculateGroundShadowFactor} from '../../3d-style/render/shadow_utils';
 import {renderColorRamp} from '../util/color_ramp';
 import EXTENT from '../style-spec/data/extent';
 import ResolvedImage from '../style-spec/expression/types/resolved_image';
 import assert from '../style-spec/util/assert';
 import pixelsToTileUnits from '../source/pixels_to_tile_units';
 import Framebuffer from '../gl/framebuffer';
+import {HD} from '../../modules/hd_main';
 
 import type Context from '../gl/context';
 import type Painter from './painter';
 import type SourceCache from '../source/source_cache';
 import type LineStyleLayer from '../style/style_layer/line_style_layer';
 import type LineBucket from '../data/bucket/line_bucket';
+import type Program from './program';
+import type ProgramConfiguration from '../data/program_configuration';
+import type SegmentVector from '../data/segment';
 import type {UniformValues} from './uniform_binding';
 import type {OverscaledTileID} from '../source/tile_id';
 import type {DynamicDefinesType} from './program/program_uniforms';
@@ -185,6 +189,17 @@ function drawLineTiles(painter: Painter, sourceCache: SourceCache, layer: LineSt
     // Cache line-width evaluation per bucket zoom for dash anchoring to avoid evaluating per tile.
     const floorwidthByZoom: Record<number, number> = {};
 
+    // Collect tiles with partial polygon coverage for second pass stencil rendering.
+    // Per-level segments are looked up at draw time via bucket.frcData.frcPerLevel.get(frc) — zero alloc.
+    const polygonCoverageTiles: Array<{
+        coord: OverscaledTileID; bucket: LineBucket;
+        uniformValues: UniformValues<LineUniformsType | LinePatternUniformsType>;
+        programConfiguration: ProgramConfiguration;
+        program: Program<LineUniformsType | LinePatternUniformsType>;
+        depthMode: DepthMode; colorMode: Readonly<ColorMode>;
+        frcMask: number;
+    }> = [];
+
     const renderTiles = (coords: OverscaledTileID[], baseDefines: DynamicDefinesType[], depthMode: DepthMode, stencilMode3D: StencilMode, elevated: boolean, firstPass: boolean) => {
         for (const coord of coords) {
             const tile = sourceCache.getTile(coord);
@@ -343,22 +358,48 @@ function drawLineTiles(painter: Painter, sourceCache: SourceCache, layer: LineSt
                 programConfiguration.updatePaintBuffers();
             }
 
-            if (elevated) {
+            if (elevated && !renderElevatedRoads) {
                 assert(painter.terrain);
                 painter.terrain.setupElevationDraw(tile, program);
             }
             painter.uploadCommonUniforms(context, program, coord.toUnwrapped());
 
-            const renderLine = (stencilMode: StencilMode) => {
+            // FRC coverage routing (snapshot lookup, polygon-geometry probe, second-pass
+            // collector push) lives in HD. When HD is not loaded, snapshot is null →
+            // detect returns null → renderLine/fade pass below skip the FRC paths.
+            const frcCtx = HD.drawLineFrcCoverageDetect ?
+                HD.drawLineFrcCoverageDetect(painter, bucket, coord, elevated,
+                    uniformValues, programConfiguration, program, depthMode, colorMode,
+                    polygonCoverageTiles) :
+                null;
+            const drawWithSegments = (stencilMode: StencilMode, segs: SegmentVector | undefined, opacityMultiplier?: number) => {
+                if (!segs || segs.get().length === 0) return;
                 if (lineOpacityForOcclusion != null) {
                     lineOpacityForOcclusion.value = lineOpacity * occlusionOpacity;
                 }
+                if (opacityMultiplier !== undefined) {
+                    uniformValues['u_opacity_multiplier'] = opacityMultiplier;
+                }
                 program.draw(painter, gl.TRIANGLES, depthMode,
                     stencilMode, colorMode, CullFaceMode.disabled, uniformValues,
-                    layer.id, bucket.layoutVertexBuffer, bucket.indexBuffer, bucket.segments,
+                    layer.id, bucket.layoutVertexBuffer, bucket.indexBuffer, segs,
                     layer.paint, painter.transform.zoom, programConfiguration, [bucket.layoutVertexBuffer2, bucket.patternVertexBuffer, bucket.zOffsetVertexBuffer, bucket.elevationIdColVertexBuffer, bucket.elevationGroundScaleVertexBuffer]);
+                if (opacityMultiplier !== undefined) {
+                    uniformValues['u_opacity_multiplier'] = 1.0;
+                }
                 if (lineOpacityForOcclusion != null) {
                     lineOpacityForOcclusion.value = lineOpacity; //restore
+                }
+            };
+
+            // First-pass renderLine: draws "above" content. Per-level FRC dispatch (zero
+            // alloc — N extra draw calls per uncovered level) is delegated to HD when
+            // active. Otherwise the plain draw runs.
+            const renderLine = (stencilMode: StencilMode) => {
+                if (frcCtx && frcCtx.active && HD.drawLineFrcRenderLine) {
+                    HD.drawLineFrcRenderLine(bucket, frcCtx, stencilMode, drawWithSegments);
+                } else {
+                    drawWithSegments(stencilMode, bucket.segments);
                 }
             };
 
@@ -394,6 +435,13 @@ function drawLineTiles(painter: Painter, sourceCache: SourceCache, layer: LineSt
                 }
                 renderLine(elevated ? stencilMode3D : painter.stencilModeForClipping(coord));
             }
+            // FRC fade pass for full-tile coverage (Case A): render covered segments at
+            // faded opacity. Skipped by HD when partial polygon coverage applies (handled
+            // by the second pass below).
+            if (frcCtx && HD.drawLineFrcFadePass) {
+                HD.drawLineFrcFadePass(painter, bucket, coord, frcCtx, elevated, stencilMode3D, drawWithSegments);
+            }
+
             // Restore floorwidth paint property after draw
             if (savedFloorwidth !== undefined) {
                 widthProperty.value.value = savedFloorwidth;
@@ -440,13 +488,22 @@ function drawLineTiles(painter: Painter, sourceCache: SourceCache, layer: LineSt
 
         // No need for tile clipping, a single pass only even for transparent lines.
         const stencilMode3D = useStencilMaskRenderPass ? painter.stencilModeFor3D() : StencilMode.disabled;
-        painter.forceTerrainMode = true;
+        if (elevationReference !== 'hd-road-markup') {
+            painter.forceTerrainMode = true;
+        }
         renderTiles(coords, definesValues, depthMode, stencilMode3D, true, true);
         if (useStencilMaskRenderPass) {
             renderTiles(coords, definesValues, depthMode, stencilMode3D, true, false);
         }
         // It is important that this precedes resetStencilClippingMasks as in gl-js we don't clear stencil for terrain.
-        painter.forceTerrainMode = false;
+        if (elevationReference !== 'hd-road-markup') {
+            painter.forceTerrainMode = false;
+        }
+    }
+
+    // Second pass: per-FRC-level stencil passes for polygon coverage
+    if (HD.drawLineFrcCoverageSecondPass) {
+        HD.drawLineFrcCoverageSecondPass(painter, layer, polygonCoverageTiles);
     }
 
     // When rendering to stencil, reset the mask to make sure that the tile

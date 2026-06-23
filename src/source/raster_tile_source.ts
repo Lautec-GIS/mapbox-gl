@@ -1,4 +1,4 @@
-import {getExpiryDataFromHeaders, pick} from '../util/util';
+import {parseExpiryData, pick} from '../util/util';
 import {getImage, ResourceType} from '../util/ajax';
 import {Event, ErrorEvent, Evented} from '../util/evented';
 import loadTileJSON, {parseTileJSONRequest} from './load_tilejson';
@@ -19,7 +19,6 @@ import type Tile from './tile';
 import type {Callback} from '../types/callback';
 import type {Cancelable} from '../types/cancelable';
 import type {TileJSON} from '../types/tilejson';
-import type {RequestParameters} from '../util/ajax';
 import type {
     RasterSourceSpecification,
     RasterDEMSourceSpecification,
@@ -98,7 +97,7 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
         this.tileSize = 512;
         this._loaded = false;
 
-        this._options = Object.assign({type: 'raster'}, options);
+        this._options = {type: 'raster', ...options};
         Object.assign(this, pick(options, ['url', 'scheme', 'tileSize']));
     }
 
@@ -161,35 +160,35 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
 
     loadTileJSONWithProvider(tileProvider: {name: string; url: string}, callback: Callback<TileJSON>): Cancelable {
         this.provider = tileProvider.name;
-        const {request, options} = parseTileJSONRequest(this._options, this.map._requestManager);
-
         const controller = new AbortController();
-        loadTileProvider(tileProvider.name, tileProvider.url)
-            .then((ProviderClass) => {
+
+        const load = async () => {
+            const {request, options} = await parseTileJSONRequest(this._options, this.map._requestManager, controller.signal);
+            if (controller.signal.aborted) return;
+
+            const ProviderClass = await loadTileProvider(tileProvider.name, tileProvider.url);
+            if (controller.signal.aborted) return;
+
+            const provider = new ProviderClass(options);
+            let tileJSON: Partial<TileJSON> | null = null;
+            if (provider.load && request) {
+                tileJSON = await provider.load({request});
                 if (controller.signal.aborted) return;
-                const provider = new ProviderClass(options);
-                if (provider.load && request) {
-                    return provider.load({request}).then(tileJSON => {
-                        this._tileProvider = provider;
-                        return tileJSON;
-                    });
-                }
-                this._tileProvider = provider;
-                return null;
-            })
-            .then((tileJSON) => {
-                if (controller.signal.aborted) return;
-                const result = processTileJSON(this._options, tileJSON, this.map._requestManager);
-                if (result instanceof Error) {
-                    callback(result);
-                } else {
-                    callback(null, result);
-                }
-            })
-            .catch((err) => {
-                if (controller.signal.aborted) return;
-                callback(err instanceof Error ? err : new Error(String(err)));
-            });
+            }
+            this._tileProvider = provider;
+
+            const result = processTileJSON(this._options, tileJSON, this.map._requestManager);
+            if (result instanceof Error) {
+                callback(result);
+            } else {
+                callback(null, result);
+            }
+        };
+
+        load().catch((err) => {
+            if (controller.signal.aborted) return;
+            callback(new Error(`Could not load tile provider ${tileProvider.name}`, {cause: err}));
+        });
 
         return {cancel: () => controller.abort()};
     }
@@ -264,59 +263,65 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
     }
 
     serialize(): RasterSourceSpecification | RasterDEMSourceSpecification | RasterArraySourceSpecification {
-        return Object.assign({}, this._options);
+        return {...this._options};
     }
 
     hasTile(tileID: OverscaledTileID): boolean {
         return !this.tileBounds || this.tileBounds.contains(tileID.canonical);
     }
 
-    loadTile(tile: Tile, callback: Callback<undefined>) {
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    async loadTile(tile: Tile, callback: Callback<undefined>): Promise<void> {
         const use2x = browser.devicePixelRatio >= 2;
         const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), use2x, this.tileSize);
-        const request = this.map._requestManager.transformRequest(url, ResourceType.Tile);
+        const controller = new AbortController();
+        tile.request = controller;
 
         if (this._tileProvider) {
-            const controller = new AbortController();
-            tile.request = {cancel: () => controller.abort()};
             // eslint-disable-next-line @typescript-eslint/no-floating-promises
-            this.loadTileWithProvider(tile, this._tileProvider, request, controller, callback);
+            this.loadTileWithProvider(tile, this._tileProvider, url, controller, callback);
         } else {
-            tile.request = getImage(request, (error, data, responseHeaders) => {
-                delete tile.request;
-
-                if (tile.aborted) {
-                    tile.state = 'unloaded';
+            try {
+                const request = await this.map._requestManager.transformRequest(url, ResourceType.Tile, controller.signal);
+                if (controller.signal.aborted) {
+                    delete tile.request;
                     return callback(null);
                 }
 
-                if (error) {
-                    tile.state = 'errored';
-                    return callback(error);
-                }
+                const {data, headers} = await getImage(request, controller.signal);
+                delete tile.request;
 
-                if (!data) return callback(null);
+                // A cancelled request rejects AbortError and lands in the catch, so only tile.aborted
+                // can reach here.
+                if (tile.aborted) return callback(null);
 
-                const expiryData = getExpiryDataFromHeaders(responseHeaders);
+                const expiryData = parseExpiryData(headers);
                 if (this.map._refreshExpiredTiles) tile.setExpiryData(expiryData);
                 tile.setTexture(data, this.map.painter);
                 tile.state = 'loaded';
 
                 cacheEntryPossiblyAdded(this.dispatcher);
                 callback(null);
-            });
+            } catch (err) {
+                delete tile.request;
+
+                if (controller.signal.aborted) return callback(null);
+
+                tile.state = 'errored';
+                callback(err as Error);
+            }
         }
     }
 
-    async loadTileWithProvider(tile: Tile, provider: TileProvider<ArrayBuffer | ImageBitmap>, request: RequestParameters, controller: AbortController, callback: Callback<undefined>) {
+    async loadTileWithProvider(tile: Tile, provider: TileProvider<ArrayBuffer | ImageBitmap>, url: string, controller: AbortController, callback: Callback<undefined>) {
         const {z, x, y} = tile.tileID.canonical;
         try {
+            const request = await this.map._requestManager.transformRequest(url, ResourceType.Tile, controller.signal);
+            if (controller.signal.aborted) return callback(null);
+
             const response = await provider.loadTile({z, x, y}, {request, signal: controller.signal});
 
-            if (controller.signal.aborted) {
-                tile.state = 'unloaded';
-                return callback(null);
-            }
+            if (controller.signal.aborted) return callback(null);
 
             if (response == null) {
                 const err: Error & {status?: number} = new Error('Tile not found');
@@ -334,10 +339,7 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
                 response.data :
                 await createImageBitmap(new Blob([response.data]));
 
-            if (controller.signal.aborted) {
-                tile.state = 'unloaded';
-                return callback(null);
-            }
+            if (controller.signal.aborted) return callback(null);
 
             tile.setTexture(imageBitmap, this.map.painter);
             tile.state = 'loaded';
@@ -353,17 +355,9 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
             // it's not yet integrated with the cache management.
             callback(null);
         } catch (err) {
-            if (controller.signal.aborted) {
-                tile.state = 'unloaded';
-                return callback(null);
-            }
-            if (err instanceof DOMException && err.name === 'AbortError') {
-                tile.state = 'unloaded';
-                return callback(null);
-            }
+            if (controller.signal.aborted) return callback(null);
             tile.state = 'errored';
-            // eslint-disable-next-line @typescript-eslint/no-base-to-string
-            callback(err instanceof Error ? err : new Error(String(err)));
+            callback(new Error(`Could not load tile from ${url}`, {cause: err}));
         } finally {
             delete tile.request;
         }
@@ -371,7 +365,7 @@ class RasterTileSource<T = 'raster'> extends Evented<SourceEvents> implements IS
 
     abortTile(tile: Tile, callback?: Callback<undefined>) {
         if (tile.request) {
-            tile.request.cancel();
+            tile.request.abort();
             delete tile.request;
         }
         if (callback) callback();

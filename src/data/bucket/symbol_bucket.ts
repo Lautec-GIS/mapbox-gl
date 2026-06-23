@@ -107,6 +107,7 @@ export type AppearanceFeatureData = {
     // Optional because these are only ever assigned on the main thread; the
     // worker doesn't need to serialize empty placeholders.
     layoutBasedIconVertexData?: Uint16Array;
+    layoutBasedIconTransitioningVertexData?: Uint16Array;
     layoutBasedTextVertexData?: Uint16Array;
 
     // Mutable render state — updated every frame by updateAppearances() on the main thread.
@@ -299,6 +300,9 @@ function containsRTLText(formattedText: Formatted): boolean {
 // Layout: [tileAnchorX, tileAnchorY, ox, oy, tx, ty, aSizeX, aSizeY, pixelOffsetX, pixelOffsetY, minFontScaleX, minFontScaleY]
 const SYMBOL_VERTEX_STRIDE = 12;
 
+// Number of uint16 values per vertex in SymbolIconTransitioningArray (a_texb: [tx, ty]).
+const ICON_TRANSITIONING_STRIDE = 2;
+
 export class SymbolBuffers {
     layoutVertexArray: SymbolLayoutArray;
     layoutVertexBuffer: VertexBuffer;
@@ -332,7 +336,7 @@ export class SymbolBuffers {
     symbolInstanceIndices: number[];
 
     uboBinder: SymbolPropertyBinderUBO | null;
-    featureIdArray: StructArrayLayout1f4 | null | undefined;
+    featureIdArray: StructArrayLayout1f4;
     featureIdBuffer: VertexBuffer | null;
 
     cachedBatchIndices: number[] | null;
@@ -431,6 +435,15 @@ export class SymbolBuffers {
         this.layoutVertexArray.uint16.set(snapshot, offset * SYMBOL_VERTEX_STRIDE);
     }
 
+    snapshotIconTransitioningVertexData(offset: number, numVertices: number): Uint16Array {
+        const start = offset * ICON_TRANSITIONING_STRIDE;
+        return this.iconTransitioningVertexArray.uint16.slice(start, start + numVertices * ICON_TRANSITIONING_STRIDE);
+    }
+
+    restoreIconTransitioningVertexData(offset: number, snapshot: Uint16Array) {
+        this.iconTransitioningVertexArray.uint16.set(snapshot, offset * ICON_TRANSITIONING_STRIDE);
+    }
+
     updateSymbolVertexData(vertexIndex: number, anchorX: number, anchorY: number, newOx: number, newOy: number, newTx: number, newTy: number, newSizeX: number, newSizeY: number, pixelOffsetX: number, pixelOffsetY: number, minFontScaleX: number, minFontScaleY: number) {
         assert(vertexIndex >= 0 && vertexIndex < this.layoutVertexArray.length, 'Invalid vertex start index');
 
@@ -482,7 +495,7 @@ export class SymbolBuffers {
             // even though the shaders read uint8s
             this.opacityVertexBuffer.itemSize = 1;
 
-            if (this.featureIdArray && this.featureIdArray.length > 0) {
+            if (this.featureIdArray.length > 0) {
                 this.featureIdBuffer = context.createVertexBuffer(this.featureIdArray, featureIdAttributes.members, false);
             }
         }
@@ -688,7 +701,6 @@ class SymbolBucket implements Bucket {
     localizable: boolean;
     maxUniformBufferBindings: number | null | undefined;
     maxUniformBlockSizeDwords: number | null | undefined;
-    disableSymbolUBO: boolean | null | undefined;
     iconAtlasPositions: ImagePositionMap;
     hasAppearances: boolean | null;
     featureAppearances: FeatureAppearances | null;
@@ -719,7 +731,6 @@ class SymbolBucket implements Bucket {
         this.localizable = options.localizable;
         this.maxUniformBufferBindings = options.maxUniformBufferBindings;
         this.maxUniformBlockSizeDwords = options.maxUniformBlockSizeDwords;
-        this.disableSymbolUBO = options.disableSymbolUBO;
 
         this.textSizeData = getSizeData(this.zoom, unevaluatedLayoutValues['text-size'], this.worldview, options.availableImages);
 
@@ -791,10 +802,8 @@ class SymbolBucket implements Bucket {
             })
         );
 
-        if (!this.disableSymbolUBO) {
-            this.text.uboBinder = new SymbolPropertyBinderUBO(this.layers[0], this.zoom, this.lut, true, '', this.maxUniformBufferBindings, this.maxUniformBlockSizeDwords);
-            this.icon.uboBinder = new SymbolPropertyBinderUBO(this.layers[0], this.zoom, this.lut, false, '', this.maxUniformBufferBindings, this.maxUniformBlockSizeDwords);
-        }
+        this.text.uboBinder = new SymbolPropertyBinderUBO(this.layers[0], this.zoom, this.lut, true, '', this.maxUniformBufferBindings, this.maxUniformBlockSizeDwords);
+        this.icon.uboBinder = new SymbolPropertyBinderUBO(this.layers[0], this.zoom, this.lut, false, '', this.maxUniformBufferBindings, this.maxUniformBlockSizeDwords);
 
         this.glyphOffsetArray = new GlyphOffsetArray();
         this.lineVertexArray = new SymbolLineVertexArray();
@@ -1058,9 +1067,13 @@ class SymbolBucket implements Bucket {
                 appearances.forEach(a => {
                     const iconImage = a.getLayoutProperty('icon-image');
                     if (!iconImage) return;
-                    const iconPrimary = this.getCombinedIconPrimary(a, symbolLayer, evaluationFeature, canonical, availableImages, symbolFeature, iconScaleFactor);
+                    const {iconPrimary, iconSecondary} = this.getCombinedIconVariants(a, symbolLayer, evaluationFeature, canonical, availableImages, symbolFeature, iconScaleFactor);
                     if (!iconPrimary) return;
                     addImageVariantToIcons(iconPrimary);
+                    if (iconSecondary) {
+                        this.hasAnySecondaryIcon = true;
+                        addImageVariantToIcons(iconSecondary);
+                    }
                 });
             }
 
@@ -1111,11 +1124,10 @@ class SymbolBucket implements Bucket {
         }
     }
 
-    getCombinedIconPrimary(appearance: SymbolAppearance, layer: SymbolStyleLayer, evaluationFeature: EvaluationFeature, canonical: CanonicalTileID, availableImages: ImageId[],
+    getCombinedIconVariants(appearance: SymbolAppearance, layer: SymbolStyleLayer, evaluationFeature: EvaluationFeature, canonical: CanonicalTileID, availableImages: ImageId[],
         symbolFeature: SymbolFeature, iconScaleFactor: number
-    ): ImageVariant | undefined {
+    ): {iconPrimary: ImageVariant | undefined; iconSecondary: ImageVariant | undefined} {
         let icon: ResolvedImage;
-        let iconPrimary: ImageVariant;
         if (appearance.hasLayoutProperty('icon-image')) {
             const resolvedTokens = layer.getAppearanceValueAndResolveTokens(appearance, 'icon-image', evaluationFeature, canonical, availableImages);
             icon = this.getResolvedImageFromTokens(resolvedTokens as string);
@@ -1129,11 +1141,17 @@ class SymbolBucket implements Bucket {
                 appearance.getUnevaluatedLayoutProperty('icon-size') :
                 layer._unevaluatedLayout._values['icon-size']) as PropertyValue<number, PossiblyEvaluatedPropertyValue<number>>;
             const iconSizeData = getSizeData(this.zoom, unevaluatedIconSize, this.worldview, availableImages);
-            const imageVariant = getScaledImageVariant(icon, iconSizeData, unevaluatedIconSize, canonical, this.zoom, symbolFeature, this.pixelRatio, iconScaleFactor, this.worldview, availableImages);
-            iconPrimary = imageVariant.iconPrimary;
+            const {iconPrimary, iconSecondary} = getScaledImageVariant(icon, iconSizeData, unevaluatedIconSize, canonical, this.zoom, symbolFeature, this.pixelRatio, iconScaleFactor, this.worldview, availableImages);
+            return {iconPrimary, iconSecondary};
         }
 
-        return iconPrimary;
+        return {iconPrimary: undefined, iconSecondary: undefined};
+    }
+
+    getCombinedIconPrimary(appearance: SymbolAppearance, layer: SymbolStyleLayer, evaluationFeature: EvaluationFeature, canonical: CanonicalTileID, availableImages: ImageId[],
+        symbolFeature: SymbolFeature, iconScaleFactor: number
+    ): ImageVariant | undefined {
+        return this.getCombinedIconVariants(appearance, layer, evaluationFeature, canonical, availableImages, symbolFeature, iconScaleFactor).iconPrimary;
     }
 
     private updateSymbolInstanceIconVertices(
@@ -1167,7 +1185,7 @@ class SymbolBucket implements Bucket {
                 id: featureData.id
             };
 
-            const iconPrimary = this.getCombinedIconPrimary(activeAppearance, layer, evaluationFeature, canonical, availableImages, minimalFeature, iconScaleFactor);
+            const {iconPrimary, iconSecondary} = this.getCombinedIconVariants(activeAppearance, layer, evaluationFeature, canonical, availableImages, minimalFeature, iconScaleFactor);
             if (!iconPrimary) return {vertexOffsetDelta: 0, hasChanges: false};
 
             const primaryImageSerialized = iconPrimary.toString();
@@ -1177,7 +1195,10 @@ class SymbolBucket implements Bucket {
                 // Get values from appearance and fallback to layout ones
                 const {appearanceIconOffset: iconOffset, appearanceIconRotate: iconRotate} = getAppearanceIconValues(activeAppearance, layer, evaluationFeature as SymbolFeature, canonical, layoutIconOffset, layoutIconRotate, layoutIconSize, iconScaleFactor);
                 const iconAnchor = layer.layout.get('icon-anchor').evaluate(evaluationFeature, featureState, canonical);
-                let shapedIcon = shapeIcon(position, undefined, iconOffset, iconAnchor);
+
+                // Resolve secondary position for cross-fade support
+                const secondaryPosition = iconSecondary ? (this.iconAtlasPositions && this.iconAtlasPositions.get(iconSecondary.toString())) : undefined;
+                let shapedIcon = shapeIcon(position, secondaryPosition, iconOffset, iconAnchor);
 
                 const isSDFIcon = position.sdf;
                 // Get icon-text-fit from layout since we don't support it in appearances
@@ -1205,10 +1226,15 @@ class SymbolBucket implements Bucket {
                 // Generate new icon quads with updated texture coordinates and size
                 const iconQuads = getIconQuads(shapedIcon, iconRotate, isSDFIcon, iconTextFit !== 'none', iconScaleFactor);
 
+                const hasTransitioning = this.icon.iconTransitioningVertexArray.length > 0;
+
                 // Store the layout-based vertex data to restore it later if it's the first time we use an appearance for this feature
                 if (!featureData.isUsingAppearanceIconVertexData) {
                     featureData.isUsingAppearanceIconVertexData = true;
                     featureData.layoutBasedIconVertexData = this.icon.snapshotSymbolVertexData(vertexOffset, symbolInstance.numIconVertices);
+                    if (hasTransitioning) {
+                        featureData.layoutBasedIconTransitioningVertexData = this.icon.snapshotIconTransitioningVertexData(vertexOffset, symbolInstance.numIconVertices);
+                    }
                 }
 
                 // Update vertex data - only update as many quads as were allocated during layout
@@ -1216,6 +1242,7 @@ class SymbolBucket implements Bucket {
                 const quadsToUpdate = Math.min(iconQuads.length, maxQuads);
 
                 let currentVertexOffset = vertexOffset;
+                const transitioningUint16 = hasTransitioning ? this.icon.iconTransitioningVertexArray.uint16 : null;
                 for (let j = 0; j < quadsToUpdate; ++j) {
                     const quad = iconQuads[j];
 
@@ -1235,6 +1262,21 @@ class SymbolBucket implements Bucket {
                     this.icon.updateSymbolVertexData(currentVertexOffset + 1, anchorX, anchorY, Math.round(quad.tr.x * 32), Math.round(quad.tr.y * 32), quad.texPrimary.x + quad.texPrimary.w, quad.texPrimary.y, newSizeX, newSizeY, pixelOffsetBRX, pixelOffsetTLY, minFontScaleX, minFontScaleY);
                     this.icon.updateSymbolVertexData(currentVertexOffset + 2, anchorX, anchorY, Math.round(quad.bl.x * 32), Math.round(quad.bl.y * 32), quad.texPrimary.x, quad.texPrimary.y + quad.texPrimary.h, newSizeX, newSizeY, pixelOffsetTLX, pixelOffsetBRY, minFontScaleX, minFontScaleY);
                     this.icon.updateSymbolVertexData(currentVertexOffset + 3, anchorX, anchorY, Math.round(quad.br.x * 32), Math.round(quad.br.y * 32), quad.texPrimary.x + quad.texPrimary.w, quad.texPrimary.y + quad.texPrimary.h, newSizeX, newSizeY, pixelOffsetBRX, pixelOffsetBRY, minFontScaleX, minFontScaleY);
+
+                    // Update secondary (cross-fade) texture coords: fall back to primary when no secondary.
+                    if (transitioningUint16) {
+                        const tex = quad.texSecondary ? quad.texSecondary : quad.texPrimary;
+                        const base = currentVertexOffset * ICON_TRANSITIONING_STRIDE;
+                        transitioningUint16[base]     = tex.x;
+                        transitioningUint16[base + 1] = tex.y;
+                        transitioningUint16[base + 2] = tex.x + tex.w;
+                        transitioningUint16[base + 3] = tex.y;
+                        transitioningUint16[base + 4] = tex.x;
+                        transitioningUint16[base + 5] = tex.y + tex.h;
+                        transitioningUint16[base + 6] = tex.x + tex.w;
+                        transitioningUint16[base + 7] = tex.y + tex.h;
+                    }
+
                     currentVertexOffset += 4;
                 }
 
@@ -1259,6 +1301,9 @@ class SymbolBucket implements Bucket {
         } else if (featureData.isUsingAppearanceIconVertexData) {
             // No active appearance but vertex buffer still holds appearance data — restore original layout vertices.
             this.icon.restoreSymbolVertexData(vertexOffset, featureData.layoutBasedIconVertexData);
+            if (featureData.layoutBasedIconTransitioningVertexData) {
+                this.icon.restoreIconTransitioningVertexData(vertexOffset, featureData.layoutBasedIconTransitioningVertexData);
+            }
             featureData.isUsingAppearanceIconVertexData = false;
             return {vertexOffsetDelta: featureData.layoutBasedIconVertexData.length / SYMBOL_VERTEX_STRIDE, hasChanges: true};
         }
@@ -1394,26 +1439,10 @@ class SymbolBucket implements Bucket {
             // Skip when all data-driven properties are light-constant: brightness doesn't affect
             // stored UBO values in that case (constant uniforms handle the rendering adjustment).
             if (isBrightnessChanged) {
-                if (this.text.uboBinder && !this.text.uboBinder.isLightConstant) {
-                    this.text.uboBinder.updateDynamicExpressions(
-                        layers[0] as SymbolStyleLayer,
-                        vtLayer,
-                        canonical,
-                        availableImages,
-                        states,
-                        brightness
-                    );
-                }
-
-                if (this.icon.uboBinder && !this.icon.uboBinder.isLightConstant) {
-                    this.icon.uboBinder.updateDynamicExpressions(
-                        layers[0] as SymbolStyleLayer,
-                        vtLayer,
-                        canonical,
-                        availableImages,
-                        states,
-                        brightness
-                    );
+                for (const binder of [this.text.uboBinder, this.icon.uboBinder]) {
+                    if (binder && !binder.isLightConstant) {
+                        binder.updateDynamicExpressions(layers[0] as SymbolStyleLayer, vtLayer, canonical, availableImages, states, brightness);
+                    }
                 }
             } else if (Object.keys(states).length > 0) {
                 // Update specific features when feature-state changes.
@@ -1422,10 +1451,9 @@ class SymbolBucket implements Bucket {
                 // updateFeaturePaintForAppearance below, so updateFeatures would only
                 // re-evaluate values that are about to be overwritten with the same data.
                 const symbolLayer = layers[0] as SymbolStyleLayer;
-                const textNeedsUpdate = this.text.uboBinder && this.text.uboBinder.hasStateDependentPaint(symbolLayer);
-                const iconNeedsUpdate = this.icon.uboBinder && this.icon.uboBinder.hasStateDependentPaint(symbolLayer);
+                const binders = [this.text.uboBinder, this.icon.uboBinder].filter(b => b && b.hasStateDependentPaint(symbolLayer));
 
-                if (textNeedsUpdate || iconNeedsUpdate) {
+                if (binders.length > 0) {
                     const featureIds = new Set<string | number>(Object.keys(states).map(id => {
                         // Convert to number only if it's a safe integer to avoid precision loss
                         const numId = Number(id);
@@ -1435,28 +1463,8 @@ class SymbolBucket implements Bucket {
                         return id;
                     }));
 
-                    if (textNeedsUpdate) {
-                        this.text.uboBinder.updateFeatures(
-                            featureIds,
-                            symbolLayer,
-                            vtLayer,
-                            canonical,
-                            availableImages,
-                            states,
-                            brightness
-                        );
-                    }
-
-                    if (iconNeedsUpdate) {
-                        this.icon.uboBinder.updateFeatures(
-                            featureIds,
-                            symbolLayer,
-                            vtLayer,
-                            canonical,
-                            availableImages,
-                            states,
-                            brightness
-                        );
+                    for (const binder of binders) {
+                        binder.updateFeatures(featureIds, symbolLayer, vtLayer, canonical, availableImages, states, brightness);
                     }
                 }
             }
@@ -1615,6 +1623,8 @@ class SymbolBucket implements Bucket {
             }
         }
 
+        const uboBinders = [this.text.uboBinder, this.icon.uboBinder];
+
         for (let s = 0; s < this.symbolInstances.length; s++) {
             const symbolInstance = this.symbolInstances.get(s);
             const featureData = this.getAppearanceFeatureData(symbolInstance.featureIndex);
@@ -1691,17 +1701,12 @@ class SymbolBucket implements Bucket {
                 const brightness = globalProperties ? globalProperties.brightness : null;
                 const fState = featureStateForThis || {};
                 const activeAppearance = activeAppearanceIndex >= 0 ? layer.appearances[activeAppearanceIndex] : null;
-                if (this.text.uboBinder) {
+                for (const binder of uboBinders) {
+                    if (!binder) continue;
                     // updateDynamicExpressions/updateFeatures, which set the layer, may not have
                     // been called for zoom/pitch-only condition changes so we do it here
-                    this.text.uboBinder.layer = layer;
-                    hasUboChanges = this.text.uboBinder.updateFeaturePaintForAppearance(vtFeatureIndex, evaluationFeature, fState, canonical, availableImages, brightness, activeAppearance) || hasUboChanges;
-                }
-                if (this.icon.uboBinder) {
-                    // updateDynamicExpressions/updateFeatures, which set the layer, may not have
-                    // been called for zoom/pitch-only condition changes so we do it here
-                    this.icon.uboBinder.layer = layer;
-                    hasUboChanges = this.icon.uboBinder.updateFeaturePaintForAppearance(vtFeatureIndex, evaluationFeature, fState, canonical, availableImages, brightness, activeAppearance) || hasUboChanges;
+                    binder.layer = layer;
+                    hasUboChanges = binder.updateFeaturePaintForAppearance(vtFeatureIndex, evaluationFeature, fState, canonical, availableImages, brightness, activeAppearance) || hasUboChanges;
                 }
             }
 
@@ -1712,6 +1717,12 @@ class SymbolBucket implements Bucket {
         if (hasIconChanges && this.icon.layoutVertexBuffer && this.icon.layoutVertexArray.arrayBuffer !== null) {
             if (this.icon.layoutVertexArray.length === this.icon.layoutVertexBuffer.length) {
                 this.icon.layoutVertexBuffer.updateData(this.icon.layoutVertexArray);
+            }
+        }
+
+        if (hasIconChanges && this.icon.iconTransitioningVertexBuffer && this.icon.iconTransitioningVertexArray.length > 0) {
+            if (this.icon.iconTransitioningVertexArray.length === this.icon.iconTransitioningVertexBuffer.length) {
+                this.icon.iconTransitioningVertexBuffer.updateData(this.icon.iconTransitioningVertexArray);
             }
         }
 
@@ -1846,15 +1857,14 @@ class SymbolBucket implements Bucket {
                     arrays.programConfigurations.populatePaintArrays(layoutVertexArray.length, feature, feature.index, {}, availableImages, canonical, brightness, sections && sections[sectionIndex], this.worldview);
                 }
 
-                if (arrays.uboBinder && arrays.featureIdArray) {
+                if (arrays.uboBinder) {
                     const uboIndex = arrays.uboBinder.populateUBO(
                         feature,
                         feature.index,
                         canonical,
                         availableImages,
                         brightness,
-                        sections && sections[sectionIndex],
-                        undefined  // context not available on worker thread
+                        sections && sections[sectionIndex]
                     );
                     lastUboIndex = uboIndex; // Track for null vertex padding
                     // Add feature ID for each vertex in this section
@@ -1874,7 +1884,7 @@ class SymbolBucket implements Bucket {
             this._addNullVertices(remainingQuads, layoutVertexArray, sizeVertex, globe, globeExtVertexArray, arrays, hasAnySecondaryIcon, segment, indexArray);
 
             // Add feature IDs for null vertices so they share the last section's UBO entry
-            if (arrays.uboBinder && arrays.featureIdArray && lastUboIndex >= 0) {
+            if (arrays.uboBinder && lastUboIndex >= 0) {
                 const nullVertexCount = remainingQuads * 4; // 4 vertices per quad
                 for (let v = 0; v < nullVertexCount; v++) {
                     arrays.featureIdArray.emplaceBack(lastUboIndex);

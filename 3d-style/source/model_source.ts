@@ -12,7 +12,7 @@ import type Dispatcher from '../../src/util/dispatcher';
 import type {Map as MapboxMap} from '../../src/ui/map';
 import type {Callback} from '../../src/types/callback';
 import type {ISource, SourceEvents} from '../../src/source/source';
-import type {ModelMaterialOverrideSpecification, ModelNodeOverrideSpecification, ModelSourceModelSpecification, ModelSourceModelsSpecification, ModelSourceSpecification} from '../../src/style-spec/types';
+import type {ColorSpecification, ModelMaterialOverrideSpecification, ModelNodeOverrideSpecification, ModelSourceModelSpecification, ModelSourceModelsSpecification, ModelSourceSpecification} from '../../src/style-spec/types';
 
 type ModelSourceModelInfo = {
     modelSpec: ModelSourceModelSpecification;
@@ -99,8 +99,9 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
         }
     }
 
-    private loadGLTFFromURI(uri: string, signal?: AbortSignal): Promise<GLTF> {
-        return loadGLTF(this.map._requestManager.transformRequest(uri, ResourceType.Model).url, signal);
+    private async loadGLTFFromURI(uri: string, signal?: AbortSignal): Promise<GLTF> {
+        const request = await this.map._requestManager.transformRequest(uri, ResourceType.Model, signal);
+        return loadGLTF(request.url, signal);
     }
 
     private async loadModel(modelId: string, modelSpec: ModelSourceModelSpecification, signal: AbortSignal): Promise<void> {
@@ -120,9 +121,8 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
             this.models.push(model);
             modelInfo.model = model;
         } catch (err: unknown) {
-            if (err instanceof Error && err.name === 'AbortError') return;
-            const message = err instanceof Error ? err.message : 'Unknown error';
-            this.fire(new ErrorEvent(new Error(`Could not load model ${modelId} from ${modelSpec.uri}: ${message}`)));
+            if (signal.aborted) return;
+            this.fire(new ErrorEvent(new Error(`Could not load model ${modelId} from ${modelSpec.uri}`, {cause: err})));
         }
     }
 
@@ -167,6 +167,19 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
         this.fire(new Event('data', {dataType: 'source', sourceDataType: 'metadata'}));
     }
 
+    private static arrayFromColorSpecification(colorSpec: ColorSpecification | undefined) : [number, number, number] | undefined {
+        const colorValue = colorSpec as number[] | string | undefined;
+        if (colorValue === undefined) return undefined;
+        if (Array.isArray(colorValue)) {
+            return [colorValue[0], colorValue[1], colorValue[2]];
+        }
+        const convertedColor = Color.parse(colorValue);
+        if (convertedColor) {
+            return [convertedColor.r, convertedColor.g, convertedColor.b];
+        }
+        return undefined;
+    }
+
     private static applyModelSpecification(model: Model, modelSpec: ModelSourceModelSpecification) {
         if (modelSpec.nodeOverrides) {
             ModelSource.convertNodeOverrides(model, modelSpec.nodeOverrides);
@@ -182,6 +195,20 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
         }
         if (modelSpec.featureProperties) {
             model.featureProperties = modelSpec.featureProperties as Record<string, unknown>;
+        }
+        if (modelSpec['lightOverrides']) {
+            const lo = modelSpec['lightOverrides'] as Record<string, unknown>;
+            const ambientColor = ModelSource.arrayFromColorSpecification(lo['light-ambient-color'] as ColorSpecification | undefined);
+            const directionalColor = ModelSource.arrayFromColorSpecification(lo['light-directional-color'] as ColorSpecification | undefined);
+
+            model.lightOverrides = {
+                ambientIntensity: lo['light-ambient-intensity'] as number | undefined,
+                ambientColor,
+                directionalIntensity: lo['light-directional-intensity'] as number | undefined,
+                directionalColor,
+            };
+        } else {
+            model.lightOverrides = undefined;
         }
     }
 
@@ -199,7 +226,9 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
         Object.entries(overrides).forEach(([key, value]) => {
 
             const nodeOverride: NodeOverride = {
-                orientation: [0, 0, 0]
+                orientation: [0, 0, 0],
+                minZoom: undefined,
+                maxZoom: undefined
             };
 
             if (Object.hasOwn(value, 'orientation')) {
@@ -207,6 +236,12 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
                 if (orientation) {
                     nodeOverride.orientation = orientation;
                 }
+            }
+            if (Object.hasOwn(value, 'minzoom')) {
+                nodeOverride.minZoom = value['minzoom'] as number;
+            }
+            if (Object.hasOwn(value, 'maxzoom')) {
+                nodeOverride.maxZoom = value['maxzoom'] as number;
             }
 
             model.nodeOverrides.set(key, nodeOverride);
@@ -226,19 +261,13 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
         }
         Object.entries(overrides).forEach(([key, value]) => {
 
+            const modelColor = value['model-color'] as number[];
             const materialOverride: MaterialOverride = {
-                color: new Color(1, 1, 1),
+                color: modelColor !== undefined ? new Color(modelColor[0], modelColor[1], modelColor[2]) : new Color(1, 1, 1),
                 colorMix: 0,
                 emissionStrength: 0,
                 opacity: 1.0
             };
-
-            const modelColor = value['model-color'] as number[];
-            if (modelColor !== undefined) {
-                materialOverride.color.r = modelColor[0];
-                materialOverride.color.g = modelColor[1];
-                materialOverride.color.b = modelColor[2];
-            }
 
             const modelColorMixIntensity = value['model-color-mix-intensity'] as number;
             if (modelColorMixIntensity !== undefined) {

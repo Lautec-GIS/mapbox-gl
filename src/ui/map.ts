@@ -1,5 +1,5 @@
 import {version} from '../../package.json';
-import {asyncAll, deepEqual, bindAll, warnOnce, uniqueId, isSafariWithAntialiasingBug} from '../util/util';
+import {asyncAll, deepEqual, bindAll, warnOnce, uniqueId} from '../util/util';
 import browser from '../util/browser';
 import * as DOM from '../util/dom';
 import {getImage, ResourceType} from '../util/ajax';
@@ -29,7 +29,7 @@ import LngLat, {LngLatBounds} from '../geo/lng_lat';
 import Point from '@mapbox/point-geometry';
 import AttributionControl from './control/attribution_control';
 import LogoControl from './control/logo_control';
-import {supported} from '@mapbox/mapbox-gl-supported';
+import {webGLContextAttributes} from '@mapbox/mapbox-gl-supported';
 import {RGBAImage} from '../util/image';
 import {Event, ErrorEvent} from '../util/evented';
 import {MapMouseEvent} from './events';
@@ -401,7 +401,8 @@ const defaultOptions = {
  * When `'client'` (the default), each font in a comma-separated fontstack is loaded individually and missing glyphs are filled from subsequent fallback fonts on the client.
  * When `'server'`, the full fontstack string is passed as-is to the glyph server, which must support server-side fontstack composition.
  * @param {RequestTransformFunction} [options.transformRequest=null] A callback run before the Map makes a request for an external URL. The callback can be used to modify the url, set headers, or set the credentials property for cross-origin requests.
- * Expected to return a {@link RequestParameters} object with a `url` property and optionally `headers` and `credentials` properties.
+ * Expected to return a {@link RequestParameters} object with a `url` property and optionally `headers` and `credentials` properties, or a `Promise` resolving to one. Returning a `Promise` lets the callback resolve values asynchronously before each request, for example to refresh an auth token.
+ * The callback receives a third `options` argument with an optional `signal` ({@link AbortSignal}) that aborts when the request is cancelled.
  * @param {boolean} [options.collectResourceTiming=false] If `true`, Resource Timing API information will be collected for requests made by GeoJSON and Vector Tile web workers (this information is normally inaccessible from the main Javascript thread). Information will be returned in a `resourceTiming` property of relevant `data` events.
  * @param {number} [options.fadeDuration=300] Controls the duration of the fade-in/fade-out animation for label collisions, in milliseconds. This setting affects all symbol layers. This setting does not affect the duration of runtime styling transitions or raster tile cross-fading.
  * @param {boolean} [options.respectPrefersReducedMotion=true] If set to `true`, the map will respect the user's `prefers-reduced-motion` browser setting and apply a reduced motion mode, minimizing animations and transitions. When set to `false`, the map will always ignore the `prefers-reduced-motion` settings, regardless of the user's preference, making all animations essential.
@@ -442,6 +443,16 @@ const defaultOptions = {
  *                 credentials: 'include'  // Include cookies for cross-origin requests
  *             };
  *         }
+ *     }
+ * });
+ * @example
+ * const map = new mapboxgl.Map({
+ *     container: 'map',
+ *     style: 'mapbox://styles/mapbox/streets-v11',
+ *     // `transformRequest` may also be async: await a value, then return the rewritten request.
+ *     transformRequest: async (url, resourceType, options) => {
+ *         const token = await getFreshToken({signal: options && options.signal});
+ *         return {url: `${url}?token=${token}`};
  *     }
  * });
  * @see [Example: Display a map on a webpage](https://docs.mapbox.com/mapbox-gl-js/example/simple-map/)
@@ -597,7 +608,7 @@ export class Map extends Camera {
 
         const initialOptions = options;
 
-        options = Object.assign({}, defaultOptions, options);
+        options = {...defaultOptions, ...options};
 
         if (options.minZoom != null && options.maxZoom != null && options.minZoom > options.maxZoom) {
             throw new Error(`maxZoom must be greater than or equal to minZoom`);
@@ -613,12 +624,6 @@ export class Map extends Camera {
 
         if (options.maxPitch != null && options.maxPitch > defaultMaxPitch) {
             throw new Error(`maxPitch must be less than or equal to ${defaultMaxPitch}`);
-        }
-
-        // disable antialias with OS/iOS 15.4 and 15.5 due to rendering bug
-        if (options.antialias && isSafariWithAntialiasingBug(window)) {
-            options.antialias = false;
-            warnOnce('Antialiasing is disabled for this WebGL context to avoid browser bug: https://github.com/mapbox/mapbox-gl-js/issues/11609');
         }
 
         const transform = new Transform(options.minZoom, options.maxZoom, options.minPitch, options.maxPitch, options.renderWorldCopies, null, null);
@@ -647,7 +652,7 @@ export class Map extends Camera {
         this._markers = [];
         this._popups = [];
         this._mapId = uniqueId();
-        this._locale = Object.assign({}, defaultLocale, options.locale);
+        this._locale = {...defaultLocale, ...options.locale};
         this._clickTolerance = options.clickTolerance;
         this._cooperativeGestures = options.cooperativeGestures;
         this._performanceMetricsCollection = options.performanceMetricsCollection;
@@ -675,7 +680,7 @@ export class Map extends Camera {
         if (tokenData && 'atlas' in tokenData && typeof tokenData.atlas === 'number') this._tokenExpiration = tokenData.atlas;
         this._silenceAuthErrors = !!options.testMode;
         if (options.contextCreateOptions) {
-            this._contextCreateOptions = Object.assign({}, options.contextCreateOptions);
+            this._contextCreateOptions = {...options.contextCreateOptions};
         } else {
             this._contextCreateOptions = {};
         }
@@ -773,7 +778,7 @@ export class Map extends Camera {
             const bounds = options.bounds;
             if (bounds) {
                 this.resize();
-                this.fitBounds(bounds, Object.assign({}, options.fitBoundsOptions, {duration: 0}));
+                this.fitBounds(bounds, {...options.fitBoundsOptions, duration: 0});
             }
         }
 
@@ -1330,7 +1335,6 @@ export class Map extends Camera {
     /**
      * Returns the map's language, which is used for translating map labels and UI components.
      *
-     * @private
      * @returns {undefined | string | string[]} Returns the map's language code.
      * @example
      * const language = map.getLanguage();
@@ -1351,13 +1355,12 @@ export class Map extends Camera {
     /**
      * Sets the map's language, which is used for translating map labels and UI components.
      *
-     * @private
      * @param {'auto' | string | string[]} [language] A string representing the desired language used for the map's labels and UI components. Languages can only be set on Mapbox vector tile sources.
-     *  Valid language strings must be a [BCP-47 language code](https://en.wikipedia.org/wiki/IETF_language_tag#List_of_subtags). Unsupported BCP-47 codes will not include any translations. Invalid codes will result in an recoverable error.
-     *  If a label has no translation for the selected language, it will display in the label's local language.
-     *  If param is set to `auto`, GL JS will select a user's preferred language as determined by the browser's [`window.navigator.language`](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/language) property.
-     *  If the `locale` property is not set separately, this language will also be used to localize the UI for supported languages.
-     *  If param is set to `undefined` or `null`, it will remove the current map language and reset the language used for translating map labels and UI components.
+     * Valid language strings must be a [BCP-47 language code](https://en.wikipedia.org/wiki/IETF_language_tag#List_of_subtags). Unsupported BCP-47 codes will not include any translations. Invalid codes will result in an recoverable error.
+     * If a label has no translation for the selected language, it will display in the label's local language.
+     * If param is set to `auto`, GL JS will select a user's preferred language as determined by the browser's [`window.navigator.language`](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/language) property.
+     * If the `locale` property is not set separately, this language will also be used to localize the UI for supported languages.
+     * If param is set to `undefined` or `null`, it will remove the current map language and reset the language used for translating map labels and UI components.
      * @returns {Map} Returns itself to allow for method chaining.
      * @example
      * map.setLanguage('es');
@@ -1390,7 +1393,6 @@ export class Map extends Camera {
     /**
      * Returns the code for the map's worldview.
      *
-     * @private
      * @returns {string} Returns the map's worldview code.
      * @example
      * const worldview = map.getWorldview();
@@ -1402,12 +1404,11 @@ export class Map extends Camera {
     /**
      * Sets the map's worldview.
      *
-     * @private
      * @param {string} [worldview] A string representing the desired worldview.
-     *  A worldview determines the way that certain disputed boundaries are rendered.
-     *  Valid worldview strings must be an [ISO alpha-2 country code](https://en.wikipedia.org/wiki/ISO_3166-1#Current_codes).
-     *  Unsupported ISO alpha-2 codes will fall back to the TileJSON's default worldview. Invalid codes will result in a recoverable error.
-     *  If param is set to `undefined` or `null`, it will cause the map to fall back to the TileJSON's default worldview.
+     * A worldview determines the way that certain disputed boundaries are rendered.
+     * Valid worldview strings must be an [ISO alpha-2 country code](https://en.wikipedia.org/wiki/ISO_3166-1#Current_codes).
+     * Unsupported ISO alpha-2 codes will fall back to the TileJSON's default worldview. Invalid codes will result in a recoverable error.
+     * If param is set to `undefined` or `null`, it will cause the map to fall back to the TileJSON's default worldview.
      * @returns {Map} Returns itself to allow for method chaining.
      * @example
      * map.setWorldview('JP');
@@ -2340,7 +2341,7 @@ export class Map extends Camera {
      * });
      */
     setStyle(style: StyleSpecification | string | null, options?: SetStyleOptions): this {
-        options = Object.assign({}, {localIdeographFontFamily: this._localIdeographFontFamily, localFontFamily: this._localFontFamily, fontstackCompositing: this._fontstackCompositing}, options);
+        options = {localIdeographFontFamily: this._localIdeographFontFamily, localFontFamily: this._localFontFamily, fontstackCompositing: this._fontstackCompositing, ...options};
 
         const diffNeeded =
             options.diff !== false &&
@@ -2394,7 +2395,7 @@ export class Map extends Camera {
         if (style) {
             // Move SetStyleOptions's `config` property to
             // StyleOptions's `initialConfig` for internal use
-            const styleOptions: StyleOptions = Object.assign({}, options);
+            const styleOptions: StyleOptions = {...options};
             if (options && options.config) {
                 styleOptions.initialConfig = options.config;
                 delete styleOptions.config;
@@ -2850,9 +2851,12 @@ export class Map extends Camera {
      * @see [Example: Add an icon to the map](https://www.mapbox.com/mapbox-gl-js/example/add-image/)
      */
     loadImage(url: string, callback: Callback<ImageBitmap | HTMLImageElement | ImageData>) {
-        getImage(this._requestManager.transformRequest(url, ResourceType.Image), (err, img) => {
-            callback(err, img);
-        });
+        const load = async () => {
+            const request = await this._requestManager.transformRequest(url, ResourceType.Image);
+            const {data} = await getImage(request);
+            return data;
+        };
+        load().then((data) => callback(null, data)).catch(callback);
     }
 
     /**
@@ -4329,11 +4333,9 @@ export class Map extends Camera {
     }
 
     _setupPainter() {
-        const attributes = Object.assign({}, supported.webGLContextAttributes, {
-            failIfMajorPerformanceCaveat: this._failIfMajorPerformanceCaveat,
+        const attributes = {...webGLContextAttributes, failIfMajorPerformanceCaveat: this._failIfMajorPerformanceCaveat,
             preserveDrawingBuffer: this._preserveDrawingBuffer,
-            antialias: this._antialias || false
-        });
+            antialias: this._antialias || false};
 
         const gl = this._canvas.getContext('webgl2', attributes);
 
@@ -4614,6 +4616,7 @@ export class Map extends Camera {
                 gpuTiming: !!this.listens('gpu-timing-layer'),
                 gpuTimingDeferredRender: !!this.listens('gpu-timing-deferred-render'),
                 speedIndexTiming: this.speedIndexTiming,
+                paintStartTimeStamp,
             });
         }
 
@@ -4743,7 +4746,7 @@ export class Map extends Camera {
                     height: this.painter.height,
                     interactionRange: this._interactionRange,
                     visibilityHidden: this._visibilityHidden,
-                    terrainEnabled: !!this.painter.style.getTerrain(),
+                    terrainEnabled: this.painter.style.hasTerrain(),
                     fogEnabled: !!this.painter.style.getFog(),
                     projection: this.getProjection().name,
                     zoom: this.transform.zoom,

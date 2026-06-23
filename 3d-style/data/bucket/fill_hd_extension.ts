@@ -3,13 +3,15 @@ import Point from '@mapbox/point-geometry';
 import {register} from '../../../src/util/web_worker_transfer';
 import ElevatedFillBufferData from './elevated_fill_buffer_data';
 import {ElevatedStructures, type FeatureInfo} from '../../elevation/elevated_structures';
-import {ElevationFeatureSampler, EdgeIterator, type ElevationFeature, type Range} from '../../elevation/elevation_feature';
+import {ElevationFeatureSampler, EdgeIterator, type ElevationFeature} from '../../elevation/elevation_feature';
 import {getElevationFeature} from '../../elevation/get_elevation_feature';
 import {ELEVATION_CLIP_MARGIN, MARKUP_ELEVATION_BIAS, PROPERTY_ELEVATION_ROAD_BASE_Z_LEVEL, SUBDIVISION_EDGE_EXTENSION} from '../../elevation/elevation_constants';
 import {tileToMeter} from '../../../src/geo/mercator_coordinate';
 import {clip, polygonSubdivision} from '../../util/polygon_clipping_hd';
 import EXTENT from '../../../src/style-spec/data/extent';
 import {computeBounds} from '../../../src/style-spec/util/geometry_util';
+import {FrcSegmentData, buildFrcLevelSegments} from '../frc_segment_builder';
+import {featureFrcLevel, matchesCoverageSourceLayer} from '../frc_road_classes';
 
 import type {CanonicalTileID} from '../../../src/source/tile_id';
 import type {BucketFeature} from '../../../src/data/bucket';
@@ -45,21 +47,57 @@ export type ElevationParams = {
  * @private
  */
 export class FillHDExtension {
-    elevationMode: 'hd-road-base' | 'hd-road-markup';
-    elevationBufferData: ElevatedFillBufferData;
+    elevationMode: 'hd-road-base' | 'hd-road-markup' | null;
+    elevationBufferData: ElevatedFillBufferData | undefined;
     elevatedStructures: ElevatedStructures | undefined;
+    frcData: FrcSegmentData | undefined;
 
-    constructor(bucket: FillBucket, elevationMode: 'hd-road-base' | 'hd-road-markup') {
+    constructor(bucket: FillBucket, elevationMode: 'hd-road-base' | 'hd-road-markup' | null, frcEnabled: boolean) {
         this.elevationMode = elevationMode;
-        this.elevationBufferData = new ElevatedFillBufferData(bucket.layers, bucket.zoom, bucket.lut);
+        if (elevationMode) {
+            this.elevationBufferData = new ElevatedFillBufferData(bucket.layers, bucket.zoom, bucket.lut);
+        }
+        if (frcEnabled) {
+            this.frcData = new FrcSegmentData();
+        }
     }
 
     isEmpty(): boolean {
-        return this.elevationBufferData.isEmpty();
+        const elevEmpty = !this.elevationBufferData || this.elevationBufferData.isEmpty();
+        const frcEmpty = !this.frcData || this.frcData.empty();
+        return elevEmpty && frcEmpty;
     }
 
     needsUpload(): boolean {
-        return this.elevationBufferData.needsUpload();
+        return !!this.elevationBufferData && this.elevationBufferData.needsUpload();
+    }
+
+    /// Compute the feature's FRC level and record it in the coverage set. Returns the
+    /// level (or null) so the caller can pass it back to `recordFeatureRange`.
+    trackFeatureFrc(properties: Record<string, unknown> | null | undefined): number | null {
+        if (!this.frcData) return null;
+        const frc = featureFrcLevel(properties || {});
+        if (frc !== null) this.frcData.frcCoverage.add(frc);
+        return frc;
+    }
+
+    /// Record a feature's [triStart, triEnd) triangle range. Called after addGeometry.
+    recordFeatureRange(bucket: FillBucket, triStartIndex: number, triEndIndex: number, frc: number | null): void {
+        if (!this.frcData || triEndIndex <= triStartIndex) return;
+        const segArray = bucket.bufferData.triangleSegments.get();
+        this.frcData.featureTriSegments.push({
+            start: triStartIndex * 3,
+            end: triEndIndex * 3,
+            segIdx: segArray.length > 0 ? segArray.length - 1 : 0,
+            frc,
+        });
+    }
+
+    /// Sort triangles by FRC and emit per-level segment vectors. Called once at the
+    /// end of populate / addFeatures.
+    buildFrcSegments(bucket: FillBucket): void {
+        if (!this.frcData || this.frcData.empty()) return;
+        buildFrcLevelSegments(this.frcData, bucket.bufferData.indexArray, bucket.bufferData.triangleSegments);
     }
 
     /**
@@ -85,13 +123,12 @@ export class FillHDExtension {
 
         const elevatedGeometry = new Array<ElevatedGeometry>();
 
-        // Layers using vector sources should always use the precomputed elevation.
-        // In case of geojson sources the elevation snapshot will be used instead.
-        const tiledElevation = getElevationFeature(feature, elevationFeatures);
-        if (tiledElevation) {
+        if (!this.elevationMode) return false;
+        const tiled = getElevationFeature(feature, elevationFeatures, undefined, canonical);
+        if (tiled) {
             const clipped = this.clipPolygonsToTile(polygons, ELEVATION_CLIP_MARGIN);
             if (clipped.length > 0) {
-                elevatedGeometry.push({polygons: clipped, elevationFeature: tiledElevation, elevationTileID: canonical});
+                elevatedGeometry.push({polygons: clipped, elevationFeature: tiled.feature, elevationTileID: tiled.tileId});
             }
         } else {
             // No elevation data — fall through to the core flat-fill path.
@@ -147,6 +184,7 @@ export class FillHDExtension {
         brightness: number | null | undefined,
         worldview: string,
     ): void {
+        if (!this.elevationBufferData) return;
         this.elevationBufferData.populatePaintArrays(feature, index, imagePositions, availableImages, canonical, brightness, worldview);
     }
 
@@ -160,14 +198,18 @@ export class FillHDExtension {
         brightness: number | null | undefined,
         worldview: string,
     ): void {
-        this.elevationBufferData.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness, worldview);
+        if (this.elevationBufferData) {
+            this.elevationBufferData.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness, worldview);
+        }
         if (this.elevatedStructures) {
             this.elevatedStructures.update(states, vtLayer, availableImages, imagePositions, layers, isBrightnessChanged, brightness, worldview);
         }
     }
 
     updateExpressions(layers: ReadonlyArray<TypedStyleLayer>): void {
-        this.elevationBufferData.programConfigurations.updateExpressions(layers);
+        if (this.elevationBufferData) {
+            this.elevationBufferData.programConfigurations.updateExpressions(layers);
+        }
         if (this.elevatedStructures) {
             this.elevatedStructures.bridgeProgramConfigurations.updateExpressions(layers);
             this.elevatedStructures.tunnelProgramConfigurations.updateExpressions(layers);
@@ -175,14 +217,18 @@ export class FillHDExtension {
     }
 
     upload(context: Context): void {
-        this.elevationBufferData.upload(context);
+        if (this.elevationBufferData) {
+            this.elevationBufferData.upload(context);
+        }
         if (this.elevatedStructures) {
             this.elevatedStructures.upload(context);
         }
     }
 
     destroy(): void {
-        this.elevationBufferData.destroy();
+        if (this.elevationBufferData) {
+            this.elevationBufferData.destroy();
+        }
         if (this.elevatedStructures) {
             this.elevatedStructures.destroy();
         }
@@ -219,7 +265,7 @@ export class FillHDExtension {
         const [min, max] = bucket.addGeometry(polygons, this.elevationBufferData, elevationParams, this.elevatedStructures);
 
         if (this.elevationBufferData.heightRange == null) {
-            this.elevationBufferData.heightRange = {min, max} as Range;
+            this.elevationBufferData.heightRange = {min, max};
         } else {
             this.elevationBufferData.heightRange.min = Math.min(this.elevationBufferData.heightRange.min, min);
             this.elevationBufferData.heightRange.max = Math.max(this.elevationBufferData.heightRange.max, max);
@@ -280,21 +326,21 @@ export class FillHDExtension {
 }
 
 /**
- * Attach a `FillHDExtension` to the bucket if its layer declares a non-'none'
- * `fill-elevation-reference`. Idempotent no-op otherwise.
- *
- * Called by `worker_tile.ts` immediately after FillBucket construction. Keeping the
- * relevance check here (rather than inline in worker_tile) lets HD own the list of
- * layout properties that trigger attachment — adding new HD properties shouldn't
- * touch core.
+ * Attach a `FillHDExtension` to the bucket when either HD elevation or FRC coverage
+ * tracking applies to its layer. Elevation is gated on `fill-elevation-reference`;
+ * FRC is gated on the bucket's source layer being in the configured
+ * `coverageSourceLayers` set. The extension owns both feature sets internally so
+ * core FillBucket carries no FRC fields.
  *
  * @private
  */
-export function maybeAttachFillHDExt(bucket: FillBucket): void {
-    const mode = bucket.layers[0].layout.get('fill-elevation-reference');
-    if (mode === 'hd-road-base' || mode === 'hd-road-markup') {
-        bucket.hdExt = new FillHDExtension(bucket, mode);
-    }
+export function maybeAttachFillHDExt(bucket: FillBucket, coverageSourceLayers: string[] | null | undefined): void {
+    const layoutMode = bucket.layers[0].layout.get('fill-elevation-reference');
+    const elevationMode = (layoutMode === 'hd-road-base' || layoutMode === 'hd-road-markup') ? layoutMode : null;
+    const frcEnabled = !!coverageSourceLayers && coverageSourceLayers.length > 0 &&
+        matchesCoverageSourceLayer(coverageSourceLayers, bucket.layers[0].source, bucket.sourceLayerName);
+    if (!elevationMode && !frcEnabled) return;
+    bucket.hdExt = new FillHDExtension(bucket, elevationMode, frcEnabled);
 }
 
 register(FillHDExtension, 'FillHDExtension');

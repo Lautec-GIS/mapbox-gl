@@ -20,7 +20,6 @@ import type {Map} from '../ui/map';
 import type Dispatcher from '../util/dispatcher';
 import type Tile from './tile';
 import type {Callback} from '../types/callback';
-import type {Cancelable} from '../types/cancelable';
 import type VertexBuffer from '../gl/vertex_buffer';
 import type IndexBuffer from '../gl/index_buffer';
 import type {ProjectedPoint} from '../geo/projection/projection';
@@ -261,7 +260,7 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
     elevatedGlobeGridMatrix: Float32Array | null | undefined;
     _loaded: boolean;
     _dirty: boolean;
-    _imageRequest: Cancelable | null | undefined;
+    _imageRequest: AbortController | null | undefined;
     perspectiveTransform: [number, number];
     elevatedGlobePerspectiveTransform: [number, number];
 
@@ -295,7 +294,7 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
         this._dirty = false;
     }
 
-    load(newCoordinates?: Coordinates, loaded?: boolean) {
+    async load(newCoordinates?: Coordinates, loaded?: boolean) {
         this._loaded = loaded || false;
         this.fire(new Event('dataloading', {dataType: 'source'}));
 
@@ -310,22 +309,29 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
             return;
         }
 
-        this._imageRequest = getImage(this.map._requestManager.transformRequest(this.url, ResourceType.Image), (err, image) => {
+        const controller = new AbortController();
+        this._imageRequest = controller;
+        try {
+            const request = await this.map._requestManager.transformRequest(this.url, ResourceType.Image, controller.signal);
+            const {data} = await getImage(request, controller.signal);
             this._imageRequest = null;
             this._loaded = true;
-            if (err) {
-                this.fire(new ErrorEvent(err));
-            } else if (image) {
-                this.image = image;
-                this._dirty = true;
-                this.width = this.image.width;
-                this.height = this.image.height;
-                if (newCoordinates) {
-                    this.coordinates = newCoordinates;
-                }
-                this._finishLoading();
+            this.image = data;
+            this._dirty = true;
+            this.width = this.image.width;
+            this.height = this.image.height;
+            if (newCoordinates) {
+                this.coordinates = newCoordinates;
             }
-        });
+            this._finishLoading();
+        } catch (err) {
+            // Swallow only our own cancellation; a late settle must not resurrect state after
+            // updateImage/onRemove moved on. Other errors must surface.
+            if (controller.signal.aborted) return;
+            this._imageRequest = null;
+            this._loaded = true;
+            this.fire(new ErrorEvent(err as Error));
+        }
     }
 
     loaded(): boolean {
@@ -377,11 +383,12 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
         }
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (this._imageRequest && options.url !== this.options.url) {
-            this._imageRequest.cancel();
+            this._imageRequest.abort();
             this._imageRequest = null;
         }
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         this.options.url = options.url;
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.load(options.coordinates, this._loaded);
         return this;
     }
@@ -409,12 +416,13 @@ class ImageSource<T = 'image'> extends Evented<SourceEvents> implements ISource<
 
     onAdd(map: Map) {
         this.map = map;
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.load();
     }
 
     onRemove(_: Map) {
         if (this._imageRequest) {
-            this._imageRequest.cancel();
+            this._imageRequest.abort();
             this._imageRequest = null;
         }
         if (this.texture && !(this.texture instanceof UserManagedTexture)) this.texture.destroy();

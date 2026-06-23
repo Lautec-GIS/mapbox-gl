@@ -20,9 +20,7 @@ import Context from '../../../src/gl/context';
 
 function createSource(options) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    options = Object.assign({
-        coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]]
-    }, options);
+    options = {coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]], ...options};
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
     const source = new ImageSource('id', options, {send() {}}, options.eventedParent);
@@ -280,6 +278,34 @@ describe('ImageSource', () => {
         expect(source.loaded()).toBeTruthy();
         source.updateImage({url: '/image2.png', coordinates});
         await waitFor(source, 'data');
+    });
+
+    test('aborting an in-flight load never assigns the image', async () => {
+        let resolveBody: () => void;
+        const body = await getPNGResponse();
+        mockFetch({
+            // Resolve the response but hold the body read so the abort lands mid-load.
+            '/image.png': () => Promise.resolve({
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                headers: new Headers({'Content-Type': 'image/png'}),
+                arrayBuffer: () => new Promise((resolve) => { resolveBody = () => resolve(body); }),
+            })
+        });
+        const source = createSource({url: '/image.png'});
+        source.onAdd(new StubMap());
+
+        await new Promise(r => { setTimeout(r, 0); });
+        expect(typeof resolveBody).toBe('function');
+
+        source.onRemove();
+        resolveBody();
+        await new Promise(r => { setTimeout(r, 0); });
+
+        expect(source.image).toBeUndefined();
+        expect(source._loaded).toBe(false);
+        expect(source._imageRequest).toBe(null);
     });
 
     test('cancels image request when onRemove is called', () => {

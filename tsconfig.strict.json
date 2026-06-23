@@ -43,6 +43,7 @@
     "./src/style-spec/union-to-intersection.ts",
     "./src/style-spec/util/assert.ts",
     "./src/style-spec/util/deep_equal.ts",
+    "./src/style-spec/util/geometry_util.ts",
     "./src/style-spec/util/get_type.ts",
     "./src/style-spec/util/random.ts",
     "./src/style-spec/util/ref_properties.ts",
@@ -65,12 +66,14 @@
     "./src/ui/default_locale.ts",
     "./src/util/browser.ts",
     "./src/util/config.ts",
+    "./src/util/dictionary_coder.ts",
     "./src/util/offscreen_canvas_supported.ts",
     "./src/util/evented.ts",
     "./src/util/fqid.ts",
     "./src/util/is_char_in_unicode_block.ts",
     "./src/util/is_wasm_simd_supported.ts",
     "./src/util/mapbox_url.ts",
+    "./src/util/murmur3.ts",
     "./src/util/object.ts",
     "./src/util/resolve_tokens.ts",
     "./src/util/sanitize.ts",
@@ -80,6 +83,8 @@
     "./src/util/throttled_invoker.ts",
     "./src/util/worker_class.ts",
     "./src/style-spec/deref.ts",
-    "./src/style-spec/util/lerp.ts"
+    "./src/style-spec/util/lerp.ts",
+    "./src/style-spec/util/color.ts",
+    "./src/style-spec/util/interpolate.ts"
   ]
 }

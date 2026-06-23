@@ -99,7 +99,7 @@ class Fog extends Evented {
     }
 
     get(): FogSpecification {
-        return this._transitionable.serialize() as FogSpecification;
+        return this._transitionable.serialize();
     }
 
     set(fog?: FogSpecification, configOptions?: ConfigOptions | null, options: StyleSetterOptions = {}) {
@@ -107,7 +107,7 @@ class Fog extends Evented {
             return;
         }
 
-        const properties = Object.assign({}, fog);
+        const properties = {...fog};
         for (const name of Object.keys(fogReference)) {
             if (properties[name] === undefined) {
                 properties[name] = fogReference[name].default;
@@ -169,7 +169,7 @@ class Fog extends Evented {
                 flatPoint = farPoint;
             } else {
                 const nearPoint = frustum.points[pointIdx - 4];
-                flatPoint = vecInterpolate(nearPoint as number[], farPoint as number[], nearPoint[2] / (nearPoint[2] - farPoint[2])) as vec3;
+                flatPoint = vecInterpolate(nearPoint as number[], farPoint as number[], nearPoint[2] / (nearPoint[2] - farPoint[2]));
             }
 
             if (getFogOpacityAtMercCoord(this.state, flatPoint[0], flatPoint[1], 0, this._transform) >= FOG_OPACITY_THRESHOLD) {
@@ -207,11 +207,11 @@ class Fog extends Evented {
             return false;
         }
 
-        return emitValidationErrors(this, validate.call(validateStyle, Object.assign({
+        return emitValidationErrors(this, validate.call(validateStyle, {
             value,
             style: {glyphs: true, sprite: true},
             styleSpec
-        })));
+        }));
     }
 }
 

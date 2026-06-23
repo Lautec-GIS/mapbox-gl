@@ -4,7 +4,7 @@ import {getLayoutProperties, getPaintProperties} from './building_style_layer_pr
 import {checkIntersection, projectExtrusion} from '../../../src/style/style_layer/fill_extrusion_style_layer';
 import Point from '@mapbox/point-geometry';
 import assert from '../../../src/style-spec/util/assert';
-import {BuildingBucket, prepareHD} from '../../../modules/hd_worker';
+import {BuildingBucket, prepareBuildingGen} from '../../../modules/hd_worker';
 
 import type {Layout, Transitionable, Transitioning, PossiblyEvaluated, ConfigOptions} from '../../../src/style/properties';
 import type {Bucket, BucketParameters} from '../../../src/data/bucket';
@@ -16,6 +16,7 @@ import type {LUT} from "../../../src/util/lut";
 import type {TilespaceQueryGeometry} from '../../../src/style/query_geometry';
 import type Transform from '../../../src/geo/transform';
 import type {VectorTileFeature} from '@mapbox/vector-tile';
+import type {RuntimeModuleType} from '../../../src/style/style_layer';
 
 class BuildingStyleLayer extends StyleLayer {
     override type: 'building';
@@ -36,12 +37,12 @@ class BuildingStyleLayer extends StyleLayer {
         this._stats = {numRenderedVerticesInShadowPass: 0, numRenderedVerticesInTransparentPass: 0};
     }
 
-    override mayUseHD(): boolean {
-        return true;
+    override mayUse(type: RuntimeModuleType): boolean {
+        return type === 'HD';
     }
 
     override prepare(): Promise<void> {
-        return prepareHD();
+        return prepareBuildingGen();
     }
 
     override createBucket(parameters: BucketParameters<this>): BuildingBucket {

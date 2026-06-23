@@ -3,7 +3,7 @@ import {plugins} from './build/rollup_plugins.js';
 
 import type {Plugin, RollupOptions} from 'rollup';
 
-const {BUILD, MINIFY, VISUALIZE} = process.env;
+const {BUILD, MINIFY, VISUALIZE, ESM_TARGET} = process.env;
 const minified = MINIFY === 'true';
 const production = BUILD === 'production';
 const visualize = production && (VISUALIZE === '1' || VISUALIZE === 'true');
@@ -26,12 +26,15 @@ function esmConfig(dir: string, workerSuffix: string, emitVisualizer = false): R
                 if (chunk.isDynamicEntry) {
                     if (chunk.facadeModuleId.endsWith('hd_main_imports.ts')) return 'hd.shared.js';
                     if (chunk.facadeModuleId.endsWith('hd_worker_imports.ts')) return 'hd.worker.js';
+                    if (chunk.facadeModuleId.endsWith('standard_main_imports.ts')) return 'standard.shared.js';
+                    if (chunk.facadeModuleId.endsWith('standard_worker_imports.ts')) return 'standard.worker.js';
                 }
                 // Identify each code-split chunk by a foundational module/file rather than by
                 // chunk.name, which is derived from rollup's representative-module selection
                 // and can silently change when the module graph topology shifts
                 if (chunk.moduleIds.some(id => id.endsWith('/src/ui/map.ts'))) return 'core.js';
                 if (chunk.moduleIds.some(id => id.endsWith('/3d-style/data/bucket/building_bucket.ts'))) return 'hd.common.js';
+                if (chunk.moduleIds.some(id => id.endsWith('/3d-style/render/draw_ground_effect.ts'))) return 'hd_standard.common.js';
                 return 'shared.js'; // catch-all: the large gl-matrix / startup utilities chunk
             },
             experimentalMinChunkSize: 5000,
@@ -71,11 +74,9 @@ function esmConfig(dir: string, workerSuffix: string, emitVisualizer = false): R
 
 export default (): RollupOptions[] => {
     if (production) {
-        // Production: build both NPM (dist/esm/) and CDN (dist/esm-cdn/) variants
-        return [
-            esmConfig('dist/esm/', '_esm_npm', visualize),
-            esmConfig('dist/esm-cdn/', '_esm_cdn'),
-        ];
+        // Production: build NPM (dist/esm/) by default; ESM_TARGET=cdn selects the CDN variant (dist/esm-cdn/).
+        if (ESM_TARGET === 'cdn') return [esmConfig('dist/esm-cdn/', '_esm_cdn')];
+        return [esmConfig('dist/esm/', '_esm_npm', visualize)];
     }
     // Dev: build only NPM variant (dist/esm-dev/)
     return [
@@ -83,7 +84,7 @@ export default (): RollupOptions[] => {
     ];
 };
 
-const filesToSub = new Set(['hd_main', 'hd_worker']);
+const filesToSub = new Set(['hd_main', 'hd_worker', 'standard_main', 'standard_worker']);
 
 function esmSubstitutions(workerSuffix: string): Plugin {
     return {

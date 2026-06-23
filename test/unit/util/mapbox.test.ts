@@ -92,6 +92,45 @@ describe("mapbox", () => {
             );
         });
 
+        describe('.transformRequest', () => {
+            test('resolves {url} when no transform function is set', async () => {
+                const m = new mapbox.RequestManager();
+                expect(await m.transformRequest('http://example.com/x', 'Source')).toEqual({url: 'http://example.com/x'});
+            });
+
+            test('resolves a sync transform return value', async () => {
+                const m = new mapbox.RequestManager(url => ({url: `${url}?a=1`}));
+                expect(await m.transformRequest('http://example.com/x', 'Source')).toEqual({url: 'http://example.com/x?a=1'});
+            });
+
+            test('resolves an async transform return value', async () => {
+                // eslint-disable-next-line @typescript-eslint/require-await
+                const m = new mapbox.RequestManager(async url => ({url: `${url}?a=1`}));
+                expect(await m.transformRequest('http://example.com/x', 'Source')).toEqual({url: 'http://example.com/x?a=1'});
+            });
+
+            test('resolves {url} when the transform returns a falsy value', async () => {
+                const m = new mapbox.RequestManager(() => undefined);
+                expect(await m.transformRequest('http://example.com/x', 'Source')).toEqual({url: 'http://example.com/x'});
+            });
+
+            test('a sync-throwing transform rejects rather than throwing synchronously', async () => {
+                const m = new mapbox.RequestManager(() => { throw new Error('boom'); });
+                const promise = m.transformRequest('http://example.com/x', 'Source');
+                await expect(promise).rejects.toThrow('boom');
+            });
+
+            test('forwards the signal to the transform when passed, and omits it otherwise', async () => {
+                let seenOptions: {signal?: AbortSignal} | undefined;
+                const m = new mapbox.RequestManager((url, type, options) => { seenOptions = options; return {url}; });
+                const controller = new AbortController();
+                await m.transformRequest('http://example.com/x', 'Source', controller.signal);
+                expect(seenOptions.signal).toBe(controller.signal);
+                await m.transformRequest('http://example.com/x', 'Source');
+                expect(seenOptions.signal).toBeUndefined();
+            });
+        });
+
         webpSupported.supported = false;
 
         describe('.normalizeStyleURL', () => {
@@ -778,9 +817,15 @@ describe("mapbox", () => {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(mapLoadEvent["enabled.telemetry"]).toEqual(false);
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.version).toEqual('2.2');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(!!mapLoadEvent.userId).toBeTruthy();
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(!!mapLoadEvent.created).toBeTruthy();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.bundleFormat).toEqual('unknown');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.bundleDistribution).toEqual('other');
         });
 
         test('does not POST when mapboxgl.ACCESS_TOKEN is not set', () => {
@@ -1155,6 +1200,7 @@ describe("mapbox", () => {
                 let reqBody = JSON.parse(await reqToday.requestBody)[0];
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                 equalWithPrecision(new Date(reqBody.created).valueOf(), today, 100);
+                await new Promise(r => { setTimeout(r, 0); });
 
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                 const reqTomorrow = window.server.requests[1];
@@ -1205,6 +1251,38 @@ describe("mapbox", () => {
             expect(!!mapLoadEvent.userId).toBeTruthy();
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             expect(!!mapLoadEvent.created).toBeTruthy();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.version).toEqual('2.2');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.sdkInfo).toBeUndefined();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.bundleFormat).toEqual('unknown');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.bundleDistribution).toEqual('other');
+        });
+
+        test('setSdkInfo ignores invalid values', async () => {
+            mapbox.setSdkInfo('not a valid value!');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            event.postMapLoadEvent(1, skuToken);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+            const reqBody = await window.server.requests[0].requestBody;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            const mapLoadEvent = JSON.parse(reqBody.slice(1, reqBody.length - 1));
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.sdkInfo).toBeUndefined();
+        });
+
+        test('includes sdkInfo when set via setSdkInfo', async () => {
+            mapbox.setSdkInfo('FlutterPlugin/3.0.0-beta.1');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            event.postMapLoadEvent(1, skuToken);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+            const reqBody = await window.server.requests[0].requestBody;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            const mapLoadEvent = JSON.parse(reqBody.slice(1, reqBody.length - 1));
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            expect(mapLoadEvent.sdkInfo).toEqual('FlutterPlugin/3.0.0-beta.1');
         });
 
         test('does not POST when mapboxgl.ACCESS_TOKEN is not set', () => {
@@ -1503,6 +1581,8 @@ describe("mapbox", () => {
                 let reqBody = JSON.parse(await reqOne.requestBody)[0];
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                 equalWithPrecision(new Date(reqBody.created).valueOf(), now, 100);
+                // allow the Promise chain to settle so the next request is queued
+                await new Promise(r => { setTimeout(r, 0); });
 
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                 const reqTwo = window.server.requests[1];
@@ -1512,6 +1592,7 @@ describe("mapbox", () => {
                 reqBody = JSON.parse(await reqTwo.requestBody)[0];
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
                 equalWithPrecision(new Date(reqBody.created).valueOf(), now, 100);
+                await new Promise(r => { setTimeout(r, 0); });
 
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
                 const reqThree = window.server.requests[2];
@@ -1577,15 +1658,17 @@ describe("mapbox", () => {
             sessionAPI.getSession(1, skuToken, () => {});
 
             await new Promise(resolve => {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-                const req = window.server.requests[0];
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                expect(req.url).toEqual(
-                    `${config.API_URL + config.SESSION_PATH}?sku=${skuToken}&access_token=pk.new.*`
-                );
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                expect(req.method).toEqual('GET');
-                resolve();
+                setTimeout(() => {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+                    const req = window.server.requests[0];
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    expect(req.url).toEqual(
+                        `${config.API_URL + config.SESSION_PATH}?sku=${skuToken}&access_token=pk.new.*`
+                    );
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    expect(req.method).toEqual('GET');
+                    resolve();
+                }, 0);
             });
         });
     });
@@ -1629,6 +1712,34 @@ describe("mapbox", () => {
 
         test('returns null for invalid base64 payload', () => {
             expect(mapbox.parseAccessToken('a.!!!.c')).toBeNull();
+        });
+    });
+
+    describe('setBundleDistribution', () => {
+        let event: any;
+        const skuToken = '1234567890123';
+        beforeEach(() => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+            window.useFakeXMLHttpRequest();
+            event = new mapbox.MapLoadEvent();
+        });
+        afterEach(() => {
+            // Reset the module-level state set by these tests (default is 'other').
+            mapbox.setBundleDistribution('other');
+        });
+
+        async function getBundleDistribution(): Promise<string> {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+            const reqBody = await window.server.requests[0].requestBody;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            return JSON.parse(reqBody.slice(1, reqBody.length - 1)).bundleDistribution;
+        }
+
+        test('payload reflects the bundleDistribution set via setBundleDistribution', async () => {
+            mapbox.setBundleDistribution('cdn');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            event.postMapLoadEvent(1, skuToken);
+            expect(await getBundleDistribution()).toEqual('cdn');
         });
     });
 });

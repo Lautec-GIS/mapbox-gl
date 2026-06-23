@@ -9,7 +9,7 @@ import ignoreLinuxFirefox from '../../ignores/linux-firefox.js';
 import {parseStyle, parseOptions, getActualImage, calculateDiff, diffCanvas, diffCtx, getActualImageDataURL, mapRef, fakeCanvasContainer} from './utils.js';
 // @ts-expect-error Cannot find module 'virtual:integration-tests' or its corresponding type declarations.
 import {integrationTests} from 'virtual:integration-tests';
-import {getStatsHTML, updateHTML} from '../../util/html_generator';
+import {getStatsHTML, updateHTML, registerSkipped} from '../../util/html_generator';
 import {mapboxgl} from '../lib/mapboxgl.js';
 import {sendFragment, sendBrowserDiagnostics} from '../lib/utils';
 
@@ -37,13 +37,17 @@ function getEnvironmentParams() {
 
         return {
             ignores: {
-                todo: [...ignoresPlatformSpecific.todo, ...ignoresAll.todo],
-                skip: [...ignoresPlatformSpecific.skip, ...ignoresAll.skip]
+                skip: Array.from(new Set([...ignoresPlatformSpecific.skip, ...ignoresAll.skip]))
             },
             timeout
         };
     } else {
-        return {ignores: ignoresAll, timeout};
+        return {
+            ignores: {
+                skip: ignoresAll.skip
+            },
+            timeout
+        };
     }
 }
 
@@ -90,11 +94,16 @@ type TestMetadata = {
     name: string;
     minDiff: number;
     allowed: number;
+    testPath: string;
     status: string;
+    color?: string;
+    width?: number;
+    height?: number;
     actual?: string;
     expected?: string;
     expectedPath?: string;
     imgDiff?: string;
+    error?: Error;
 }
 
 let reportFragment: string | undefined;
@@ -126,8 +135,11 @@ const getTest = (renderTestName: string) => async () => {
         const pass = minDiff <= options.allowed;
         const testMetaData: TestMetadata = {
             name: renderTestName,
+            testPath: `${testPath}/style.json`,
             minDiff: Math.round(100000 * minDiff) / 100000,
             allowed: options.allowed,
+            width: w,
+            height: h,
             status: pass ? 'passed' : 'failed',
         };
 
@@ -170,19 +182,23 @@ const getTest = (renderTestName: string) => async () => {
 };
 
 const {ignores, timeout} = getEnvironmentParams();
+const skippedTests: string[] = [];
 
 Object.keys(integrationTests).forEach((testName) => {
     const renderTestName = `render-tests/${testName}`;
     if (ignores.skip.includes(renderTestName)) {
+        skippedTests.push(testName);
         test.skip(testName, getTest(testName));
-    } else if (ignores.todo.includes(renderTestName)) {
-        test.todo(testName, getTest(testName));
     } else {
         test(testName, {timeout}, getTest(testName));
     }
 });
 
 afterAll(async () => {
+    for (const testName of skippedTests) {
+        const testPath = integrationTests[testName]?.path;
+        await sendFragment(reportFragmentIdx++, registerSkipped(testName, testPath ? `${testPath}/style.json` : undefined));
+    }
     await sendBrowserDiagnostics();
     await sendFragment(0, getStatsHTML());
     // We cannot use `server.commands.writeFile` here because the HTML file is large

@@ -17,13 +17,11 @@ import {loadTileProvider} from './tile_provider';
 
 import type Projection from '../geo/projection/projection';
 import type {ImageId} from '../style-spec/expression/types/image_id';
-import type {TaskMetadata} from '../util/scheduler';
 import type {RtlTextPlugin} from './rtl_text_plugin';
-import type {ActorMessage, ActorMessages} from '../util/actor_messages';
+import type {MainInbox, WorkerInbox} from '../util/actor_messages';
 import type {WorkerSourceType, WorkerSource, WorkerSourceConstructor, WorkerSourceRequest} from './worker_source';
 import type {TileProvider} from './tile_provider';
 import type {StyleModelMap} from '../style/style_mode';
-import type {Callback} from '../types/callback';
 
 /**
  * Generic type for grouping items by mapId and style scope.
@@ -35,12 +33,17 @@ type WorkerScopeRegistry<T> = Record<string, Record<string, T>>;
  */
 type WorkerSourceRegistry = WorkerScopeRegistry<Record<string, Record<string, WorkerSource>>>;
 
+type RTLParsingListener = {
+    resolve: (value: boolean) => void;
+    reject: (err: Error) => void;
+};
+
 /**
  * @private
  */
 export default class MapWorker {
     self: Worker;
-    actor: Actor;
+    actor: Actor<MainInbox>;
     layerIndexes: WorkerScopeRegistry<StyleLayerIndex>;
     availableImages: WorkerScopeRegistry<ImageId[]>;
     availableModels: WorkerScopeRegistry<StyleModelMap>;
@@ -53,14 +56,13 @@ export default class MapWorker {
     brightness: number | null | undefined;
     maxUniformBufferBindings: number | null | undefined;
     maxUniformBlockSizeDwords: number | null | undefined;
-    disableSymbolUBO: boolean | null | undefined;
     worldview: string | undefined;
-    rtlPluginParsingListeners: Array<Callback<boolean>>;
+    rtlPluginParsingListeners: Array<RTLParsingListener>;
 
     constructor(self: Worker) {
         PerformanceUtils.measure('workerEvaluateScript');
         this.self = self;
-        this.actor = new Actor(self, this);
+        this.actor = new Actor<MainInbox>(self, this);
 
         this.layerIndexes = {};
         this.availableImages = {};
@@ -102,36 +104,31 @@ export default class MapWorker {
             globalRTLTextPlugin['processBidirectionalText'] = rtlTextPlugin.processBidirectionalText;
             globalRTLTextPlugin['processStyledBidirectionalText'] = rtlTextPlugin.processStyledBidirectionalText;
 
-            for (const callback of this.rtlPluginParsingListeners) {
-                callback(null, true);
+            for (const {resolve} of this.rtlPluginParsingListeners) {
+                resolve(true);
             }
             this.rtlPluginParsingListeners = [];
         };
     }
 
-    clearCaches(mapId: number, params: ActorMessages['clearCaches']['params'], callback: ActorMessages['clearCaches']['callback']) {
+    clearCaches(mapId: number, _params: WorkerInbox['clearCaches']['params']) {
         delete this.layerIndexes[mapId];
         delete this.availableImages[mapId];
         delete this.availableModels[mapId];
         delete this.workerSources[mapId];
-        callback();
+        delete this.isSpriteLoaded[mapId];
     }
 
-    checkIfReady(mapID: string, params: ActorMessages['checkIfReady']['params'], callback: ActorMessages['checkIfReady']['callback']) {
+    checkIfReady(_mapId: number, _params: WorkerInbox['checkIfReady']['params']) {
         // noop, used to check if a worker is fully set up and ready to receive messages
-        callback();
     }
 
-    setReferrer(mapID: string, referrer: ActorMessages['setReferrer']['params']) {
-        this.referrer = referrer;
-    }
-
-    spriteLoaded(mapId: number, params: ActorMessages['spriteLoaded']['params']) {
+    spriteLoaded(mapId: number, params: WorkerInbox['spriteLoaded']['params']) {
+        const {scope} = params;
         if (!this.isSpriteLoaded[mapId])
             this.isSpriteLoaded[mapId] = {};
 
-        const {scope, isLoaded} = params;
-        this.isSpriteLoaded[mapId][scope] = isLoaded;
+        this.isSpriteLoaded[mapId][scope] = true;
 
         if (!this.workerSources[mapId] || !this.workerSources[mapId][scope]) {
             return;
@@ -142,14 +139,14 @@ export default class MapWorker {
             for (const source in ws) {
                 const workerSource = ws[source];
                 if (workerSource instanceof VectorTileWorkerSource) {
-                    workerSource.isSpriteLoaded = isLoaded;
+                    workerSource.isSpriteLoaded = true;
                     workerSource.fire(new Event('isSpriteLoaded'));
                 }
             }
         }
     }
 
-    setImages(mapId: number, params: ActorMessages['setImages']['params'], callback: ActorMessages['setImages']['callback']) {
+    setImages(mapId: number, params: WorkerInbox['setImages']['params']) {
         if (!this.availableImages[mapId]) {
             this.availableImages[mapId] = {};
         }
@@ -157,8 +154,11 @@ export default class MapWorker {
         const {scope, images} = params;
         this.availableImages[mapId][scope] = images;
 
+        if (params.isSpriteLoaded) {
+            this.spriteLoaded(mapId, {scope});
+        }
+
         if (!this.workerSources[mapId] || !this.workerSources[mapId][scope]) {
-            callback();
             return;
         }
 
@@ -168,11 +168,9 @@ export default class MapWorker {
                 ws[source].availableImages = images;
             }
         }
-
-        callback();
     }
 
-    setModels(mapId: number, {scope, models}: ActorMessages['setModels']['params'], callback: ActorMessages['setModels']['callback']) {
+    setModels(mapId: number, {scope, models}: WorkerInbox['setModels']['params']) {
         if (!this.availableModels[mapId]) {
             this.availableModels[mapId] = {};
         }
@@ -180,7 +178,6 @@ export default class MapWorker {
         this.availableModels[mapId][scope] = models;
 
         if (!this.workerSources[mapId] || !this.workerSources[mapId][scope]) {
-            callback();
             return;
         }
 
@@ -190,68 +187,67 @@ export default class MapWorker {
                 ws[source].availableModels = models;
             }
         }
-
-        callback();
     }
 
-    setProjection(mapId: number, config: ActorMessages['setProjection']['params']) {
+    setProjection(mapId: number, config: WorkerInbox['setProjection']['params']) {
         this.projections[mapId] = getProjection(config);
     }
 
-    setBrightness(mapId: number, brightness: ActorMessages['setBrightness']['params'], callback: ActorMessages['setBrightness']['callback']) {
-        this.brightness = brightness;
-        callback();
+    setGlobalParams(mapId: number, params: WorkerInbox['setGlobalParams']['params']) {
+        this.referrer = params.referrer;
+        Object.assign(config, params.config);
+
+        if (params.contextOptions) {
+            const {maxBindingPoints, maxUniformBlockSizeDwords} = params.contextOptions;
+            this.maxUniformBufferBindings = maxBindingPoints;
+            this.maxUniformBlockSizeDwords = maxUniformBlockSizeDwords;
+        }
     }
 
-    setContextParams(mapId: number, params: ActorMessages['setContextParams']['params'], callback: ActorMessages['setContextParams']['callback']) {
-        this.maxUniformBufferBindings = params.maxBindingPoints;
-        this.maxUniformBlockSizeDwords = params.maxUniformBlockSizeDwords;
-        this.disableSymbolUBO = params.disableSymbolUBO;
-        callback();
+    upsertRenderParams(mapId: number, params: WorkerInbox['upsertRenderParams']['params']) {
+        if (params.brightness !== undefined) {
+            this.brightness = params.brightness;
+        }
+        if (params.worldview !== undefined) {
+            this.worldview = params.worldview;
+        }
     }
 
-    setWorldview(mapId: number, worldview: ActorMessages['setWorldview']['params'], callback: ActorMessages['setWorldview']['callback']) {
-        this.worldview = worldview;
-        callback();
-    }
-
-    setLayers(mapId: number, params: ActorMessages['setLayers']['params'], callback: ActorMessages['setLayers']['callback']) {
+    setLayers(mapId: number, params: WorkerInbox['setLayers']['params']) {
         this.getLayerIndex(mapId, params.scope).replace(params.layers, params.options);
-        callback();
     }
 
-    updateLayers(mapId: number, params: ActorMessages['updateLayers']['params'], callback: ActorMessages['updateLayers']['callback']) {
+    updateLayers(mapId: number, params: WorkerInbox['updateLayers']['params']) {
         this.getLayerIndex(mapId, params.scope).update(params.layers, params.removedIds, params.options);
-        callback();
     }
 
-    loadTile(mapId: number, params: ActorMessages['loadTile']['params'], callback: ActorMessages['loadTile']['callback']) {
+    loadTile(mapId: number, params: WorkerInbox['loadTile']['params']): Promise<WorkerInbox['loadTile']['result']> {
         assert(params.type);
         params.projection = this.projections[mapId] || this.defaultProjection;
-        this.getWorkerSource(mapId, params).loadTile(params, callback);
+        return this.getWorkerSource(mapId, params).loadTile(params);
     }
 
-    decodeRasterArray(mapId: number, params: ActorMessages['decodeRasterArray']['params'], callback: ActorMessages['decodeRasterArray']['callback']) {
-        (this.getWorkerSource(mapId, params) as RasterArrayTileWorkerSource).decodeRasterArray(params, callback);
+    decodeRasterArray(mapId: number, params: WorkerInbox['decodeRasterArray']['params']): Promise<WorkerInbox['decodeRasterArray']['result']> {
+        return (this.getWorkerSource(mapId, params) as RasterArrayTileWorkerSource).decodeRasterArray(params);
     }
 
-    reloadTile(mapId: number, params: ActorMessages['reloadTile']['params'], callback: ActorMessages['reloadTile']['callback']) {
+    reloadTile(mapId: number, params: WorkerInbox['reloadTile']['params']): Promise<WorkerInbox['reloadTile']['result']> {
         assert(params.type);
         params.projection = this.projections[mapId] || this.defaultProjection;
-        this.getWorkerSource(mapId, params).reloadTile(params, callback);
+        return this.getWorkerSource(mapId, params).reloadTile(params);
     }
 
-    abortTile(mapId: number, params: ActorMessages['abortTile']['params'], callback: ActorMessages['abortTile']['callback']) {
+    abortTile(mapId: number, params: WorkerInbox['abortTile']['params']): Promise<void> | void {
         assert(params.type);
-        this.getWorkerSource(mapId, params).abortTile(params, callback);
+        return this.getWorkerSource(mapId, params).abortTile(params);
     }
 
-    removeTile(mapId: number, params: ActorMessages['removeTile']['params'], callback: ActorMessages['removeTile']['callback']) {
+    removeTile(mapId: number, params: WorkerInbox['removeTile']['params']): Promise<void> | void {
         assert(params.type);
-        this.getWorkerSource(mapId, params).removeTile(params, callback);
+        return this.getWorkerSource(mapId, params).removeTile(params);
     }
 
-    removeSource(mapId: number, params: ActorMessages['removeSource']['params'], callback: ActorMessages['removeSource']['callback']) {
+    removeSource(mapId: number, params: WorkerInbox['removeSource']['params']): Promise<void> | void {
         assert(params.type);
         assert(params.scope);
         assert(params.source);
@@ -267,9 +263,7 @@ export default class MapWorker {
         delete this.workerSources[mapId][params.scope][params.type][params.source];
 
         if (worker.removeSource !== undefined) {
-            worker.removeSource(params, callback);
-        } else {
-            callback();
+            return worker.removeSource(params);
         }
     }
 
@@ -279,64 +273,56 @@ export default class MapWorker {
      * Called via broadcast from the main thread.
      * @private
      */
-    loadTileProvider(mapId: number, params: ActorMessages['loadTileProvider']['params'], callback: ActorMessages['loadTileProvider']['callback']) {
-        loadTileProvider(params.name, params.url)
-            .then((ProviderClass) => {
-                const tileProvider = new ProviderClass(params.options);
+    async loadTileProvider(mapId: number, params: WorkerInbox['loadTileProvider']['params']): Promise<WorkerInbox['loadTileProvider']['result']> {
+        const ProviderClass = await loadTileProvider(params.name, params.url);
+        const tileProvider = new ProviderClass(params.options);
 
-                this.getWorkerSource(mapId, {
-                    type: params.type,
-                    source: params.source,
-                    scope: params.scope,
-                } as WorkerSourceRequest, tileProvider);
+        this.getWorkerSource(mapId, {
+            type: params.type,
+            source: params.source,
+            scope: params.scope,
+        } as WorkerSourceRequest, tileProvider);
 
-                if (tileProvider.load && params.request) {
-                    return tileProvider.load({request: params.request});
-                }
+        if (tileProvider.load && params.request) {
+            return tileProvider.load({request: params.request});
+        }
 
-                return null;
-            })
-            .then((tileJSON) => callback(null, tileJSON))
-            // eslint-disable-next-line @typescript-eslint/no-base-to-string
-            .catch((err: unknown) => callback(err instanceof Error ? err : new Error(String(err))));
+        return null;
     }
 
-    async syncRTLPluginState(mapId: number, state: ActorMessages['syncRTLPluginState']['params'], callback: ActorMessages['syncRTLPluginState']['callback']) {
+    async syncRTLPluginState(_mapId: number, state: WorkerInbox['syncRTLPluginState']['params']): Promise<WorkerInbox['syncRTLPluginState']['result']> {
         if (globalRTLTextPlugin.isParsed()) {
-            callback(null, true);
-            return;
+            return true;
         }
         if (globalRTLTextPlugin.isParsing()) {
-            this.rtlPluginParsingListeners.push(callback);
-            return;
+            return new Promise((resolve, reject) => {
+                this.rtlPluginParsingListeners.push({resolve, reject});
+            });
         }
 
         globalRTLTextPlugin.setState(state);
         const pluginURL = globalRTLTextPlugin.getPluginURL();
         if (!globalRTLTextPlugin.isLoaded() || globalRTLTextPlugin.isParsed() || globalRTLTextPlugin.isParsing()) {
-            callback(null, false);
-            return;
+            return false;
         }
 
         globalRTLTextPlugin.setState({pluginStatus: rtlPluginStatus.parsing, pluginURL});
         try {
             await import(/* webpackIgnore: true */ /* @vite-ignore */ pluginURL);
-
             if (globalRTLTextPlugin.isParsed()) {
-                callback(null, true);
-            } else {
-                this.rtlPluginParsingListeners.push(callback);
+                // registerRTLTextPlugin (the only path to `parsed`) already resolved
+                // and cleared the waiting listeners during import eval.
+                return true;
             }
-        } catch (e) {
+            return new Promise<boolean>((resolve, reject) => {
+                this.rtlPluginParsingListeners.push({resolve, reject});
+            });
+        } catch (e: unknown) {
             globalRTLTextPlugin.setState({pluginStatus: rtlPluginStatus.error, pluginURL});
-            callback(e as Error);
-            for (const cb of this.rtlPluginParsingListeners) cb(e as Error);
+            for (const {reject} of this.rtlPluginParsingListeners) reject(e as Error);
             this.rtlPluginParsingListeners = [];
+            throw e;
         }
-    }
-
-    setConfig(mapId: number, updates: ActorMessages['setConfig']['params']) {
-        Object.assign(config, updates);
     }
 
     getAvailableImages(mapId: number, scope: string): ImageId[] {
@@ -389,7 +375,7 @@ export default class MapWorker {
         if (!workerSources[mapId])
             workerSources[mapId] = {};
         if (!workerSources[mapId][scope])
-            workerSources[mapId][scope] = {} as Record<WorkerSourceType, {[sourceId: string]: WorkerSource}>;
+            workerSources[mapId][scope] = {};
         if (!workerSources[mapId][scope][type])
             workerSources[mapId][scope][type] = {};
 
@@ -397,14 +383,9 @@ export default class MapWorker {
             this.isSpriteLoaded[mapId] = {};
 
         if (!workerSources[mapId][scope][type][source]) {
-            // use a wrapped actor so that we can attach a target mapId param
-            // to any messages invoked by the WorkerSource
-            const actor = {
-                send: <T extends ActorMessage>(type: T, data: ActorMessages[T]['params'], callback: ActorMessages[T]['callback'], _targetMapId: number, mustQueue: boolean, metadata: TaskMetadata) => {
-                    return this.actor.send(type, data, callback, mapId, mustQueue, metadata);
-                },
-                scheduler: this.actor.scheduler
-            } as Actor;
+            // One worker actor serves many maps; bind the owning mapId so the
+            // WorkerSource's replies route back to the right map.
+            const actor = this.actor.getWorkerSourceActor(mapId);
 
             const WorkerSourceConstructor = this.workerSourceTypes[type as WorkerSourceType];
             if (!WorkerSourceConstructor) {
@@ -422,7 +403,6 @@ export default class MapWorker {
                 worldview: this.worldview,
                 maxUniformBufferBindings: this.maxUniformBufferBindings,
                 maxUniformBlockSizeDwords: this.maxUniformBlockSizeDwords,
-                disableSymbolUBO: this.disableSymbolUBO,
             });
         } else if (tileProvider) {
             // Reload (e.g. setUrl/setTiles) re-broadcasts loadTileProvider with
@@ -434,13 +414,10 @@ export default class MapWorker {
         return workerSources[mapId][scope][type][source];
     }
 
-    enforceCacheSizeLimit(mapId: number, limit: ActorMessages['enforceCacheSizeLimit']['params']) {
+    enforceCacheSizeLimit(_mapId: number, limit: WorkerInbox['enforceCacheSizeLimit']['params']) {
         enforceCacheSizeLimit(limit);
     }
 
-    getWorkerPerformanceMetrics(mapId: number, params: ActorMessages['getWorkerPerformanceMetrics']['params'], callback: ActorMessages['getWorkerPerformanceMetrics']['callback']) {
-        callback(undefined, PerformanceUtils.getWorkerPerformanceMetrics());
-    }
 }
 
 if (isWorker(self)) {

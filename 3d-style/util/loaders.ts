@@ -6,7 +6,7 @@ import {warnOnce} from '../../src/util/util';
 import {DracoDecoderModule} from './draco_decoder_gltf';
 import {MeshoptDecoderModule} from './meshopt_decoder';
 import {PerformanceUtils} from '../../src/util/performance';
-import {makeAsyncRequest} from '../../src/util/ajax';
+import {getArrayBuffer} from '../../src/util/ajax';
 
 import type {vec3, mat4, quat} from 'gl-matrix';
 import type {TextureImage} from '../../src/render/texture';
@@ -352,7 +352,7 @@ export async function decodeGLTF(arrayBuffer: ArrayBuffer, byteOffset: number = 
         await Promise.all(bufferLoads);
     }
 
-    if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (signal) signal.throwIfAborted();
 
     const assetLoads: Promise<unknown>[] = [];
     const dracoUsed = extensionsUsed && extensionsUsed.includes(DRACO_EXT);
@@ -374,7 +374,7 @@ export async function decodeGLTF(arrayBuffer: ArrayBuffer, byteOffset: number = 
         await Promise.all(assetLoads);
     }
 
-    if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (signal) signal.throwIfAborted();
 
     if (dracoUsed && meshes) {
         for (const {primitives} of meshes) {
@@ -396,7 +396,7 @@ export async function decodeGLTF(arrayBuffer: ArrayBuffer, byteOffset: number = 
 }
 
 export async function loadGLTF(url: string, signal?: AbortSignal): Promise<GLTF> {
-    const buffer = await makeAsyncRequest<ArrayBuffer>({url, type: 'arrayBuffer'}, signal);
+    const {data: buffer} = await getArrayBuffer({url}, signal);
     return decodeGLTF(buffer, 0, url, signal);
 }
 

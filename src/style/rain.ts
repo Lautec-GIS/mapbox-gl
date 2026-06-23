@@ -54,8 +54,8 @@ class Rain extends Evented {
 
         const direction: vec3 = [Math.cos(heading) * Math.cos(pitch), Math.sin(heading) * Math.cos(pitch), Math.sin(pitch)];
 
-        const vignetteColor = this.properties.get('vignette-color');
-        vignetteColor.a = this.properties.get('vignette');
+        const baseVignetteColor = this.properties.get('vignette-color');
+        const vignetteColor = new Color(baseVignetteColor.r, baseVignetteColor.g, baseVignetteColor.b, this.properties.get('vignette'));
 
         return {
             density: this.properties.get('density'),
@@ -70,7 +70,7 @@ class Rain extends Evented {
     }
 
     get(): RainSpecification {
-        return this._transitionable.serialize() as RainSpecification;
+        return this._transitionable.serialize();
     }
 
     set(rain?: RainSpecification, configOptions?: ConfigOptions | null, options: StyleSetterOptions = {}) {
@@ -78,7 +78,7 @@ class Rain extends Evented {
             return;
         }
 
-        const properties = Object.assign({}, rain);
+        const properties = {...rain};
         const rainSpec = styleSpec.rain as Record<PropertyKey, StylePropertySpecification>;
         for (const name of Object.keys(rainSpec)) {
             // Fallback to use default style specification when the properties wasn't set
@@ -118,11 +118,9 @@ class Rain extends Evented {
             return false;
         }
 
-        return emitValidationErrors(this, validate.call(validateStyle, Object.assign({
-            value,
+        return emitValidationErrors(this, validate.call(validateStyle, {value,
             style: {glyphs: true, sprite: true},
-            styleSpec
-        })));
+            styleSpec}));
     }
 }
 

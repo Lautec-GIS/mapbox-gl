@@ -20,6 +20,7 @@ import type {TileFootprint} from '../../3d-style/util/conflation';
 import type {LUT} from "../util/lut";
 import type {ImageVariant} from '../style-spec/expression/types/image_variant';
 import type {ElevationFeature} from '../../3d-style/elevation/elevation_feature';
+import type {ElevationParams} from '../source/elevation_coverage_snapshot';
 import type {ImageId, StringifiedImageId} from '../style-spec/expression/types/image_id';
 import type {StyleModelMap} from '../style/style_mode';
 import type {GlobalProperties} from '../style-spec/expression';
@@ -35,6 +36,7 @@ export type BucketParameters<Layer extends StyleLayer> = {
     overscaling: number;
     collisionBoxArray: CollisionBoxArray;
     sourceLayerIndex: number;
+    sourceLayerName?: string;
     sourceID: string;
     projection: ProjectionSpecification;
     tessellationStep: number | null | undefined;
@@ -44,7 +46,6 @@ export type BucketParameters<Layer extends StyleLayer> = {
     availableImages: ImageId[];
     maxUniformBufferBindings?: number | null;
     maxUniformBlockSizeDwords?: number | null;
-    disableSymbolUBO?: boolean | null;
 };
 
 export type ImageDependenciesMap = Map<StringifiedImageId, Array<ImageVariant>>;
@@ -62,6 +63,12 @@ export type PopulateParameters = {
     scaleFactor: number;
     showElevationIdDebug: boolean;
     elevationFeatures: ElevationFeature[] | undefined;
+    /// Cross-source elevation registry (line layers only).
+    elevationParams: ElevationParams | null | undefined;
+    /// True when cross-source elevation is active for this style.
+    crossSourceElevationEnabled: boolean;
+    // True when terrain is enabled — HD road-markup lines drape flat.
+    terrainEnabled: boolean;
     activeFloors: Set<string> | undefined;
 };
 
@@ -150,6 +157,8 @@ export interface Bucket {
     destroy: (reload?: boolean) => void;
     updateFootprints: (id: UnwrappedTileID, footprints: Array<TileFootprint>) => void;
     updateAppearances: (canonical?: CanonicalTileID, featureState?: FeatureStates, availableImages?: Array<ImageId>, globalProperties?: GlobalProperties, imageManager?: ImageManager, featureStateChanged?: boolean) => AppearanceUpdateResult;
+    requiresStandardRuntime?: boolean;
+    requiresHDRuntime?: boolean;
     // Called after deserialize on the main thread to reattach `expression` refs
     // on attribute binders (omitted from transfer — see `register()` calls in
     // program_configuration.ts). Each bucket iterates its own

@@ -6,12 +6,16 @@
 #define ICON 0.0
 
 uniform sampler2D u_texture;
+#ifdef RENDER_TEXT_AND_SYMBOL
 uniform sampler2D u_texture_icon;
+#endif
+
 uniform highp float u_gamma_scale;
 uniform lowp float u_device_pixel_ratio;
 uniform bool u_is_text;
-uniform bool u_is_halo;
+uniform bool u_is_sdf;
 uniform lowp float u_scale_factor;
+
 // Boolean-config transition fragment alpha multiplier (dual-pass: originals + deltas).
 uniform lowp float u_opacity_multiplier;
 #ifdef ICON_TRANSITION
@@ -54,65 +58,33 @@ in highp float v_depth;
 uniform highp sampler3D u_lutTexture;
 #endif
 
-#ifdef USE_PAINT_PROPERTIES_UBO
-/// UBO-based paint property declarations.
-
+/// Symbol paint properties.
 in lowp float v_opacity;
-#ifdef RENDER_SDF
 in lowp vec4 v_fill_np_color;
 in lowp vec4 v_halo_np_color;
 in lowp float v_halo_width;
 in lowp float v_halo_blur;
-#endif
 #ifdef LIGHTING_3D_MODE
 in lowp float v_emissive_strength;
 #endif
 
-#else
-/// Pragma-based paint property declarations.
-
-#pragma mapbox: define highp vec4 fill_color
-#pragma mapbox: define highp vec4 halo_color
-#pragma mapbox: define lowp float opacity
-#pragma mapbox: define lowp float halo_width
-#pragma mapbox: define lowp float halo_blur
-#pragma mapbox: define lowp float emissive_strength
-
-#endif // USE_PAINT_PROPERTIES_UBO
-
 void main() {
-
-#ifdef USE_PAINT_PROPERTIES_UBO
-    /// UBO-based paint property initializations.
-
     lowp float opacity = v_opacity;
     lowp vec4 fill_color = vec4(0.0);
     lowp vec4 halo_color = vec4(0.0);
     lowp float halo_width = 0.0;
     lowp float halo_blur = 0.0;
-#ifdef RENDER_SDF
-    ///  Pre-multiply colors by alpha.
-    fill_color = vec4(v_fill_np_color.rgb * v_fill_np_color.a, v_fill_np_color.a);
-    halo_color = vec4(v_halo_np_color.rgb * v_halo_np_color.a, v_halo_np_color.a);
-    halo_width = v_halo_width;
-    halo_blur = v_halo_blur;
-#endif
+    if (u_is_sdf) {
+        // Pre-multiply colors by alpha.
+        fill_color = vec4(v_fill_np_color.rgb * v_fill_np_color.a, v_fill_np_color.a);
+        halo_color = vec4(v_halo_np_color.rgb * v_halo_np_color.a, v_halo_np_color.a);
+        halo_width = v_halo_width;
+        halo_blur = v_halo_blur;
+    }
     lowp float emissive_strength = 0.0;
 #ifdef LIGHTING_3D_MODE
     emissive_strength = v_emissive_strength;
 #endif
-
-#else
-    /// Pragma-based paint property initializations.
-
-    #pragma mapbox: initialize highp vec4 fill_color
-    #pragma mapbox: initialize highp vec4 halo_color
-    #pragma mapbox: initialize lowp float opacity
-    #pragma mapbox: initialize lowp float halo_width
-    #pragma mapbox: initialize lowp float halo_blur
-    #pragma mapbox: initialize lowp float emissive_strength
-
-#endif // USE_PAINT_PROPERTIES_UBO
 
     vec4 out_color;
     float fade_opacity = v_gamma_scale_size_fade_opacity[2];
@@ -135,47 +107,47 @@ void main() {
     cutout_factors = get_cutout_factors(gl_FragCoord);
 #endif
 
-#ifdef RENDER_SDF
-    float EDGE_GAMMA = 0.105 / u_device_pixel_ratio;
+    if (u_is_sdf) {
+        float EDGE_GAMMA = 0.105 / u_device_pixel_ratio;
 
-    float gamma_scale = v_gamma_scale_size_fade_opacity.x;
-    float size = v_gamma_scale_size_fade_opacity.y;
+        float gamma_scale = v_gamma_scale_size_fade_opacity.x;
+        float size = v_gamma_scale_size_fade_opacity.y;
 
-    float fontScale = u_is_text ? size / 24.0 : size;
+        float fontScale = u_is_text ? size / 24.0 : size;
 
-    out_color = fill_color;
-    highp float gamma = EDGE_GAMMA / (fontScale * u_gamma_scale);
-    lowp float buff = (256.0 - 64.0) / 256.0;
+        out_color = fill_color;
+        highp float gamma = EDGE_GAMMA / (fontScale * u_gamma_scale);
+        lowp float buff = (256.0 - 64.0) / 256.0;
 
-    bool draw_halo = v_draw_halo > 0.0;
-    if (draw_halo) {
-        out_color = halo_color;
-        gamma = (halo_blur * u_scale_factor * 1.19 / SDF_PX + EDGE_GAMMA) / (fontScale * u_gamma_scale);
-        buff = (6.0 - halo_width * u_scale_factor / fontScale) / SDF_PX;
-    }
+        bool draw_halo = v_draw_halo > 0.0;
+        if (draw_halo) {
+            out_color = halo_color;
+            gamma = (halo_blur * u_scale_factor * 1.19 / SDF_PX + EDGE_GAMMA) / (fontScale * u_gamma_scale);
+            buff = (6.0 - halo_width * u_scale_factor / fontScale) / SDF_PX;
+        }
 
-    lowp float dist = texture(u_texture, v_tex_a).r;
-    highp float gamma_scaled = gamma * gamma_scale;
-    highp float alpha = smoothstep(buff - gamma_scaled, buff + gamma_scaled, dist);
+        lowp float dist = texture(u_texture, v_tex_a).r;
+        highp float gamma_scaled = gamma * gamma_scale;
+        highp float alpha = smoothstep(buff - gamma_scaled, buff + gamma_scaled, dist);
 
-    out_color *= alpha;
-#else // RENDER_SDF
-    #ifdef ICON_TRANSITION
+        out_color *= alpha;
+    } else {
+#ifdef ICON_TRANSITION
         vec4 a = texture(u_texture, v_tex_a) * (1.0 - u_icon_transition);
         vec4 b = texture(u_texture, v_tex_b) * u_icon_transition;
         out_color = (a + b);
-    #else
+#else
         out_color = texture(u_texture, v_tex_a);
-    #endif
-
-    #ifdef APPLY_LUT_ON_GPU
-        out_color = applyLUT(u_lutTexture, out_color);
-    #endif
-
-    #ifdef COLOR_ADJUSTMENT
-        out_color = u_color_adj_mat * out_color;
-    #endif
 #endif
+
+#ifdef APPLY_LUT_ON_GPU
+        out_color = applyLUT(u_lutTexture, out_color);
+#endif
+
+#ifdef COLOR_ADJUSTMENT
+        out_color = u_color_adj_mat * out_color;
+#endif
+    }
 
     out_color *= opacity * fade_opacity * u_opacity_multiplier;
 

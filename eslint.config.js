@@ -41,7 +41,7 @@ const UNTYPED_FILES = [
     './test/release/**/*',
     './test/integration/**/*.js',
     './test/build/style-spec.test.js',
-    './test/build/browserify-test-fixture.js',
+    './build/start-server.js',
 ];
 
 const IGNORED_PATHS = [
@@ -70,7 +70,7 @@ const IGNORED_PATHS = [
     './test/build/webpack/**/*',
     './test/build/typings/**/*',
     './test/build/style-spec.test.js',
-    './test/build/browserify-test-fixture.js',
+    './dts.config.cjs',
 ];
 
 export default tseslint.config(
@@ -153,12 +153,10 @@ export default tseslint.config(
             }],
             'template-curly-spacing': 'error',
             'no-useless-escape': 'off',
+            'no-useless-assignment': 'off',
             'no-multiple-empty-lines': ['error', {max: 1}],
             'no-restricted-syntax': ['error',
                 {
-                    selector: 'ObjectExpression > SpreadElement',
-                    message: 'Spread syntax is not allowed for object assignments. Use Object.assign() or other methods instead.',
-                }, {
                     selector: 'ClassProperty[value]',
                     message: 'ClassProperty values are not allowed.',
                 }, {
@@ -181,12 +179,13 @@ export default tseslint.config(
                     message: 'importScripts is not allowed. Use dynamic import() instead.',
                 }
             ],
-            'no-void': ['error', {allowAsStatement: true}],
+            'no-void': 'error',
             'no-restricted-globals': ['error', {
                 name: 'importScripts',
                 message: 'importScripts is not allowed. Use dynamic import() instead.',
             }],
             'prefer-object-has-own': 'error',
+            'prefer-object-spread': 'error',
 
             // TypeScript
             '@typescript-eslint/unbound-method': 'off',
@@ -203,6 +202,7 @@ export default tseslint.config(
                 ignoreRestSiblings: true,
             }],
             '@typescript-eslint/no-non-null-assertion': 'error',
+            '@typescript-eslint/no-floating-promises': ['error', {ignoreVoid: false}],
             '@typescript-eslint/no-misused-promises': 'error',
             '@typescript-eslint/ban-ts-comment': ['error', {'ts-expect-error': true}],
 
@@ -242,7 +242,7 @@ export default tseslint.config(
             }],
 
             // e18e (disabled for browser compatibility)
-            'e18e/prefer-spread-syntax': 'off',       // Object spread not allowed (affects some downstream bundlers)
+            'e18e/prefer-spread-syntax': 'off',       // also rewrites .concat/Array.from (array-spread regressions); object spread enforced via core prefer-object-spread
             'e18e/prefer-nullish-coalescing': 'off',  // ?? not allowed (affects some downstream bundlers)
             'e18e/prefer-array-to-sorted': 'off',     // Not available until Safari 16
             'e18e/prefer-array-to-reversed': 'off',   // Not available until Safari 16
@@ -253,6 +253,7 @@ export default tseslint.config(
             '@stylistic/arrow-parens': 'off',
             '@stylistic/indent': ['error', 4, {
                 flatTernaryExpressions: true,
+                SwitchCase: 0,
                 CallExpression: {arguments: 'off'},
                 FunctionDeclaration: {parameters: 'off'},
             }],

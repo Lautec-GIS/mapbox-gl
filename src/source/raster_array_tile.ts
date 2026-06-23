@@ -1,4 +1,4 @@
-import Pbf from 'pbf';
+import {PbfReader} from 'pbf';
 import Tile from './tile';
 import Texture from '../render/texture';
 import {RGBAImage} from '../util/image';
@@ -16,7 +16,7 @@ import type {OverscaledTileID} from './tile_id';
 import type {RequestParameters, ResponseCallback} from '../util/ajax';
 import type {MapboxRasterLayer, MRTDecodingBatch} from '../data/mrt/mrt.esm.js';
 
-MapboxRasterTile.setPbf(Pbf);
+MapboxRasterTile.setPbf(PbfReader);
 
 export type TextureDescriptor = {
     img: TextureImage;
@@ -139,47 +139,46 @@ class RasterArrayTile extends Tile implements Tile {
     fetchHeader(
         fetchLength: number | null | undefined = FIRST_TRY_HEADER_LENGTH,
         callback: ResponseCallback<ArrayBuffer | null | undefined>,
-    ): Cancelable {
+    ): AbortController {
         const mrt = this._mrt = new MapboxRasterTile(MRT_DECODED_BAND_CACHE_SIZE);
 
-        const headerRequestParams = Object.assign({}, this.requestParams, {headers: {Range: `bytes=0-${fetchLength - 1}`}});
+        const headerRequestParams = {...this.requestParams, headers: {Range: `bytes=0-${fetchLength - 1}`}};
 
         // A buffer, in case range requests were ignored
         this.entireBuffer = null;
 
-        this.request = getArrayBuffer(headerRequestParams, (error?: Error | null, dataBuffer?: ArrayBuffer | null, headers?: Headers) => {
-            if (error) {
-                callback(error);
-                return;
-            }
+        const controller = new AbortController();
+        this.request = controller;
+        getArrayBuffer(headerRequestParams, controller.signal)
+            .then(({data: dataBuffer, headers}) => {
+                try {
+                    const headerLength = mrt.getHeaderLength(dataBuffer);
+                    if (headerLength > fetchLength) {
+                        this.request = this.fetchHeader(headerLength, callback);
+                        return;
+                    }
 
-            try {
-                const headerLength = mrt.getHeaderLength(dataBuffer);
-                if (headerLength > fetchLength) {
-                    this.request = this.fetchHeader(headerLength, callback);
-                    return;
+                    // Parse the header only
+                    mrt.parseHeader(dataBuffer);
+                    this._isHeaderLoaded = true;
+
+                    // If the received data covers all possible byte ranges (i.e. if the range request was
+                    // ignored by the server), then cache the buffer and neglect range requests.
+                    let lastByte = 0;
+                    for (const layer of Object.values(mrt.layers)) {
+                        lastByte = Math.max(lastByte, layer.dataIndex.at(-1).lastByte);
+                    }
+
+                    if (dataBuffer.byteLength >= lastByte) {
+                        this.entireBuffer = dataBuffer;
+                    }
+
+                    callback(null, (this.entireBuffer || dataBuffer), headers);
+                } catch (error) {
+                    callback(error as Error);
                 }
-
-                // Parse the header only
-                mrt.parseHeader(dataBuffer);
-                this._isHeaderLoaded = true;
-
-                // If the received data covers all possible byte ranges (i.e. if the range request was
-                // ignored by the server), then cache the buffer and neglect range requests.
-                let lastByte = 0;
-                for (const layer of Object.values(mrt.layers)) {
-                    lastByte = Math.max(lastByte, layer.dataIndex.at(-1).lastByte);
-                }
-
-                if (dataBuffer.byteLength >= lastByte) {
-                    this.entireBuffer = dataBuffer;
-                }
-
-                callback(null, (this.entireBuffer || dataBuffer), headers);
-            } catch (error) {
-                callback(error as Error);
-            }
-        });
+            })
+            .catch((err: Error) => { if (!controller.signal.aborted) callback(err); });
 
         return this.request;
     }
@@ -198,7 +197,7 @@ class RasterArrayTile extends Tile implements Tile {
         });
     }
 
-    fetchBand(sourceLayer: string, layerId: string | null, band: string | number, callback: Callback<TDecodingResult[] | null | undefined>, cancelable: boolean = true): Cancelable {
+    fetchBand(sourceLayer: string, layerId: string | null, band: string | number, callback: Callback<TDecodingResult[] | null | undefined>): Cancelable {
         // If header is not loaded, bail out of rendering.
         // Repaint on reload is handled by appropriate callbacks.
         const mrt = this._mrt;
@@ -252,13 +251,13 @@ class RasterArrayTile extends Tile implements Tile {
                 task
             };
 
-            const workerJob = actor.send('decodeRasterArray', params, onDataDecoded, undefined, true);
+            const decodeRequest = actor.sendCancelable('decodeRasterArray', params, {}, onDataDecoded);
 
             if (layerId !== null) {
                 const workQueue = this._workQueuePerLayer.get(layerId) || [];
 
                 workQueue.push(() => {
-                    if (workerJob) workerJob.cancel();
+                    decodeRequest.abort();
                     task.cancel();
                 });
 
@@ -313,13 +312,16 @@ class RasterArrayTile extends Tile implements Tile {
             // TODO: can we decode without slicing and duplicating memory?
             onDataLoaded(null, this.entireBuffer.slice(range.firstByte, range.lastByte + 1));
         } else {
-            const rangeRequestParams = Object.assign({}, this.requestParams, {headers: {Range: `bytes=${range.firstByte}-${range.lastByte}`}});
-            const request = getArrayBuffer(rangeRequestParams, onDataLoaded);
+            const rangeRequestParams = {...this.requestParams, headers: {Range: `bytes=${range.firstByte}-${range.lastByte}`}};
+            const controller = new AbortController();
+            getArrayBuffer(rangeRequestParams, controller.signal)
+                .then(({data: buffer}) => onDataLoaded(null, buffer))
+                .catch((err: Error) => { if (!controller.signal.aborted) onDataLoaded(err); });
 
             if (layerId !== null) {
                 const fetchQueue = this._fetchQueuePerLayer.get(layerId) || [];
                 fetchQueue.push(() => {
-                    request.cancel();
+                    controller.abort();
                     task.cancel();
                 });
                 if (!this._fetchQueuePerLayer.has(layerId)) {

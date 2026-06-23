@@ -28,6 +28,7 @@ import {debugUniformValues} from '../../src/render/program/debug_program';
 import Color from '../../src/style-spec/util/color';
 import {lerp} from '../../src/style-spec/util/lerp';
 
+import type EvaluationParameters from '../../src/style/evaluation_parameters';
 import type Program from '../../src/render/program';
 import type Transform from '../../src/geo/transform';
 import type ModelBucket from '../data/bucket/model_bucket';
@@ -45,6 +46,7 @@ import type VertexBuffer from '../../src/gl/vertex_buffer';
 import type {CutoffParams} from '../../src/render/cutoff';
 import type {LUT} from "../../src/util/lut";
 import type {ModelUniformsType, ModelDepthUniformsType} from '../render/program/model_program';
+import type {LightOverrides} from './lights';
 
 export default drawModels;
 
@@ -80,10 +82,6 @@ const zeroCameraPos: [number, number, number] = [0, 0, 0];
 // on top of the per-tile cascade*tile cache. Lazily grown to the active cascade count.
 const shadowLightMatrices: Float64Array[] = [];
 
-// Below this lightmap intensity the contribution is negligible, so we skip the
-// USE_LIGHTMAP shader path entirely instead of branching on the uniform at runtime.
-const LIGHTMAP_INTENSITY_THRESHOLD = 0.001;
-
 type ModelParameters = {
     zScaleMatrix: mat4;
     negCameraPosMatrix: mat4;
@@ -99,6 +97,7 @@ type SortedMesh = {
     modelOpacity: number;
     materialOverride?: MaterialOverride;
     modelColor?: [number, number, number, number];
+    lightOverrides?: LightOverrides;
     node: ModelNode;
     modelMatrix: mat4;
 };
@@ -241,25 +240,6 @@ function drawMesh(sortedMesh: SortedMesh, painter: Painter, layer: ModelStyleLay
 
     const ignoreLut = layer.paint.get('model-color-use-theme').constantOr('default') === 'none';
     const emissiveStrength = layer.paint.get('model-emissive-strength').constantOr(0.0);
-    const uniformValues = modelUniformValues(
-        sortedMesh.worldViewProjection,
-        lightingMatrixScratch,
-        normalMatrixScratch,
-        null,
-        painter,
-
-        opacity,
-        pbr.baseColorFactor,
-        material.emissiveFactor,
-        pbr.metallicFactor,
-        pbr.roughnessFactor,
-        material,
-        emissiveStrength,
-        layer,
-        undefined,
-        undefined,
-        sortedMesh.materialOverride,
-        sortedMesh.modelColor);
 
     const programOptions: CreateProgramParams = {
         defines: []
@@ -272,7 +252,7 @@ function drawMesh(sortedMesh: SortedMesh, painter: Painter, layer: ModelStyleLay
     if (shadowRenderer) { shadowRenderer.useNormalOffset = false; }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    setupMeshDraw((programOptions.defines as Array<string>), dynamicBuffers, mesh, painter, ignoreLut ? null : layer.lut);
+    setupMeshDraw((programOptions.defines), dynamicBuffers, mesh, painter, ignoreLut ? null : layer.lut);
 
     let fogMatrix: mat4 | null = null;
     if (fog) {
@@ -293,7 +273,28 @@ function drawMesh(sortedMesh: SortedMesh, painter: Painter, layer: ModelStyleLay
 
     const program = painter.getOrCreateProgram('model', programOptions);
 
-    painter.uploadCommonUniforms(context, program, null, fogMatrix, cutoffParams);
+    const uniformValues = modelUniformValues(
+        sortedMesh.worldViewProjection,
+        lightingMatrixScratch,
+        normalMatrixScratch,
+        null,
+        painter,
+        opacity,
+        pbr.baseColorFactor,
+        material.emissiveFactor,
+        pbr.metallicFactor,
+        pbr.roughnessFactor,
+        material,
+        emissiveStrength,
+        layer,
+        undefined,
+        undefined,
+        sortedMesh.materialOverride,
+        sortedMesh.modelColor,
+        1.0,
+        program.fixedDefines.includes('LIGHTING_3D_MODE'));
+
+    painter.uploadCommonUniforms(context, program, null, fogMatrix, cutoffParams, sortedMesh.lightOverrides);
 
     const isShadowPass = painter.renderPass === 'shadow';
 
@@ -340,13 +341,20 @@ export function prepare(layer: ModelStyleLayer, sourceCache: SourceCache, painte
     }
 }
 
-function prepareMeshes(painter: Painter, node: ModelNode, modelMatrix: mat4, projectionMatrix: mat4, modelIndex: number, transparentMeshes: Array<SortedMesh>, opaqueMeshes: Array<SortedMesh>, materialOverrides: ModelMaterialOverrides, modelOpacity: number, modelColorMix?: [number, number, number, number]) {
+function prepareMeshes(painter: Painter, node: ModelNode, modelMatrix: mat4, projectionMatrix: mat4, modelIndex: number, transparentMeshes: Array<SortedMesh>, opaqueMeshes: Array<SortedMesh>, materialOverrides: ModelMaterialOverrides, modelOpacity: number, modelColorMix?: [number, number, number, number], lightOverrides?: LightOverrides) {
 
     const transform = painter.transform;
 
     const isGlobe = transform.projection.name === 'globe';
     const isShadowPass = painter.renderPass === 'shadow';
     const isLightMesh = node.isGeometryBloom ? node.isGeometryBloom : false;
+
+    if (node.minZoom !== undefined) {
+        if (painter.transform.zoom < node.minZoom) return;
+    }
+    if (node.maxZoom !== undefined) {
+        if (painter.transform.zoom > node.maxZoom) return;
+    }
 
     // Skip bloom geometry meshes for shadow pass
     if (isLightMesh && isShadowPass) return;
@@ -362,7 +370,7 @@ function prepareMeshes(painter: Painter, node: ModelNode, modelMatrix: mat4, pro
             if (materialOverride && materialOverride.opacity <= 0) continue;
 
             if (mesh.material.alphaMode !== 'BLEND') {
-                const opaqueMesh: SortedMesh = {mesh, depth: 0.0, modelIndex, worldViewProjection, nodeModelMatrix, isLightMesh, materialOverride, modelOpacity, modelColor: modelColorMix, node, modelMatrix};
+                const opaqueMesh: SortedMesh = {mesh, depth: 0.0, modelIndex, worldViewProjection, nodeModelMatrix, isLightMesh, materialOverride, modelOpacity, modelColor: modelColorMix, lightOverrides, node, modelMatrix};
                 opaqueMeshes.push(opaqueMesh);
                 continue;
             }
@@ -370,13 +378,13 @@ function prepareMeshes(painter: Painter, node: ModelNode, modelMatrix: mat4, pro
             const centroidPos = vec3.transformMat4([], mesh.centroid, worldViewProjection);
             // Filter meshes behind the camera if in perspective mode
             if (!transform.isOrthographic && centroidPos[2] <= 0.0) continue;
-            const transparentMesh: SortedMesh = {mesh, depth: centroidPos[2], modelIndex, worldViewProjection, nodeModelMatrix, isLightMesh, materialOverride, modelOpacity, modelColor: modelColorMix, node, modelMatrix};
+            const transparentMesh: SortedMesh = {mesh, depth: centroidPos[2], modelIndex, worldViewProjection, nodeModelMatrix, isLightMesh, materialOverride, modelOpacity, modelColor: modelColorMix, lightOverrides, node, modelMatrix};
             transparentMeshes.push(transparentMesh);
         }
     }
     if (node.children) {
         for (const child of node.children) {
-            prepareMeshes(painter, child, modelMatrix, projectionMatrix, modelIndex, transparentMeshes, opaqueMeshes, materialOverrides, modelOpacity, modelColorMix);
+            prepareMeshes(painter, child, modelMatrix, projectionMatrix, modelIndex, transparentMeshes, opaqueMeshes, materialOverrides, modelOpacity, modelColorMix, lightOverrides);
         }
     }
 }
@@ -473,7 +481,7 @@ function drawFootprint(painter: Painter, layer: ModelStyleLayer, node: ModelNode
 // Evaluate feature state for node names
 function evaluateFeatureStateForNodeOverrides(layer: ModelStyleLayer, featureId: string | number, featureState: FeatureState, featureProperties: Record<string, unknown>, nodeNamesToEvaluate: string[], nodeOverrides: ModelNodeOverrides) {
     for (const nodeId of nodeNamesToEvaluate) {
-        const partProperties = Object.assign({}, featureProperties);
+        const partProperties = {...featureProperties};
         partProperties['part'] = nodeId;
 
         const part: Feature = {
@@ -492,7 +500,7 @@ function evaluateFeatureStateForNodeOverrides(layer: ModelStyleLayer, featureId:
 // Evaluate feature state for material names
 function evaluateFeatureStateForMaterialOverrides(layer: ModelStyleLayer, featureId: string | number, featureState: FeatureState, featureProperties: Record<string, unknown>, materialNamesToEvaluate: string[], materialOverrides: ModelMaterialOverrides) {
     for (const materialId of materialNamesToEvaluate) {
-        const partProperties = Object.assign({}, featureProperties);
+        const partProperties = {...featureProperties};
         partProperties['part'] = materialId;
 
         const part: Feature = {
@@ -623,7 +631,7 @@ function drawModels(painter: Painter, sourceCache: SourceCache, layer: ModelStyl
         const modelParameters = {zScaleMatrix, negCameraPosMatrix};
         modelParametersVector.push(modelParameters);
         for (const node of model.nodes) {
-            prepareMeshes(painter, node, model.matrix, painter.transform.expandedFarZProjMatrix, modelIndex, transparentMeshes, opaqueMeshes, model.materialOverrides, modelOpacity);
+            prepareMeshes(painter, node, model.matrix, painter.transform.expandedFarZProjMatrix, modelIndex, transparentMeshes, opaqueMeshes, model.materialOverrides, modelOpacity, undefined, model.lightOverrides);
         }
         modelIndex++;
     }
@@ -824,7 +832,7 @@ function drawVectorLayerModels(painter: Painter, source: SourceCache, layer: Mod
 
     const modelIdUnevaluatedProperty = layer._unevaluatedLayout._values['model-id'];
 
-    const evaluationParameters = Object.assign({}, layer.layout.get("model-id").parameters);
+    const evaluationParameters = {...layer.layout.get("model-id").parameters} as EvaluationParameters;
 
     const layerIndex = painter.style.order.indexOf(layer.fqid);
 
@@ -1013,7 +1021,6 @@ function drawInstancedNode(painter: Painter, layer: ModelStyleLayer, node: Model
                     instancedNormalMatrixPlaceholder,
                     null,
                     painter,
-
                     layerOpacity,
                     pbr.baseColorFactor,
                     material.emissiveFactor,
@@ -1022,7 +1029,12 @@ function drawInstancedNode(painter: Painter, layer: ModelStyleLayer, node: Model
                     material,
                     emissiveStrength,
                     layer,
-                    cameraPos
+                    cameraPos,
+                    undefined,
+                    undefined,
+                    undefined,
+                    1.0,
+                    program.fixedDefines.includes('LIGHTING_3D_MODE')
                 );
                 if (shadowRenderer) {
                     if (!renderData.shadowUniformsInitialized) {
@@ -1245,9 +1257,38 @@ function drawBatchedModels(painter: Painter, source: SourceCache, layer: ModelSt
                     lodNodeCenterScratch[1] = (min[1] + max[1]) * 0.5;
                     lodNodeCenterScratch[2] = (min[2] + max[2]) * 0.5;
                     const distanceToCamera = vec3.distance(cameraPos, lodNodeCenterScratch) * metersPerPixel;
-                    // Rendering can get paused and thus the LOD transition may stop. Therefore don't use the full time-step,
-                    // such that when rendering is resumed, the transition smoothly continues.
-                    updateModelLod(nodeInfo, distanceToCamera, Math.min(painter._debugParams.dt, 1000 / 30), painter._debugParams.lodSwitchDistance, painter._debugParams.lodSwitchFadeDuration);
+
+                    const overrideDistance = painter._debugParams.lodSwitchDistance;
+                    const hasOverride = overrideDistance >= 0;
+
+                    if (hasOverride && overrideDistance >= 9999) {
+                        // LOD disabled: snap to full detail regardless of distance.
+                        nodeInfo.targetLod = 0;
+                    } else {
+                        let switchAtDistance: number;
+                        if (hasOverride) {
+                            switchAtDistance = overrideDistance;
+                        } else {
+                            // Size-based heuristics: derive switch distance from AABB dimensions,
+                            // matching gl-native constants (minDist=2000, range=3000).
+                            const physicalHeight = (max[2] - min[2]) * metersPerPixel * scale[2];
+                            const physicalWidth = Math.max(max[0] - min[0], max[1] - min[1]) * metersPerPixel * Math.max(scale[0], scale[1]);
+                            let sizeFactor: number;
+                            if (physicalHeight >= 30) {
+                                sizeFactor = 1.0;   // large
+                            } else if (physicalWidth >= 80) {
+                                sizeFactor = 0.5;   // flat (wide but not tall)
+                            } else if (Math.max(physicalHeight, physicalWidth) >= 20) {
+                                sizeFactor = 0.25;  // small
+                            } else {
+                                sizeFactor = 0.0;   // tiny
+                            }
+                            switchAtDistance = 2000 + sizeFactor * 3000;
+                        }
+                        // Rendering can get paused and thus the LOD transition may stop. Therefore don't use the full time-step,
+                        // such that when rendering is resumed, the transition smoothly continues.
+                        updateModelLod(nodeInfo, distanceToCamera, Math.min(painter.frameTimeDelta, 1000 / 30), switchAtDistance, painter._debugParams.lodSwitchFadeDuration);
+                    }
                 }
 
                 if (!isShadowPass && frontCutoffEnabled) {
@@ -1413,13 +1454,9 @@ function drawBatchedModels(painter: Painter, source: SourceCache, layer: ModelSt
                         }
 
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-                        setupMeshDraw((programOptions.defines as Array<string>), dynamicBuffers, mesh, painter, ignoreLut ? null : layer.lut);
+                        setupMeshDraw((programOptions.defines), dynamicBuffers, mesh, painter, ignoreLut ? null : layer.lut);
                         if (!hasMapboxFeatures) {
                             programOptions.defines.push('DIFFUSE_SHADED');
-                        }
-
-                        if (layer.paint.get('model-lightmap-intensity') > LIGHTMAP_INTENSITY_THRESHOLD) {
-                            programOptions.defines.push('USE_LIGHTMAP');
                         }
 
                         if (singleCascade) {
@@ -1501,13 +1538,12 @@ function drawBatchedModels(painter: Painter, source: SourceCache, layer: ModelSt
                                 occlusionTextureTransform,
                                 undefined,
                                 undefined,
-                                threshold
+                                threshold,
+                                program.fixedDefines.includes('LIGHTING_3D_MODE')
                         );
 
-                        // z-prepass is needed for landmark cutoff. Skipped for translucent parts —
-                        // otherwise depth-write here breaks USE_LIGHTMAP in the color pass.
-                        // Should check per-mesh, not per-node, to keep the prepass for opaque meshes of mixed nodes.
-                        if (!isLight && sortedNode.opacity < 1.0 && !nodeInfo.hasTranslucentParts) {
+                        if (!isLight && (nodeInfo.hasTranslucentParts || sortedNode.opacity < 1.0)) {
+
                             program.draw(painter, context.gl.TRIANGLES, depthModeRW, StencilMode.disabled, ColorMode.disabled, CullFaceMode.backCCW,
                                 uniformValues, layer.id, mesh.vertexBuffer, mesh.indexBuffer, mesh.segments, layer.paint, painter.transform.zoom,
                                 // eslint-disable-next-line @typescript-eslint/no-unsafe-argument

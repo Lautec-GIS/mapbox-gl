@@ -157,7 +157,7 @@ function convertPrimitive(primitive: GLTFPrimitive, gltf: GLTF, textures: Array<
 
     const indexArrayBuffer = getBufferData(gltf, indexAccessor);
     mesh.indexArray.resizeExact(indexAccessor.count / 3);
-    mesh.indexArray.uint16.set(indexArrayBuffer as Uint32Array);
+    mesh.indexArray.uint16.set(indexArrayBuffer);
 
     // vertices
     mesh.vertexArray = new ModelLayoutArray();
@@ -166,7 +166,7 @@ function convertPrimitive(primitive: GLTFPrimitive, gltf: GLTF, textures: Array<
 
     const vertexArrayBuffer = getBufferData(gltf, positionAccessor);
     mesh.vertexArray.resizeExact(positionAccessor.count);
-    mesh.vertexArray.float32.set(vertexArrayBuffer as Float32Array);
+    mesh.vertexArray.float32.set(vertexArrayBuffer);
     // bounding box
     mesh.aabb = new Aabb(positionAccessor.min, positionAccessor.max);
     const [minX, minY, minZ] = positionAccessor.min;
@@ -235,6 +235,7 @@ function convertPrimitive(primitive: GLTFPrimitive, gltf: GLTF, textures: Array<
 
 function convertMeshes(gltf: GLTF, textures: Array<ModelTexture>): Array<Array<Mesh>> {
     const meshes: Mesh[][] = [];
+    if (!gltf.json.meshes) return meshes;
 
     for (const meshDesc of gltf.json.meshes) {
         const primitives: Mesh[] = [];
@@ -367,6 +368,12 @@ function convertNode(nodeDesc: GLTFNode, gltf: GLTF, meshes: Array<Array<Mesh>>)
         }
         if (extras['MAPBOX_geometry_bloom']) {
             node.isGeometryBloom = extras['MAPBOX_geometry_bloom'] as boolean;
+        }
+        if (extras['MAPBOX_zoom_min']) {
+            node.minZoom = extras['MAPBOX_zoom_min'] as number;
+        }
+        if (extras['MAPBOX_zoom_max']) {
+            node.maxZoom = extras['MAPBOX_zoom_max'] as number;
         }
     }
 
@@ -623,7 +630,7 @@ export default function convertModel(gltf: GLTF): Array<ModelNode> {
     // Find "Default Scene" by name; fall back to the GLTF default scene index
     let sceneIndex = scenes ? findScene(scenes, "Default Scene") : -1;
     if (sceneIndex < 0) sceneIndex = scene || 0;
-    const sceneNodes = scenes ? scenes[sceneIndex].nodes : [...nodes.keys()];
+    const sceneNodes: number[] = scenes && scenes[sceneIndex] ? scenes[sceneIndex].nodes || [] : [...nodes.keys()];
 
     const resultNodes: ModelNode[] = [];
     for (const nodeIdx of sceneNodes) {
@@ -735,14 +742,14 @@ export function calculateLightsMesh(lights: Array<AreaLight>, zScale: number, in
         // door posts. Later, additional vertices at depth distance from door could be reconsidered.
         // 0.01f to prevent intersection with door post.
         const width = light.width - 2 * light.depth * zScale * (horizontalSpread + 0.01);
-        const v1 = vec3.scaleAndAdd([], light.pos, tangent as [number, number, number], width / 2);
-        const v2 = vec3.scaleAndAdd([], light.pos, tangent as [number, number, number], -width / 2);
+        const v1 = vec3.scaleAndAdd([], light.pos, tangent, width / 2);
+        const v2 = vec3.scaleAndAdd([], light.pos, tangent, -width / 2);
         const v0 = [v1[0], v1[1], v1[2] + light.height];
         const v3 = [v2[0], v2[1], v2[2] + light.height];
 
-        const v1extrusion = vec3.scaleAndAdd([], light.normal, tangent as [number, number, number], horizontalSpread);
+        const v1extrusion = vec3.scaleAndAdd([], light.normal, tangent, horizontalSpread);
         vec3.scale(v1extrusion, v1extrusion, fallOff);
-        const v2extrusion = vec3.scaleAndAdd([], light.normal, tangent as [number, number, number], -horizontalSpread);
+        const v2extrusion = vec3.scaleAndAdd([], light.normal, tangent, -horizontalSpread);
         vec3.scale(v2extrusion, v2extrusion, fallOff);
 
         vec3.add(v1extrusion, v1, v1extrusion);

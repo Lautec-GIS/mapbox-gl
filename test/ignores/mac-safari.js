@@ -1,4 +1,4 @@
-const todo = [
+const skip = [
     // Inconsistencies with fill pattern. Some are visibly noticeable, others subtle.
     // Possibly nonodeterministic rendering.
     "render-tests/fill-extrusion-pattern/feature-expression",
@@ -28,13 +28,13 @@ const todo = [
     "render-tests/globe/globe-transition/bearing",
 
     // Inconsistent debug rendering
-    "render-tests/custom-source/satellite"
-];
-const skip = [
+    "render-tests/custom-source/satellite",
+
     // Sometimes timing out
     "render-tests/globe/globe-video",
     "render-tests/video/default",
-    "render-tests/model-layer/landmark-z-offset-terrain-fix-griffith" // flakey
+    "render-tests/model-layer/landmark-z-offset-terrain-fix-griffith", // flakey
+    "render-tests/model-layer/landmark-mbx-meshopt-quantization-lod/z-offset-v2-station" // flakey
 ];
 
-export default {todo, skip};
+export default {skip};

@@ -15,6 +15,9 @@ export {
 } from '../3d-style/data/bucket/building_bucket';
 export {parseElevationFeatures} from '../3d-style/elevation/parse_elevation_features';
 export {evaluatePortalGraphs as postprocessTile} from '../3d-style/elevation/evaluate_portal_graphs';
+export {parseFrcCoverageFromLayer} from '../3d-style/source/frc_coverage_parser';
+export {isFeatureCoveredByFrcMask, matchesCoverageSourceLayer} from '../3d-style/data/frc_road_classes';
+export {symbolAnchorInFrcCoverage} from '../3d-style/symbol/frc_symbol_filter';
 
 export {parseActiveFloors} from '../3d-style/source/indoor_parser';
 
@@ -25,15 +28,33 @@ export {parseActiveFloors} from '../3d-style/source/indoor_parser';
  *
  * @private
  */
-export function attachExtension(bucket: Bucket): void {
+export function attachExtension(bucket: Bucket, coverageSourceLayers: string[] | null | undefined): void {
     if (bucket instanceof FillBucket) {
-        maybeAttachFillHDExt(bucket);
+        maybeAttachFillHDExt(bucket, coverageSourceLayers);
     } else if (bucket instanceof LineBucket) {
-        maybeAttachLineHDExt(bucket);
+        maybeAttachLineHDExt(bucket, coverageSourceLayers);
     } else if (bucket instanceof CircleBucket) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         maybeAttachCircleHDExt(bucket);
     } else if (bucket instanceof SymbolBucket) {
         maybeAttachSymbolHDExt(bucket);
     }
+}
+
+/**
+ * True when any bucket deferred elevation lookup pending provider readiness.
+ *
+ * Cross-source defer is line-only: `LineHDExtension` is the sole bucket type that
+ * sets `hasDeferredElevationFeatures` when an id is present but providers haven't settled.
+ *
+ * @private
+ */
+export function anyDeferredElevationFeatures(buckets: Record<string, Bucket>): boolean {
+    for (const key in buckets) {
+        const bucket = buckets[key];
+        if (bucket instanceof LineBucket && bucket.hdExt && bucket.hdExt.hasDeferredElevationFeatures) {
+            return true;
+        }
+    }
+    return false;
 }

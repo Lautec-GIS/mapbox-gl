@@ -52,7 +52,9 @@ uniform bool u_is_size_feature_constant;
 uniform highp float u_size_t; // used to interpolate between zoom stops when size is a composite function
 uniform highp float u_size; // used when size is both zoom and feature constant
 uniform mat4 u_matrix;
+#ifdef RENDER_SHADOWS
 uniform mat4 u_inv_matrix;
+#endif
 uniform mat4 u_label_plane_matrix;
 uniform mat4 u_coord_matrix;
 uniform bool u_is_text;
@@ -63,8 +65,12 @@ uniform highp float u_aspect_ratio;
 uniform highp float u_camera_to_center_distance;
 uniform float u_fade_change;
 uniform vec2 u_texsize;
+#ifdef PROJECTION_GLOBE_VIEW
 uniform vec3 u_up_vector;
+#endif
+#ifdef RENDER_TEXT_AND_SYMBOL
 uniform vec2 u_texsize_icon;
+#endif
 uniform bool u_is_halo;
 
 #ifdef PROJECTION_GLOBE_VIEW
@@ -97,9 +103,6 @@ out highp vec4 v_pos_light_view_0;
 out highp vec4 v_pos_light_view_1;
 out highp float v_depth;
 #endif
-
-#ifdef USE_PAINT_PROPERTIES_UBO
-/// UBO-based paint property declarations.
 
 /// Maximum size of UBO (uniform buffer object).
 ///
@@ -137,7 +140,7 @@ struct SymbolPaintProperties {
 struct PropertyType {
     /// Whether the property is data-driven and has value in data-driven block or constant uniform.
     bool isDataDriven;
-     /// Whether the property is zoom-dependent and has two values that need to be interpolated between zooms.
+    /// Whether the property is zoom-dependent and has two values that need to be interpolated between zooms.
     bool isZoomDependent;
     /// Local offset within the data-driven block (in dwords).
     ///
@@ -147,6 +150,14 @@ struct PropertyType {
     /// - float for float properties
     /// - vec2 for two floats properties (used for zoom-dependent float properties)
     uint offsetDwords;
+    /// Precomputed zoom interpolation factor t in [0, 1] supplied by the binder via
+    /// u_spp_*_zoom_factor. Only meaningful when isZoomDependent is true and hasAppearanceZoomStops false.
+    float zoomFactor;
+    /// Whether appearances override this property with differing zoom stops, so its zoom range
+    /// [zm, zM] is not shared across features. When true, the factor is derived per feature from a
+    /// packed [zm, zM] stored in the data-driven block plus u_spp_zoom_fraction, instead of from the
+    /// shared u_spp_*_zoom_factor uniform.
+    bool hasAppearanceZoomStops;
 };
 
 struct SymbolPropertyHeader {
@@ -166,13 +177,7 @@ struct SymbolPropertyHeader {
     PropertyType translate;
 };
 
-/// Zoom interpolation factor for zoom-dependent paint properties.
-uniform float u_zoom;
-
 /// Constant paint properties values shared for all features.
-///
-/// Note: "spp" prefix (Symbol Paint Properties) is needed to avoid name conflicts
-/// with pragma-based paint property declarations.
 uniform lowp vec4 u_spp_fill_np_color;
 uniform lowp vec4 u_spp_halo_np_color;
 uniform lowp float u_spp_opacity;
@@ -183,6 +188,21 @@ uniform lowp float u_spp_occlusion_opacity;
 uniform highp float u_spp_z_offset;
 /// [cos(angle), sin(angle)] for translate-anchor rotation; [1,0] = no rotation (viewport anchor).
 uniform lowp vec2 u_spp_translate_rotation;
+
+/// Per-property zoom interpolation factor. Only meaningful for zoom-dependent properties.
+uniform highp float u_spp_fill_color_zoom_factor;
+uniform highp float u_spp_halo_color_zoom_factor;
+uniform highp float u_spp_opacity_zoom_factor;
+uniform highp float u_spp_halo_width_zoom_factor;
+uniform highp float u_spp_halo_blur_zoom_factor;
+uniform highp float u_spp_emissive_strength_zoom_factor;
+uniform highp float u_spp_occlusion_opacity_zoom_factor;
+uniform highp float u_spp_z_offset_zoom_factor;
+uniform highp float u_spp_translate_zoom_factor;
+
+/// Fractional part of the current render zoom used to derive the
+/// zoom interpolation factor from an appearance-zoom-stops property's packed [zm, zM] range
+uniform highp float u_spp_zoom_fraction;
 
 /// Per-feature index used to look up the feature's data-driven paint property block in
 /// the u_properties uniform buffer.
@@ -211,42 +231,52 @@ layout(std140) uniform SymbolPaintPropertiesIndexUniform {
 
 /// Symbol paint properties need to be interpolated and passed to the fragment shader.
 out lowp float v_opacity;
-#ifdef RENDER_SDF
 out lowp vec4 v_fill_np_color;
 out lowp vec4 v_halo_np_color;
 out lowp float v_halo_width;
 out lowp float v_halo_blur;
-#endif
 #ifdef LIGHTING_3D_MODE
 out lowp float v_emissive_strength;
 #endif
 
-PropertyType getPropertyType(uint propertyIndex, uint dataDrivenMask, uint zoomDependentMask, uint offsetDwords) {
+PropertyType getPropertyType(uint propertyIndex, uint dataDrivenMask, uint zoomDependentMask, uint appearanceZoomStopsMask, uint offsetDwords, float zoomFactor) {
     PropertyType type;
     type.isDataDriven = (dataDrivenMask & (1u << propertyIndex)) != 0u;
     type.isZoomDependent = (zoomDependentMask & (1u << propertyIndex)) != 0u;
     type.offsetDwords = offsetDwords;
+    type.zoomFactor = zoomFactor;
+    type.hasAppearanceZoomStops = (appearanceZoomStopsMask & (1u << propertyIndex)) != 0u;
     return type;
 }
 
 SymbolPropertyHeader readSymbolPropertiesHeader() {
     SymbolPropertyHeader header;
-    // Read masks:
-    uint dataDrivenMask = u_spp_header.header[0][0];
-    uint zoomDependentMask = u_spp_header.header[0][1];
-    // Read block sizes:
+    uint dataDrivenMask            = u_spp_header.header[0][0];
+    uint zoomMask                  = u_spp_header.header[0][1];
+    // The zoom-dependent flags occupy the low 16 bits; the appearance-zoom-stops flags the high 16.
+    uint zoomDependentMask         = zoomMask & 0xFFFFu;
+    uint appearanceZoomStopsMask   = zoomMask >> 16u;
     header.dataDrivenBlockSizeVec4 = u_spp_header.header[0][2];
-    // Read property types and block offsets:
-    header.fill_np_color        = getPropertyType(0u, dataDrivenMask, zoomDependentMask, u_spp_header.header[0][3]);
-    header.halo_np_color        = getPropertyType(1u, dataDrivenMask, zoomDependentMask, u_spp_header.header[1][0]);
-    header.opacity              = getPropertyType(2u, dataDrivenMask, zoomDependentMask, u_spp_header.header[1][1]);
-    header.halo_width           = getPropertyType(3u, dataDrivenMask, zoomDependentMask, u_spp_header.header[1][2]);
-    header.halo_blur            = getPropertyType(4u, dataDrivenMask, zoomDependentMask, u_spp_header.header[1][3]);
-    header.emissive_strength    = getPropertyType(5u, dataDrivenMask, zoomDependentMask, u_spp_header.header[2][0]);
-    header.occlusion_opacity    = getPropertyType(6u, dataDrivenMask, zoomDependentMask, u_spp_header.header[2][1]);
-    header.z_offset             = getPropertyType(7u, dataDrivenMask, zoomDependentMask, u_spp_header.header[2][2]);
-    header.translate            = getPropertyType(8u, dataDrivenMask, zoomDependentMask, u_spp_header.header[2][3]);
+    header.fill_np_color     = getPropertyType(0u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[0][3], u_spp_fill_color_zoom_factor);
+    header.halo_np_color     = getPropertyType(1u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[1][0], u_spp_halo_color_zoom_factor);
+    header.opacity           = getPropertyType(2u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[1][1], u_spp_opacity_zoom_factor);
+    header.halo_width        = getPropertyType(3u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[1][2], u_spp_halo_width_zoom_factor);
+    header.halo_blur         = getPropertyType(4u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[1][3], u_spp_halo_blur_zoom_factor);
+    header.emissive_strength = getPropertyType(5u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[2][0], u_spp_emissive_strength_zoom_factor);
+    header.occlusion_opacity = getPropertyType(6u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[2][1], u_spp_occlusion_opacity_zoom_factor);
+    header.z_offset          = getPropertyType(7u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[2][2], u_spp_z_offset_zoom_factor);
+    header.translate         = getPropertyType(8u, dataDrivenMask, zoomDependentMask, appearanceZoomStopsMask, u_spp_header.header[2][3], u_spp_translate_zoom_factor);
     return header;
+}
+
+/// Derive the zoom interpolation factor for an appearance-zoom-stops property from its [zm, zM]
+/// range and the current render-zoom fraction.
+/// Step expressions encode the snap as zm == zM; interpolate expressions give a [zm, zM] window.
+float appearanceZoomStopsFactor(float zm, float zM) {
+    if (zm == zM) {
+        return u_spp_zoom_fraction >= zm ? 1.0 : 0.0;
+    }
+    return clamp((u_spp_zoom_fraction - zm) / (zM - zm), 0.0, 1.0);
 }
 
 /// Returns the component of a uvec4 at the given index.
@@ -274,11 +304,11 @@ vec4 readVec4(uint baseOffsetVec4, uint propertyOffsetDwords) {
 }
 
 float readFloat(vec4 slot, uint propertyOffsetDwords) {
-    return slot[propertyOffsetDwords % DWORDS_PER_VEC4];
+    return vec4At(slot, propertyOffsetDwords % DWORDS_PER_VEC4);
 }
 
 uint readUint(uvec4 slot, uint offset) {
-    return slot[offset % DWORDS_PER_VEC4];
+    return uvec4At(slot, offset % DWORDS_PER_VEC4);
 }
 
 vec2 readVec2(vec4 slot, uint propertyOffsetDwords) {
@@ -295,11 +325,23 @@ uint getDataDrivenBlockOffsetVec4(uint dataDrivenBlockSizeVec4) {
     return blockIndex * dataDrivenBlockSizeVec4;
 }
 
+/// Read a color property from the UBO.
+/// Non-zoom:                 vec4 at offsetDwords = [RG, BA, pad, pad]; decode packed vec2.
+/// Zoom-dep (shared stops):  vec4 at offsetDwords = [minRG, minBA, maxRG, maxBA]; mix via the
+///                           property's precomputed zoomFactor on the CPU side.
+/// Zoom-dep (appearance stops): same value vec4, plus a second vec4 at offsetDwords+4 whose
+///                           .xy = [zm, zM]; factor derived per feature from u_spp_zoom_fraction.
 vec4 readColorProperty(PropertyType propertyType, uint dataDrivenBlockSizeVec4) {
     uint blockOffsetVec4 = getDataDrivenBlockOffsetVec4(dataDrivenBlockSizeVec4);
     vec4 color = readVec4(blockOffsetVec4, propertyType.offsetDwords);
     if (propertyType.isZoomDependent) {
-        color = unpack_mix_color(color, u_zoom);
+        float t = propertyType.zoomFactor;
+        if (propertyType.hasAppearanceZoomStops) {
+            // [zm, zM] live in the .xy of the vec4 following the value vec4
+            vec4 zoomRange = readVec4(blockOffsetVec4, propertyType.offsetDwords + 4u);
+            t = appearanceZoomStopsFactor(zoomRange.x, zoomRange.y);
+        }
+        color = unpack_mix_color(color, t);
     } else {
         vec2 packedColor = readVec2(color, propertyType.offsetDwords);
         color = decode_color(packedColor);
@@ -308,26 +350,43 @@ vec4 readColorProperty(PropertyType propertyType, uint dataDrivenBlockSizeVec4) 
 }
 
 /// Read a vec2 property (translate) from the UBO.
-/// Non-zoom: 2 consecutive floats [tx, ty] within the same vec4 (offset%4 <= 2).
-/// Zoom-dep: 4 floats [tx_min, ty_min, tx_max, ty_max] at a vec4-aligned offset.
+/// Non-zoom:                 2 consecutive floats [tx, ty] within the same vec4 (offset%4 <= 2).
+/// Zoom-dep (shared stops):  4 floats [tx_min, ty_min, tx_max, ty_max] at a vec4-aligned offset;
+///                           mix via the property's precomputed zoomFactor on the CPU side.
+/// Zoom-dep (appearance stops): same 4-float layout, plus a second vec4 at offsetDwords+4 whose
+///                           .xy = [zm, zM]; factor derived per feature from u_spp_zoom_fraction.
 vec2 readVec2Property(PropertyType propertyType, uint dataDrivenBlockSizeVec4) {
     uint blockOffsetVec4 = getDataDrivenBlockOffsetVec4(dataDrivenBlockSizeVec4);
     vec4 slot = readVec4(blockOffsetVec4, propertyType.offsetDwords);
     if (propertyType.isZoomDependent) {
-        vec2 minVal = slot.xy;
-        vec2 maxVal = slot.zw;
-        return mix(minVal, maxVal, u_zoom);
+        float t = propertyType.zoomFactor;
+        if (propertyType.hasAppearanceZoomStops) {
+            // [zm, zM] live in the .xy of the vec4 following the value vec4
+            vec4 zoomRange = readVec4(blockOffsetVec4, propertyType.offsetDwords + 4u);
+            t = appearanceZoomStopsFactor(zoomRange.x, zoomRange.y);
+        }
+        return mix(slot.xy, slot.zw, t);
     }
     return readVec2(slot, propertyType.offsetDwords);
 }
 
+/// Read a float property from the UBO.
+/// Non-zoom:                 single float at offsetDwords within its vec4.
+/// Zoom-dep (shared stops):  2 floats [min, max] at dwords 0-1 of a vec4-aligned slot;
+///                           mix via the property's precomputed zoomFactor on the CPU side.
+/// Zoom-dep (appearance stops): same [min, max] at dwords 0-1, with [zm, zM] packed at dwords 2-3
+///                           of the same vec4; factor derived per feature from u_spp_zoom_fraction.
 float readFloatProperty(PropertyType propertyType, uint dataDrivenBlockSizeVec4) {
     uint blockOffsetVec4 = getDataDrivenBlockOffsetVec4(dataDrivenBlockSizeVec4);
     vec4 slot = readVec4(blockOffsetVec4, propertyType.offsetDwords);
     float value;
     if (propertyType.isZoomDependent) {
         vec2 packedValues = readVec2(slot, propertyType.offsetDwords);
-        value = unpack_mix_vec2(packedValues, u_zoom);
+        // Appearance-zoom-stops scalars store [zm, zM] at the third/fourth dword of the value vec4
+        float t = propertyType.hasAppearanceZoomStops
+            ? appearanceZoomStopsFactor(readFloat(slot, propertyType.offsetDwords + 2u), readFloat(slot, propertyType.offsetDwords + 3u))
+            : propertyType.zoomFactor;
+        value = unpack_mix_vec2(packedValues, t);
     } else {
         value = readFloat(slot, propertyType.offsetDwords);
     }
@@ -338,6 +397,7 @@ SymbolPaintProperties readSymbolPaintProperties() {
     SymbolPropertyHeader header = readSymbolPropertiesHeader();
     uint sizeVec4 = header.dataDrivenBlockSizeVec4;
     SymbolPaintProperties props;
+
     props.fill_np_color        = header.fill_np_color.isDataDriven     ? readColorProperty(header.fill_np_color, sizeVec4)     : u_spp_fill_np_color;
     props.halo_np_color        = header.halo_np_color.isDataDriven     ? readColorProperty(header.halo_np_color, sizeVec4)     : u_spp_halo_np_color;
     props.opacity              = header.opacity.isDataDriven           ? readFloatProperty(header.opacity, sizeVec4)           : u_spp_opacity;
@@ -350,57 +410,24 @@ SymbolPaintProperties readSymbolPaintProperties() {
     return props;
 }
 
-#else 
-/// Pragma-based paint property declarations.
-
-#pragma mapbox: define highp vec4 fill_color
-#pragma mapbox: define highp vec4 halo_color
-#pragma mapbox: define lowp float opacity
-#pragma mapbox: define lowp float halo_width
-#pragma mapbox: define lowp float halo_blur
-#pragma mapbox: define lowp float emissive_strength
-#pragma mapbox: define lowp float occlusion_opacity
-#pragma mapbox: define highp float z_offset
-
-#endif // USE_PAINT_PROPERTIES_UBO
-
 vec2 unpack_opacity(uint packedOpacity) {
     return vec2(float(packedOpacity / 2u) / 127.0, float(packedOpacity & 1u));
 }
 
 void main() {
-
-#ifdef USE_PAINT_PROPERTIES_UBO
-    /// UBO-based paint property initializations.
-
+    // Paint property initializations.
     SymbolPaintProperties paint_properties = readSymbolPaintProperties();
     lowp float opacity = paint_properties.opacity;
     v_opacity = opacity;
-#ifdef RENDER_SDF
     v_fill_np_color = paint_properties.fill_np_color;
     v_halo_np_color = paint_properties.halo_np_color;
     v_halo_width = paint_properties.halo_width;
     v_halo_blur = paint_properties.halo_blur;
-#endif
 #ifdef LIGHTING_3D_MODE
     v_emissive_strength = paint_properties.emissive_strength;
 #endif
     lowp float occlusion_opacity = paint_properties.occlusion_opacity;
     highp float z_offset = paint_properties.z_offset;
-
-#else
-    /// Pragma-based paint property initializations.
-
-    #pragma mapbox: initialize highp vec4 fill_color
-    #pragma mapbox: initialize highp vec4 halo_color
-    #pragma mapbox: initialize lowp float opacity
-    #pragma mapbox: initialize lowp float halo_width
-    #pragma mapbox: initialize lowp float halo_blur
-    #pragma mapbox: initialize lowp float emissive_strength
-    #pragma mapbox: initialize lowp float occlusion_opacity
-    #pragma mapbox: initialize highp float z_offset
-
-#endif // USE_PAINT_PROPERTIES_UBO
 
     vec2 a_pos = vec2(a_pos_offset.xy);
     vec2 a_offset = vec2(a_pos_offset.zw);
@@ -573,7 +600,6 @@ void main() {
 #endif
     gl_Position = mix(u_coord_matrix * vec4(pos, 1.0), AWAY, hidden);
 
-#ifdef USE_PAINT_PROPERTIES_UBO
     // Apply per-feature translate (in label-plane / viewport-pixel units).
     // Rotate by u_spp_translate_rotation to handle translate-anchor (identity for viewport anchor).
     // Adding (u_coord_matrix * vec4(rotated_tr, 0, 0)).xy to gl_Position is equivalent to
@@ -586,7 +612,6 @@ void main() {
         );
         gl_Position.xy += (u_coord_matrix * vec4(rotated_tr, 0.0, 0.0)).xy;
     }
-#endif
 
     float gamma_scale = gl_Position.w;
 

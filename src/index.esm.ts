@@ -1,6 +1,13 @@
 import assert from './style-spec/util/assert';
 import _Point from '@mapbox/point-geometry';
 import {version as _version} from '../package.json';
+import {setBundleDistribution} from './util/mapbox';
+import {isMapboxHTTPCDNURL} from './util/mapbox_url';
+
+// Detect whether this ESM bundle was served from the Mapbox CDN (telemetry only).
+// `import.meta.url` is the module URL; bundlers rewrite it to a local URL, yielding 'other'.
+// eslint-disable-next-line no-restricted-syntax -- this file is the ESM-only entry, never bundled as UMD
+setBundleDistribution(isMapboxHTTPCDNURL(import.meta.url) ? 'cdn' : 'other');
 
 // Source class instance types — returned by map.getSource()
 export type * from './source/source_types';
@@ -147,7 +154,7 @@ export type {
 
 // Named value exports — classes, functions, constants
 export const version: string = _version;
-export {supported} from '@mapbox/mapbox-gl-supported';
+export {isSupported as supported} from '@mapbox/mapbox-gl-supported';
 export {Map} from './ui/map';
 export {default as NavigationControl} from './ui/control/navigation_control';
 export {default as GeolocateControl} from './ui/control/geolocate_control';
@@ -164,8 +171,10 @@ export {default as MercatorCoordinate} from './geo/mercator_coordinate';
 export {Evented} from './util/evented';
 export {FreeCameraOptions} from './ui/free_camera';
 export {setRTLTextPlugin, getRTLTextPluginStatus} from './source/rtl_text_plugin';
+export {setSdkInfo} from './util/mapbox';
 export {addTileProvider} from './source/tile_provider';
 export {prewarm, clearPrewarmedResources} from './util/worker_pool_factory';
+export {setWorkerUrl} from './util/worker_class';
 export {getWorkerCount, setWorkerCount} from './util/worker_pool';
 export {setAccessToken, setBaseApiUrl, setMaxParallelImageRequests, getDracoUrl, setDracoUrl, getMeshoptUrl, setMeshoptUrl, getBuildingGenUrl, setBuildingGenUrl} from './util/config';
 

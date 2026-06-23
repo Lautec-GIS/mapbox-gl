@@ -17,7 +17,7 @@ type PrecompileTask = {
 
 const SHADOW_DEFINES: DynamicDefinesType[] = ['RENDER_SHADOWS', 'NORMAL_OFFSET'];
 
-// Programs whose `draw_*.ts` always appends draw-time defines (e.g. `DEPTH_D24`, `USE_PAINT_PROPERTIES_UBO`)
+// Programs whose `draw_*.ts` always appends draw-time defines (e.g. `DEPTH_D24`)
 // we don't know at precompile time. Their cache keys never match a default-params precompile, so every variant
 // we'd emit is wasted. Skip until we have a per-programId variant table for them.
 const PRECOMPILE_SKIP: Set<ProgramName> = new Set(['symbol', 'circle']);
@@ -52,11 +52,8 @@ export class ProgramPrecompiler {
         this._queue = [];
         this._needsBuild = false;
 
-        // Use resolved style state (post-imports/config), not the raw stylesheet — Standard resolves terrain and projection
-        // via style imports, so `stylesheet.terrain` and `stylesheet.projection` can be undefined while the effective style has them.
-        const stylesheet = style.stylesheet;
         const hasFog = !!style.fog;
-        const hasTerrain = !!(style.getTerrain() || (stylesheet && stylesheet.terrain));
+        const hasTerrain = style.hasTerrain();
         const hasGlobe = !!(style.projection && style.projection.name === 'globe');
         const hasTerrainOrGlobe = hasTerrain || hasGlobe;
         const hasShadows = !!(style.directionalLight && style.directionalLight.shadowsEnabled());
@@ -77,14 +74,15 @@ export class ProgramPrecompiler {
         // Each axis defaults to false (matching `currentGlobalDefines` when overrides are absent at runtime). `params` carries
         // layer-derived params (config, lut, layer-default `overrideFog`); special-purpose programs omit it.
         const emit = (programId: ProgramName, defines: DynamicDefinesType[] = [], opts: {params?: CreateProgramParams, fog?: boolean, terrain?: boolean, globe?: boolean, rtt?: boolean} = {}) => {
-            this._queue.push({programId, params: Object.assign({}, opts.params, {
+            this._queue.push({programId, params: {
+                ...opts.params,
                 defines,
                 overrideFog: !!opts.fog,
                 overrideTerrain: !!opts.terrain,
                 overrideGlobe: !!opts.globe,
                 overrideRtt: !!opts.rtt,
-                precompiled: true
-            })});
+                precompiled: true,
+            }});
         };
 
         for (const layer of layers) {

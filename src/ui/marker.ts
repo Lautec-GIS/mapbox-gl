@@ -115,7 +115,7 @@ export default class Marker extends Evented<MarkerEvents> {
         // For backward compatibility -- the constructor used to accept the element as a
         // required first argument, before it was made optional.
         if (options instanceof HTMLElement || legacyOptions) {
-            options = Object.assign({element: options}, legacyOptions);
+            options = {element: options as HTMLElement, ...legacyOptions};
         }
 
         bindAll([
@@ -548,7 +548,7 @@ export default class Marker extends Evented<MarkerEvents> {
             opacity = 0;
         } else {
             opacity = 1 - map._queryFogOpacity(mapLocation);
-            if (map.transform._terrainEnabled() && map.getTerrain() && this._behindTerrain()) {
+            if (map.transform._terrainEnabled() && map.style && map.style.hasTerrain() && this._behindTerrain()) {
                 opacity *= this._occludedOpacity;
             }
         }
@@ -679,7 +679,7 @@ export default class Marker extends Evented<MarkerEvents> {
                 this._updateDOM();
             }
 
-            if ((map._showingGlobe() || map.getTerrain() || map.getFog()) && !this._fadeTimer) {
+            if ((map._showingGlobe() || (map.style && map.style.hasTerrain()) || map.getFog()) && !this._fadeTimer) {
 
                 this._fadeTimer = window.setTimeout(this._evaluateOpacity.bind(this), 60);
             }

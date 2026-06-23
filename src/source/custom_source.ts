@@ -10,8 +10,6 @@ import type Dispatcher from '../util/dispatcher';
 import type {Callback} from '../types/callback';
 import type {OverscaledTileID} from './tile_id';
 import type {ISource, SourceEvents} from './source';
-import type {AJAXError} from '../util/ajax';
-import type {Cancelable} from '../types/cancelable';
 import type {TextureImage} from '../render/texture';
 
 type DataType = 'raster';
@@ -262,26 +260,14 @@ class CustomSource<T> extends Evented<SourceEvents> implements ISource {
         return !this.tileBounds || this.tileBounds.contains(tileID.canonical);
     }
 
-    loadTile(tile: Tile, callback: Callback<undefined>): void {
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    async loadTile(tile: Tile, callback: Callback<undefined>): Promise<void> {
         const {x, y, z} = tile.tileID.canonical;
         const controller = new AbortController();
-        const signal = controller.signal;
+        tile.request = controller;
 
-        const request = Promise
-            .resolve(this._implementation.loadTile({x, y, z}, {signal}))
-
-            .then(tileLoaded.bind(this))
-            .catch((error?: Error | DOMException | AJAXError) => {
-                // silence AbortError
-                if (error.name === 'AbortError') return;
-                tile.state = 'errored';
-                callback(error);
-            }) as Promise<void> & Cancelable;
-
-        request.cancel = () => controller.abort();
-        tile.request = request;
-
-        function tileLoaded(this: CustomSource<T>, data?: T | null) {
+        try {
+            const data = await this._implementation.loadTile({x, y, z}, {signal: controller.signal});
             delete tile.request;
 
             if (tile.aborted) {
@@ -315,6 +301,10 @@ class CustomSource<T> extends Evented<SourceEvents> implements ISource {
             this.loadTileData(tile, data);
             tile.state = 'loaded';
             callback(null);
+        } catch (error) {
+            if (controller.signal.aborted) return;
+            tile.state = 'errored';
+            callback(error as Error);
         }
     }
 
@@ -348,8 +338,8 @@ class CustomSource<T> extends Evented<SourceEvents> implements ISource {
     }
 
     abortTile(tile: Tile, callback?: Callback<undefined>): void {
-        if (tile.request && tile.request.cancel) {
-            tile.request.cancel();
+        if (tile.request) {
+            tile.request.abort();
             delete tile.request;
         }
 

@@ -130,6 +130,12 @@ export type ModelsSpecification = {
     [_: string]: ModelSpecification
 };
 
+export type ModelLightOverridesSpecification = {
+    "light-ambient-color"?: ColorSpecification,
+    "light-ambient-intensity"?: number,
+    "light-directional-color"?: ColorSpecification,
+    "light-directional-intensity"?: number
+};
 export type ModelNodeOverrideSpecification = {
     "orientation"?: [number, number, number]
 };
@@ -152,6 +158,7 @@ export type ModelSourceModelSpecification = {
     "uri": string,
     "position"?: [number, number],
     "orientation"?: [number, number, number],
+    "lightOverrides"?: ModelLightOverridesSpecification,
     "nodeOverrides"?: ModelNodeOverridesSpecification,
     "materialOverrides"?: ModelMaterialOverridesSpecification,
     "nodeOverrideNames"?: Array<string>,
@@ -310,8 +317,7 @@ export type RainSpecification = {
 };
 
 export type CameraSpecification = {
-    "camera-projection"?: PropertyValueSpecification<"perspective" | "orthographic">,
-    "camera-projection-transition"?: TransitionSpecification
+    "camera-projection"?: "perspective" | "orthographic"
 };
 
 export type ColorThemeSpecification = {
@@ -1437,11 +1443,6 @@ export type ModelLayerSpecification = {
         "model-color-use-theme"?: PropertyValueSpecification<string>,
         "model-color-mix-intensity"?: DataDrivenPropertyValueSpecification<number>,
         "model-color-mix-intensity-transition"?: TransitionSpecification,
-        /**
-         * @experimental This property is experimental and subject to change in future versions.
-         */
-        "model-lightmap-intensity"?: PropertyValueSpecification<number>,
-        "model-lightmap-intensity-transition"?: TransitionSpecification,
         "model-type"?: "common-3d" | "location-indicator",
         "model-cast-shadows"?: boolean,
         "model-receive-shadows"?: boolean,
@@ -1459,7 +1460,7 @@ export type ModelLayerSpecification = {
         /**
          * @experimental This property is experimental and subject to change in future versions.
          */
-        "model-ignore-line-cutout"?: boolean | ExpressionSpecification
+        "model-line-cutout-mode"?: "enabled" | "disabled" | "enabled-above-cutout" | ExpressionSpecification
     },
     /**
      * @experimental This property is experimental and subject to change in future versions.

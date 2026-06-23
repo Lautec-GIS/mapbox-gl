@@ -18,9 +18,8 @@ function createSource(options: Partial<RasterDEMSourceSpecification>, transformC
         send() {},
         getActor() {
             return {
-                send() {
-                    return {cancel() {}};
-                }
+                send() { return new Promise(() => {}); },
+                sendCancelable() { return new AbortController(); }
             };
         }
     } as unknown as Dispatcher;
@@ -60,7 +59,7 @@ describe('RasterTileSource', () => {
         };
         const source = createSource(options, transformSpy);
         source.load();
-        expect(source.serialize()).toEqual(Object.assign({type: "raster-dem"}, options));
+        expect(source.serialize()).toEqual({type: "raster-dem", ...options});
         await waitFor(source, 'data');
     });
 
@@ -108,7 +107,8 @@ describe('RasterTileSource', () => {
             setExpiryData() {}
         } as unknown as Tile;
         source.loadTile(tile, () => {});
-        // transformRequest is called synchronously when building params for the worker
+        // transformRequest is invoked synchronously (before the first await), even though its
+        // result is now awaited before the worker message is built.
         expect(transformSpy).toHaveBeenCalledTimes(1);
         expect(transformSpy.mock.calls[0][0]).toEqual('http://example.com/10/5/5.png');
         expect(transformSpy.mock.calls[0][1]).toEqual('Tile');
@@ -122,9 +122,13 @@ describe('RasterTileSource', () => {
             send() {},
             getActor() {
                 return {
-                    send: (_type: string, _params: unknown, cb: (err?: Error | null, result?: unknown) => void) => {
-                        Promise.resolve().then(() => cb(null, null));
-                        return {cancel() {}};
+                    // eslint-disable-next-line @typescript-eslint/require-await
+                    async send(_type: string, _params: unknown) { return null; },
+                    sendCancelable(type: string, params: unknown, _options: unknown, callback: (err?: Error | null, result?: unknown) => void) {
+                        Promise.resolve(this.send(type, params))
+                            .then((result) => callback(null, result))
+                            .catch((err: Error) => { if (err.name !== 'AbortError') callback(err); });
+                        return new AbortController();
                     }
                 };
             }
@@ -132,7 +136,7 @@ describe('RasterTileSource', () => {
 
         const source = new RasterDEMTileSource(
             'id',
-            {type: 'raster-dem', tiles: ['http://example.com/{z}/{x}/{y}.png']} as RasterDEMSourceSpecification,
+            {type: 'raster-dem', tiles: ['http://example.com/{z}/{x}/{y}.png']},
             dispatcher,
             new Evented(),
         );
@@ -230,31 +234,28 @@ describe('RasterDEMTileSource provider', () => {
     function createProviderSource(
         providerName: string,
         options: Record<string, unknown> = {},
-        overrides: {broadcastResult?: unknown[]; broadcastError?: Error} = {},
+        overrides: {sendResult?: unknown[]; sendError?: Error} = {},
     ) {
         const moduleUrl = 'http://example.com/mock-provider.js';
         config.TILE_PROVIDER_URLS[providerName] = moduleUrl;
 
-        const {broadcastResult, broadcastError} = overrides;
-        const broadcastSpy = vi.fn((_type: string, _data: unknown, cb?: (err: Error | null, result?: unknown[]) => void) => {
-            if (!cb) return;
-            if (broadcastError) {
-                cb(broadcastError);
-            } else {
-                cb(null, broadcastResult !== undefined ? broadcastResult : [null]);
+        const {sendResult, sendError} = overrides;
+        const sendSpy = vi.fn((_type: string, _data: unknown, _signal?: AbortSignal) => {
+            if (sendError) {
+                return Promise.reject(sendError);
             }
+            return Promise.resolve(sendResult !== undefined ? sendResult : [null]);
         });
 
         const dispatcher = {
-            send() {},
             getActor() { return {send() { return {cancel() {}}; }}; },
             ready: true,
-            broadcast: broadcastSpy,
+            send: sendSpy,
         } as unknown as Dispatcher;
 
         const source = new RasterDEMTileSource(
             'id',
-            {type: 'raster-dem', ...options} as RasterDEMSourceSpecification,
+            {type: 'raster-dem', ...options},
             dispatcher,
             new Evented(),
         );
@@ -269,45 +270,48 @@ describe('RasterDEMTileSource provider', () => {
             getWorldview: () => undefined,
         } as unknown as MapboxMap);
 
-        return {source, broadcastSpy};
+        return {source, sendSpy};
     }
 
-    test('broadcasts loadTileProvider when provider resolves', () => {
+    test('sends loadTileProvider when provider resolves', async () => {
         const name = nextProvider();
-        const {source, broadcastSpy} = createProviderSource(name, {
+        const {source, sendSpy} = createProviderSource(name, {
             provider: name,
             tiles: ['http://example.com/{z}/{x}/{y}.png'],
         });
 
-        expect(broadcastSpy).toHaveBeenCalledWith(
+        await waitFor(source, 'data');
+        expect(sendSpy).toHaveBeenCalledWith(
             'loadTileProvider',
             expect.objectContaining({name, source: 'id', type: 'raster-dem'}),
-            expect.any(Function),
+            expect.anything(),
         );
         expect(source.tiles).toEqual(['http://example.com/{z}/{x}/{y}.png']);
     });
 
-    test('uses provider TileJSON when workers return it', () => {
+    test('uses provider TileJSON when workers return it', async () => {
         const name = nextProvider();
         const tileJSON = {
             tiles: ['http://provider.example.com/{z}/{x}/{y}.png'],
             minzoom: 2,
             maxzoom: 16,
         };
-        const {source} = createProviderSource(name, {provider: name}, {broadcastResult: [tileJSON]});
+        const {source} = createProviderSource(name, {provider: name}, {sendResult: [tileJSON]});
 
+        await waitFor(source, 'data');
         expect(source.tiles).toEqual(['http://provider.example.com/{z}/{x}/{y}.png']);
         expect(source.minzoom).toEqual(2);
         expect(source.maxzoom).toEqual(16);
     });
 
-    test('falls back to options.tiles when workers return no TileJSON', () => {
+    test('falls back to options.tiles when workers return no TileJSON', async () => {
         const name = nextProvider();
         const {source} = createProviderSource(name, {
             provider: name,
             tiles: ['http://example.com/{z}/{x}/{y}.png'],
-        }, {broadcastResult: [null]});
+        }, {sendResult: [null]});
 
+        await waitFor(source, 'data');
         expect(source.tiles).toEqual(['http://example.com/{z}/{x}/{y}.png']);
         expect(source._loaded).toBe(true);
     });
@@ -317,10 +321,9 @@ describe('RasterDEMTileSource provider', () => {
         delete config.TILE_PROVIDER_URLS[name];
 
         const dispatcher = {
-            send() {},
             getActor() { return {send() { return {cancel() {}}; }}; },
             ready: true,
-            broadcast: vi.fn(),
+            send: vi.fn(),
         } as unknown as Dispatcher;
 
         const source = new RasterDEMTileSource(

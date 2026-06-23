@@ -11,7 +11,7 @@ import {applyOperations} from '../lib/operation-handlers.js';
 import {deepEqual, generateDiffLog} from '../lib/json-diff.js';
 // @ts-expect-error Cannot find module 'virtual:integration-tests' or its corresponding type declarations.
 import {integrationTests} from 'virtual:integration-tests';
-import {getStatsHTML, setupHTML, updateHTML} from '../../util/html_generator';
+import {getStatsHTML, setupHTML, updateHTML, registerSkipped} from '../../util/html_generator';
 import {mapboxgl} from '../lib/mapboxgl.js';
 import {sendFragment, sendBrowserDiagnostics} from '../lib/utils';
 import {transformRequest} from '../lib/transform-request.js';
@@ -42,25 +42,32 @@ function getEnvironmentParams() {
 
         return {
             ignores: {
-                todo: [...ignoresPlatformSpecific.todo, ...ignoresAll.todo],
-                skip: [...ignoresPlatformSpecific.skip, ...ignoresAll.skip]
+                skip: Array.from(new Set([...ignoresPlatformSpecific.skip, ...ignoresAll.skip]))
             },
             timeout
         };
     } else {
-        return {ignores: ignoresAll, timeout};
+        return {
+            ignores: {
+                skip: ignoresAll.skip
+            },
+            timeout
+        };
     }
 }
 
 type TestMetadata = {
     name: string;
     minDiff: number;
+    testPath: string;
     status: string;
+    color?: string;
     errors: Error[];
     actual?: string;
     expected?: string;
     expectedPath?: string;
     imgDiff?: string;
+    error?: Error;
 }
 
 const container = document.createElement('div');
@@ -134,7 +141,10 @@ const getTest = (queryTestName) => async () => {
 
         const testMetaData: TestMetadata = {
             name: queryTestName,
+            testPath: `${testPath}/style.json`,
             actual: map.getCanvas().toDataURL(),
+            width: options.width,
+            height: options.height,
             minDiff: options.minDiff || 0,
             status: 'passed',
             errors: []
@@ -185,13 +195,13 @@ const getTest = (queryTestName) => async () => {
 };
 
 const {ignores, timeout} = getEnvironmentParams();
+const skippedTests: string[] = [];
 
 Object.keys(integrationTests).forEach((testName) => {
     const queryTestName = `query-tests/${testName}`;
     if (ignores.skip.includes(queryTestName)) {
+        skippedTests.push(testName);
         test.skip(testName, getTest(testName));
-    } else if (ignores.todo.includes(queryTestName)) {
-        test.todo(testName, getTest(testName));
     } else {
         test(testName, {timeout}, getTest(testName));
     }
@@ -199,6 +209,10 @@ Object.keys(integrationTests).forEach((testName) => {
 
 afterAll(async () => {
     document.body.removeChild(container);
+    for (const testName of skippedTests) {
+        const testPath = integrationTests[testName]?.path;
+        await sendFragment(reportFragmentIdx++, registerSkipped(testName, testPath ? `${testPath}/style.json` : undefined));
+    }
     await sendBrowserDiagnostics();
     await sendFragment(0, getStatsHTML());
     // We cannot use `server.commands.writeFile` here because the HTML file is large

@@ -14,12 +14,13 @@ import EvaluationParameters from '../style/evaluation_parameters';
 import {getRasterizedIconSize, getSizeData, SIZE_PACK_FACTOR, type SizeData} from './symbol_size';
 import ONE_EM from './one_em';
 import Point from '@mapbox/point-geometry';
-import murmur3 from 'murmurhash-js';
+import murmur3 from '../util/murmur3';
 import {PROPERTY_ELEVATION_ID} from '../../3d-style/elevation/elevation_constants';
 import {clipLines} from '../util/line_clipping';
 import {keys} from '../util/object';
 import {getImagePosition, ICON_PADDING, type ImagePositionMap, type ImagePosition} from '../render/image_atlas';
 
+import type {FrcCoveragePolygons} from '../source/frc_coverage_snapshot';
 import type {SymbolFeature} from '../data/bucket/symbol_bucket';
 import type SymbolBucket from '../data/bucket/symbol_bucket';
 import type {CanonicalTileID} from '../source/tile_id';
@@ -317,7 +318,12 @@ export type SymbolBucketData = {
     sizes: Sizes,
     hasAnySecondaryIcon: boolean,
     textAlongLine: boolean,
-    symbolPlacement: "point" | "line" | "line-center"
+    symbolPlacement: "point" | "line" | "line-center",
+    coverageFrcMask?: number | null,
+    coveragePolygons?: FrcCoveragePolygons | null,
+    coverageTileZoom?: number | null,
+    isFeatureCoveredByFrcMask?: ((featureProperties: Record<string, unknown>, frcMask: number) => boolean) | null,
+    symbolAnchorInFrcCoverage?: ((coveragePolygons: FrcCoveragePolygons, properties: Record<string, unknown>, anchor: Anchor, canonical: CanonicalTileID, coverageTileZoom: number | null) => boolean) | null,
 };
 
 export function performSymbolLayout(bucket: SymbolBucket,
@@ -331,7 +337,12 @@ export function performSymbolLayout(bucket: SymbolBucket,
                              pixelRatio: number,
                              imageRasterizationTasks: ImageRasterizationTasks,
                              worldview: string | undefined,
-                             availableImages?: ImageId[]): SymbolBucketData {
+                             availableImages?: ImageId[],
+                             coverageFrcMask?: number | null,
+                             coveragePolygons?: FrcCoveragePolygons | null,
+                             coverageTileZoom?: number | null,
+                             isFeatureCoveredByFrcMask?: ((featureProperties: Record<string, unknown>, frcMask: number) => boolean) | null,
+                             symbolAnchorInFrcCoverage?: ((coveragePolygons: FrcCoveragePolygons, properties: Record<string, unknown>, anchor: Anchor, canonical: CanonicalTileID, coverageTileZoom: number | null) => boolean) | null): SymbolBucketData {
     bucket.createArrays();
 
     const tileSize = 512 * bucket.overscaling;
@@ -381,7 +392,14 @@ export function performSymbolLayout(bucket: SymbolBucket,
     let hasAnySecondaryIcon = false;
     const featureData = [];
 
+    const checkFrcCoverage = coverageFrcMask != null && coverageFrcMask !== 0;
     for (const feature of bucket.features) {
+
+        // Skip features covered by FRC mask (symbol-level filtering from fadeRange[0])
+        if (checkFrcCoverage && feature.properties && isFeatureCoveredByFrcMask &&
+            isFeatureCoveredByFrcMask(feature.properties, coverageFrcMask)) {
+            continue;
+        }
 
         const fontstack = layout.get('text-font').evaluate(feature, {}, canonical).join(',');
 
@@ -579,7 +597,7 @@ export function performSymbolLayout(bucket: SymbolBucket,
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    return {featureData, sizes, hasAnySecondaryIcon, textAlongLine, symbolPlacement};
+    return {featureData, sizes, hasAnySecondaryIcon, textAlongLine, symbolPlacement, coverageFrcMask, coveragePolygons, coverageTileZoom, isFeatureCoveredByFrcMask, symbolAnchorInFrcCoverage};
 
 }
 
@@ -854,7 +872,11 @@ export function postRasterizationSymbolLayout(bucket: SymbolBucket, bucketData: 
     availableImages: ImageId[], canonical: CanonicalTileID, tileZoom: number, projection: Projection, brightness: number | null, imageMap: StyleImageMap<StringifiedImageVariant>, imageAtlas: {iconPositions: ImagePositionMap}) {
 
     bucket.iconAtlasPositions = imageAtlas.iconPositions;
-    const {featureData, hasAnySecondaryIcon, sizes, textAlongLine, symbolPlacement} = bucketData;
+    const {featureData, sizes, textAlongLine, symbolPlacement, coverageFrcMask, coveragePolygons, coverageTileZoom, symbolAnchorInFrcCoverage} = bucketData;
+    // An appearance may introduce a secondary icon even when the layout icon has
+    // no secondary. Include bucket.hasAnySecondaryIcon so transitioning vertices are created and the
+    // iconTransitioningVertexBuffer is populated for appearance-driven cross-fades.
+    const hasAnySecondaryIcon = bucketData.hasAnySecondaryIcon || bucket.hasAnySecondaryIcon;
 
     for (const data of featureData) {
         const {shapedIcon, verticallyShapedIcon, feature, shapedTextOrientations, shapedText, layoutTextSize, layoutIconSize,
@@ -871,13 +893,18 @@ export function postRasterizationSymbolLayout(bucket: SymbolBucket, bucketData: 
         if (shapedText || shapedIcon) {
             addFeature(bucket, feature, shapedTextOrientations, shapedIcon, verticallyShapedIcon, imageMap, sizes, layoutTextSize,
                 layoutIconSize, textOffset, isSDFIcon, availableImages, canonical, projection, brightness, hasAnySecondaryIcon, iconTextFit,
-                iconOffset, textAlongLine, symbolPlacement, iconCollisionBounds, iconVerticalCollisionBounds, textCollisionBounds, textVerticalCollisionBounds);
+                iconOffset, textAlongLine, symbolPlacement, iconCollisionBounds, iconVerticalCollisionBounds, textCollisionBounds, textVerticalCollisionBounds,
+                coverageFrcMask, coveragePolygons, coverageTileZoom, symbolAnchorInFrcCoverage);
         }
     }
 
     if (showCollisionBoxes) {
         bucket.generateCollisionDebugBuffers(tileZoom, bucket.collisionBoxArray, sizes.textScaleFactor);
     }
+
+    // All features are populated now — trim the UBO staging arrays before the bucket is transferred.
+    if (bucket.text.uboBinder) bucket.text.uboBinder.finalize();
+    if (bucket.icon.uboBinder) bucket.icon.uboBinder.finalize();
 }
 
 function reconcileImagePosition(shapedIcon: PositionedIcon, atlasIconPositions: ImagePositionMap, iconPrimary: ImageVariant, iconSecondary: ImageVariant) {
@@ -1006,7 +1033,11 @@ function addFeature(bucket: SymbolBucket,
                     iconCollisionBounds?: SymbolBoundingBox | null,
                     iconVerticalCollisionBounds?: SymbolBoundingBox | null,
                     textCollisionBounds?: SymbolBoundingBox | null,
-                    textVerticalCollisionBounds?: SymbolBoundingBox | null,) {
+                    textVerticalCollisionBounds?: SymbolBoundingBox | null,
+                    coverageFrcMask?: number | null,
+                    coveragePolygons?: FrcCoveragePolygons | null,
+                    coverageTileZoom?: number | null,
+                    symbolAnchorInFrcCoverage?: ((coveragePolygons: FrcCoveragePolygons, properties: Record<string, unknown>, anchor: Anchor, canonical: CanonicalTileID, coverageTileZoom: number | null) => boolean) | null) {
     // To reduce the number of labels that jump around when zooming we need
     // to use a text-size value that is the same for all zoom levels.
     // bucket calculates text-size at a high zoom level so that all tiles can
@@ -1058,6 +1089,12 @@ function addFeature(bucket: SymbolBucket,
             // Symbol layers are drawn across tile boundaries, We filter out symbols
             // outside our tile boundaries (which may be included in vector tile buffers)
             // to prevent double-drawing symbols.
+            return;
+        }
+
+        // Anchor-in-polygon check for partial coverage: skip symbols inside coverage polygons.
+        if (coveragePolygons && coveragePolygons.length > 0 && feature.properties && symbolAnchorInFrcCoverage &&
+            symbolAnchorInFrcCoverage(coveragePolygons, feature.properties, anchor, canonical, coverageTileZoom)) {
             return;
         }
 
@@ -1660,3 +1697,4 @@ function calculateMaxIconQuadCount(
 
     return maxQuadCount;
 }
+

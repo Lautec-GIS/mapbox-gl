@@ -221,6 +221,46 @@ describe('RasterTileSource', () => {
         });
     });
 
+    test('abortTile aborts an in-flight image request and settles silently', async () => {
+        mockFetch({
+            '/source.json': () => new Response(JSON.stringify({
+                minzoom: 0,
+                maxzoom: 22,
+                attribution: 'Mapbox',
+                tiles: ['http://example.com/{z}/{x}/{y}.png'],
+                bounds: [-47, -7, -45, -5]
+            })),
+            // Never resolve, so the request stays in flight until aborted.
+            'http://example.com/10/5/5.png': () => new Promise(() => {})
+        });
+        const source = createSource({url: '/source.json'});
+        await waitFor(source, 'data');
+
+        const tile = {
+            tileID: new OverscaledTileID(10, 0, 10, 5, 5),
+            state: 'loading',
+            loadVectorData() {},
+            setExpiryData() {},
+            setTexture: vi.fn()
+        };
+
+        const callback = vi.fn();
+        source.loadTile(tile, callback);
+        expect(tile.request).toBeInstanceOf(AbortController);
+
+        await new Promise(resolve => {
+            source.abortTile(tile);
+            // the rejected getImage settles the load on a microtask
+            setTimeout(resolve, 0);
+        });
+
+        // The loader settles the abort silently with callback(null); SourceCache (via tile.destroy)
+        // owns the 'unloaded' transition, so the loader must not mark the tile errored here.
+        expect(callback).toHaveBeenCalledWith(null);
+        expect(tile.setTexture).not.toHaveBeenCalled();
+        expect(tile.state).not.toEqual('errored');
+    });
+
     test('cancels TileJSON request if removed', () => {
         const abortSpy = vi.spyOn(AbortController.prototype, 'abort');
         const source = createSource({url: "/source.json"});

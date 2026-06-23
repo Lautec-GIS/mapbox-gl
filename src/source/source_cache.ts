@@ -1,6 +1,7 @@
 import assert from '../style-spec/util/assert';
 import Point from '@mapbox/point-geometry';
-import Tile, {RenderSourceType} from './tile';
+import Tile from './tile';
+import {RenderSourceType} from './render_source_type';
 import RasterArrayTile from './raster_array_tile';
 import {Event, ErrorEvent, Evented} from '../util/evented';
 import TileCache from './tile_cache';
@@ -8,7 +9,7 @@ import {asyncAll, keysDifference, clamp} from '../util/util';
 import browser from '../util/browser';
 import {OverscaledTileID} from './tile_id';
 import SourceFeatureState from './source_state';
-import {mercatorXfromLng} from '../geo/mercator_coordinate';
+import MercatorCoordinate, {mercatorXfromLng} from '../geo/mercator_coordinate';
 import {isHttpNotFound} from '../util/ajax';
 
 import type {CanonicalTileID} from './tile_id';
@@ -314,8 +315,8 @@ class SourceCache extends Evented {
         if (this._source.type === 'raster-dem' && tile.dem) this._backfillDEM(tile);
         this._state.initializeTileState(tile, this.map ? this.map.painter : null);
 
-        let responseHeaders: Map<string, string> = new Map();
-        if (data && data.responseHeaders) responseHeaders = data.responseHeaders;
+        let responseHeaders: Headers = new Headers();
+        if (data && data.headers) responseHeaders = data.headers;
 
         this._source.fire(new Event('data', {dataType: 'source', tile, coord: tile.tileID, 'sourceCacheId': this.id, responseHeaders}));
     }
@@ -944,7 +945,7 @@ class SourceCache extends Evented {
             this._timers[id] = setTimeout(() => {
                 this._reloadTile(id, 'expired');
                 delete this._timers[id];
-            }, expiryTimeout) as unknown as number;
+            }, expiryTimeout);
         }
     }
 
@@ -1018,6 +1019,8 @@ class SourceCache extends Evented {
 
         const isGlobe = transform.projection.name === 'globe';
         const centerX = mercatorXfromLng(transform.center.lng);
+        // Camera position is constant across the query; compute it once rather than per tile.
+        const cameraMercator = transform.getFreeCameraOptions().position || new MercatorCoordinate(0, 0, 0);
 
         for (const tileID in this._tiles) {
             const tile = this._tiles[tileID];
@@ -1060,7 +1063,7 @@ class SourceCache extends Evented {
             }
 
             for (const wrap of tilesToCheck) {
-                const tileResult = queryGeometry.containsTile(tile, transform, use3DQuery, wrap);
+                const tileResult = queryGeometry.containsTile(tile, transform, use3DQuery, wrap, cameraMercator);
                 if (tileResult) {
                     tileResults.push(tileResult);
                 }
@@ -1078,6 +1081,7 @@ class SourceCache extends Evented {
     }
 
     _getRenderableCoordinates(symbolLayer?: boolean, includeShadowCasters?: boolean): Array<OverscaledTileID> {
+        if (!this.transform) return []; // HdRoadCoverage caches are created before the first update() sets transform
         const coords = this.getRenderableIds(symbolLayer, includeShadowCasters).map((id) => this._tiles[id].tileID);
         const isGlobe = this.transform.projection.name === 'globe';
         for (const coord of coords) {
@@ -1092,6 +1096,7 @@ class SourceCache extends Evented {
     }
 
     sortCoordinatesByDistance(coords: Array<OverscaledTileID>): Array<OverscaledTileID> {
+        if (!this.transform) return coords.slice(); // dedicated provider caches may exist before the first update() sets transform
         const sortedCoords = coords.slice();
 
         const camPos = this.transform._camera.position;
