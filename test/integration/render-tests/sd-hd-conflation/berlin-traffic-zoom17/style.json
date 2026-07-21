@@ -1,15 +1,18 @@
 {
-  "_comment": "HD traffic lines with cross-source elevation at zoom 17. SD traffic hidden in HD coverage area; SD roads hidden via hd_covered.",
+  "_comment": "HD traffic lines and elevated incident symbols with cross-source elevation at zoom 17. Mix of tunnel and elevated-road incidents in view. Incident icons use viewport-aligned billboards (default icon-pitch/rotation-alignment; do not set map). SD traffic hidden in HD coverage area; SD roads hidden via hd_covered.",
   "version": 8,
   "metadata": {
     "test": {
       "width": 600,
       "height": 600,
-      "allowed": 0.001,
+      "spriteFormat": "raster",
       "operations": [
         ["wait"],
         ["wait"],
         ["wait"]
+      ],
+      "image-threshold": [
+        {"platform-tag-contains": "", "threshold": 0.001}
       ]
     }
   },
@@ -211,6 +214,7 @@
       },
       "data": {
         "version": 8,
+        "sprite": "local://sprites/standard",
         "schema": {
           "sdCoverageFadeRange": {
             "default": [0, 0],
@@ -336,6 +340,34 @@
                 16.5, 1,
                 17.5, 0.65
               ]
+            }
+          },
+          {
+            "id": "hd-traffic-incidents",
+            "type": "symbol",
+            "source": "hd-traffic",
+            "source-layer": "incident_start_point",
+            "minzoom": 14.4,
+            "layout": {
+              "symbol-elevation-reference": "hd-road-markup",
+              "symbol-placement": "point",
+              "icon-allow-overlap": true,
+              "icon-ignore-placement": true,
+              "icon-size": [
+                "interpolate", ["exponential", 1.2], ["zoom"],
+                15.5, 1.5,
+                16, 1.7,
+                16.5, 1.7,
+                17, 2.0
+              ],
+              "icon-image": [
+                "match", ["get", "incident_type"],
+                "accident", "road-accident",
+                "closure", "road-closure",
+                "construction", "road-closure",
+                "road-accident"
+              ],
+              "visibility": ["case", ["config", "showHDTraffic"], "visible", "none"]
             }
           }
         ]

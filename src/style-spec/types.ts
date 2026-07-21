@@ -674,9 +674,6 @@ export type FillLayerSpecification = {
         "fill-tunnel-structure-color-transition"?: TransitionSpecification,
         "fill-tunnel-structure-color-use-theme"?: PropertyValueSpecification<string>
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -771,9 +768,6 @@ export type LineLayerSpecification = {
          */
         "line-blend-additive-clamp"?: PropertyValueSpecification<number>
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -905,9 +899,6 @@ export type SymbolLayerSpecification = {
         "symbol-z-offset"?: DataDrivenPropertyValueSpecification<number>,
         "symbol-z-offset-transition"?: TransitionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -964,9 +955,6 @@ export type CircleLayerSpecification = {
         "circle-emissive-strength"?: PropertyValueSpecification<number>,
         "circle-emissive-strength-transition"?: TransitionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1036,9 +1024,6 @@ export type HeatmapLayerSpecification = {
         "heatmap-opacity"?: PropertyValueSpecification<number>,
         "heatmap-opacity-transition"?: TransitionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1165,9 +1150,6 @@ export type FillExtrusionLayerSpecification = {
         "fill-extrusion-line-width-transition"?: TransitionSpecification,
         "fill-extrusion-cast-shadows"?: boolean
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1240,9 +1222,6 @@ export type BuildingLayerSpecification = {
         "building-flood-light-ground-attenuation"?: PropertyValueSpecification<number>,
         "building-flood-light-ground-attenuation-transition"?: TransitionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1306,9 +1285,6 @@ export type RasterLayerSpecification = {
          */
         "raster-elevation-reference"?: "sea" | "ground" | ExpressionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1349,9 +1325,6 @@ export type RasterParticleLayerSpecification = {
         "raster-particle-elevation"?: PropertyValueSpecification<number>,
         "raster-particle-elevation-transition"?: TransitionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1395,9 +1368,6 @@ export type HillshadeLayerSpecification = {
         "hillshade-emissive-strength"?: PropertyValueSpecification<number>,
         "hillshade-emissive-strength-transition"?: TransitionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1462,9 +1432,6 @@ export type ModelLayerSpecification = {
          */
         "model-line-cutout-mode"?: "enabled" | "disabled" | "enabled-above-cutout" | ExpressionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1505,9 +1472,6 @@ export type BackgroundLayerSpecification = {
         "background-emissive-strength"?: PropertyValueSpecification<number>,
         "background-emissive-strength-transition"?: TransitionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1549,9 +1513,6 @@ export type SkyLayerSpecification = {
         "sky-opacity"?: PropertyValueSpecification<number>,
         "sky-opacity-transition"?: TransitionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>
 };
 
@@ -1575,9 +1536,6 @@ export type SlotLayerSpecification = {
     "minzoom"?: never,
     "maxzoom"?: never,
     "filter"?: never,
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>,
     "layout"?: never,
     "paint"?: never
@@ -1598,9 +1556,6 @@ export type ClipLayerSpecification = {
         "clip-layer-scope"?: Array<string> | ExpressionSpecification,
         "visibility"?: "visible" | "none" | ExpressionSpecification
     },
-    /**
-     * @experimental This property is experimental and subject to change in future versions.
-     */
     "appearances"?: Array<AppearanceSpecification>,
     "paint"?: never
 };

@@ -15,6 +15,8 @@ import {newStubStyle} from './utils';
 import browser from '../../../src/util/browser';
 import EvaluationParameters from '../../../src/style/evaluation_parameters';
 
+import type {StyleSpecification} from 'mapbox-gl';
+
 function createStyleJSON(properties) {
     return {version: 8,
         sources: {},
@@ -778,6 +780,42 @@ describe('Style#addImport', () => {
             'land',
             'streets-v2'
         ]);
+    });
+
+    test('rejects "__proto__" import id to prevent prototype pollution', async () => {
+        const {style} = newStubStyle();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(createStyleJSON());
+        await waitFor(style, 'style.load');
+
+        const errorSpy = vi.fn();
+        style.on('error', errorSpy);
+
+        // addImport fires an error event and returns early without mutating state
+        style.addImport({id: '__proto__', url: '/style.json'});
+
+        expect(errorSpy).toHaveBeenCalledOnce();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        expect(errorSpy.mock.calls[0][0].error.message).toMatch('__proto__');
+        // Must not have added the import and must not have polluted Object.prototype
+        expect(style.stylesheet.imports ?? []).toHaveLength(0);
+        expect(Object.hasOwn({}, 0)).toBe(false);
+    });
+
+    test('rejects "constructor" and "prototype" import ids to prevent prototype pollution', async () => {
+        const {style} = newStubStyle();
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(createStyleJSON());
+        await waitFor(style, 'style.load');
+
+        const errorSpy = vi.fn();
+        style.on('error', errorSpy);
+
+        style.addImport({id: 'constructor', url: '/style.json'});
+        style.addImport({id: 'prototype', url: '/style.json'});
+
+        expect(errorSpy).toHaveBeenCalledTimes(2);
+        expect(style.stylesheet.imports ?? []).toHaveLength(0);
     });
 });
 
@@ -3814,4 +3852,41 @@ test('Style#getFragmentStyle', async () => {
 
     // Fragment should return itself when fragmentId is `undefined`
     expect(basemapFragment2.getFragmentStyle()).toBe(basemapFragment2);
+});
+
+describe('feature-state with imported layer targets', () => {
+    async function loadCollidingRootAndImport() {
+        const {style} = newStubStyle();
+        const fragment = createStyleJSON({
+            sources: {shared: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
+            layers: [{id: 'fragment-layer', type: 'circle', source: 'shared'}]
+        }) as StyleSpecification;
+        const root = createStyleJSON({
+            sources: {shared: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
+            layers: [{id: 'root-layer', type: 'circle', source: 'shared'}],
+            imports: [{id: 'fragment', url: '', data: fragment}]
+        }) as StyleSpecification;
+        style.loadJSON(root);
+        await waitFor(style, 'style.load');
+        return {style, fragmentStyle: style.getFragmentStyle('fragment')};
+    }
+
+    test('imported-layer setFeatureState writes to the fragment source, not the colliding root source', async () => {
+        const {style, fragmentStyle} = await loadCollidingRootAndImport();
+        const importedLayerId = makeFQID('fragment-layer', 'fragment');
+
+        style.setFeatureState({id: 1, target: {layerId: importedLayerId}}, {hover: true});
+
+        expect(fragmentStyle.getFeatureState({source: 'shared', id: 1})).toEqual({hover: true});
+        expect(style.getFeatureState({source: 'shared', id: 1})).toEqual({});
+    });
+
+    test('root-layer setFeatureState still writes to the root source', async () => {
+        const {style, fragmentStyle} = await loadCollidingRootAndImport();
+
+        style.setFeatureState({id: 2, target: {layerId: 'root-layer'}}, {hover: true});
+
+        expect(style.getFeatureState({source: 'shared', id: 2})).toEqual({hover: true});
+        expect(fragmentStyle.getFeatureState({source: 'shared', id: 2})).toEqual({});
+    });
 });

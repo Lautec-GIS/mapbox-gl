@@ -25,11 +25,21 @@ function shuffle(array, seed) {
     return a;
 }
 
+function matchesSkipTest(skipTestRules, platformTag) {
+    if (!Array.isArray(skipTestRules)) return false;
+    return skipTestRules.some(rule => {
+        if (!rule || typeof rule !== 'object') return false;
+        const tagContains = rule['platform-tag-contains'];
+        if (typeof tagContains !== 'string') return false;
+        return tagContains.length === 0 || (platformTag && platformTag.includes(tagContains));
+    });
+}
+
 export default async function (directory, implementation, options, run) {
     const server = createServer();
 
     const testFilter = options.tests || [];
-    const ignores = options.ignores || {skip: []};
+    const platformTag = options.platformTag;
 
     let sequence = fs.globSync(`**/${options.fixtureFilename || 'style.json'}`, {cwd: directory})
         .sort((a, b) => a.localeCompare(b, 'en'))
@@ -41,9 +51,8 @@ export default async function (directory, implementation, options, run) {
             server.localizeURLs(style);
 
             style.metadata = style.metadata || {};
-            const testName = `${path.basename(directory)}/${id}`;
             style.metadata.test = {id,
-                skip: ignores.skip.includes(testName),
+                skip: matchesSkipTest(style.metadata.test && style.metadata.test['skip-test'], platformTag),
                 width: 512,
                 height: 512,
                 pixelRatio: 1,
@@ -84,7 +93,7 @@ export default async function (directory, implementation, options, run) {
         const test = style.metadata.test;
 
         // eslint-disable-next-line no-await-in-loop -- tests must run sequentially
-        await new Promise((resolve) => {
+        await /** @type {Promise<void>} */(new Promise((resolve) => {
             function handleResult(error) {
                 if (error) {
                     test.error = error;
@@ -120,7 +129,7 @@ export default async function (directory, implementation, options, run) {
             } catch (error) {
                 handleResult(error);
             }
-        });
+        }));
     }
 
     await server.close();

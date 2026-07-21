@@ -1,3 +1,5 @@
+#include "_prelude_feature_cutout.fragment.glsl"
+
 #ifdef DEPTH_RECONSTRUCTION
 in float v_height;
 #endif
@@ -8,7 +10,7 @@ void main() {
         discard;
 #else
 #ifdef FEATURE_CUTOUT
-    apply_feature_cutout(vec4(0.0, 0.0, 0.0, 1.0), gl_FragCoord, get_cutout_factors(gl_FragCoord).x);
+    apply_feature_cutout(vec4(0.0, 0.0, 0.0, 1.0), gl_FragCoord, get_cutout_factors(gl_FragCoord).x, 0.0);
 #endif
 #endif
     glFragColor = vec4(1.0, 0.0, 0.0, 1.0);

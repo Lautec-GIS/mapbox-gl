@@ -1,6 +1,8 @@
 #include "_prelude_fog.fragment.glsl"
 #include "_prelude_lighting.glsl"
 #include "_prelude_shadow.fragment.glsl"
+#include "_prelude_indicator_cutout.fragment.glsl"
+#include "_prelude_feature_cutout.fragment.glsl"
 
 in vec3 v_normal;
 in float v_height;
@@ -76,7 +78,7 @@ void main() {
 #endif
 
 #ifdef FEATURE_CUTOUT
-    out_color = apply_feature_cutout(out_color, gl_FragCoord, cutout_factors.x);
+    out_color = apply_feature_cutout(out_color, gl_FragCoord, cutout_factors.x, v_height);
 #endif
 
     // Premultiplied alpha output for (One, OneMinusSrcAlpha) translucent blend.

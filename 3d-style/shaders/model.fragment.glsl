@@ -1,6 +1,8 @@
 #include "_prelude_fog.fragment.glsl"
 #include "_prelude_shadow.fragment.glsl"
 #include "_prelude_lighting.glsl"
+#include "_prelude_indicator_cutout.fragment.glsl"
+#include "_prelude_feature_cutout.fragment.glsl"
 
 uniform float u_opacity;
 
@@ -594,7 +596,7 @@ vec4 finalColor;
     apply_feature_cutout_dither(gl_FragCoord, v_cutout_factor);
 #else
 #ifdef FEATURE_CUTOUT
-    finalColor = apply_feature_cutout(finalColor, gl_FragCoord, get_cutout_factors(gl_FragCoord).x);
+    finalColor = apply_feature_cutout(finalColor, gl_FragCoord, get_cutout_factors(gl_FragCoord).x, 0.0);
 #endif
 #endif
 

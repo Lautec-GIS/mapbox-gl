@@ -73,6 +73,26 @@ function anyBucketRequiresStandard(buckets: Array<Bucket>): boolean {
     return false;
 }
 
+function symbolFrcCoverageForLayer(
+    frcCoverage: FrcCoverageParams | null,
+    tileSource: string,
+    sourceLayer: string,
+): {
+    applies: boolean;
+    frcMask: number | null;
+    polygons: FrcCoveragePolygons | null | undefined;
+    tileZoom: number | null | undefined;
+} {
+    const applies = frcCoverage != null && !!HD.matchesCoverageSourceLayer &&
+        HD.matchesCoverageSourceLayer(frcCoverage.sourceLayers, tileSource, sourceLayer);
+    return {
+        applies,
+        frcMask: applies && frcCoverage ? frcCoverage.frcMask : null,
+        polygons: applies && frcCoverage ? frcCoverage.polygons : null,
+        tileZoom: applies && frcCoverage ? frcCoverage.tileZoom : null,
+    };
+}
+
 class WorkerTile {
     tileID: OverscaledTileID;
     uid: number;
@@ -506,6 +526,8 @@ class WorkerTile {
                         const bucket = buckets[key];
                         if (bucket instanceof SymbolBucket) {
                             recalculateLayers(bucket.layers, this.zoom, options.brightness, availableImages, this.worldview, options.activeFloors);
+                            const layer = bucket.layers[0];
+                            const frc = symbolFrcCoverageForLayer(this.frcCoverage, this.source, layer.sourceLayer);
                             symbolLayoutData[key] = performSymbolLayout(
                                 bucket,
                                 glyphMap,
@@ -519,9 +541,9 @@ class WorkerTile {
                                 iconRasterizationTasks,
                                 this.worldview,
                                 availableImages,
-                                this.frcCoverage ? this.frcCoverage.frcMask : null,
-                                this.frcCoverage ? this.frcCoverage.polygons : null,
-                                this.frcCoverage ? this.frcCoverage.tileZoom : null,
+                                frc.frcMask,
+                                frc.polygons,
+                                frc.tileZoom,
                                 HD.isFeatureCoveredByFrcMask || null,
                                 HD.symbolAnchorInFrcCoverage || null);
                         }
@@ -620,7 +642,7 @@ class WorkerTile {
                     const variantCache = new Map<StringifiedImageVariant, ImageVariant>();
                     const sortedIcons = sortImagesMap(iconMap, variantCache);
                     const sortedPatterns = sortImagesMap(patternMap, variantCache);
-                    const descriptor = new AtlasContentDescriptor(sortedIcons, sortedPatterns, imageVersions, this.lut, variantCache);
+                    const descriptor = new AtlasContentDescriptor(sortedIcons, sortedPatterns, imageVersions, this.lut, this.scope, variantCache);
 
                     actor.send('checkAtlasCache', {descriptor, scope: this.scope})
                         .then((cachedPositions) => {
@@ -631,7 +653,7 @@ class WorkerTile {
                                 imageAtlasForTransfer = new ImageAtlasReference(cachedPositions.sourceHash);
                                 positions = cachedPositions;
                             } else {
-                                const imageAtlas = new ImageAtlas(iconMap, patternMap, this.lut, imageVersions);
+                                const imageAtlas = new ImageAtlas(iconMap, patternMap, this.lut, imageVersions, this.scope);
                                 imageAtlasForTransfer = imageAtlas;
                                 positions = imageAtlas;
                             }
@@ -640,7 +662,7 @@ class WorkerTile {
                         })
                         .catch((err: Error) => {
                             if (err.name !== 'AbortError') warnOnce(`[Worker] Error checking atlas cache: ${err.message}`);
-                            const imageAtlas = new ImageAtlas(iconMap, patternMap, this.lut, imageVersions);
+                            const imageAtlas = new ImageAtlas(iconMap, patternMap, this.lut, imageVersions, this.scope);
                             completeBucketProcessing(imageAtlas, imageAtlas);
                         });
                 } else {

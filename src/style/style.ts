@@ -12,7 +12,7 @@ import Terrain, {DrapeRenderMode} from './terrain';
 import Fog from './fog';
 import Snow from './snow';
 import Rain from './rain';
-import {pick, deepEqual, filterObject, cartesianPositionToSpherical, warnOnce} from '../util/util';
+import {clone, deepEqual, filterObject, cartesianPositionToSpherical, warnOnce} from '../util/util';
 import {getJSON, getReferrer, ResourceType} from '../util/ajax';
 import {isMapboxURL} from '../util/mapbox_url';
 import {stripQueryParameters} from '../util/url';
@@ -26,6 +26,7 @@ import {createExpression} from '../style-spec/expression/index';
 import {HD, prepareHD as prepareHDMain} from '../../modules/hd_main';
 import {prepareStandard as prepareStandardMain} from '../../modules/standard_main';
 import {HD_ROAD_COVERAGE_SOURCE_LAYER} from '../source/frc_coverage_snapshot';
+import {DebugModule, prepareDebug} from '../../modules/debug';
 import {
     validateStyle,
     validateLayoutProperty,
@@ -52,7 +53,6 @@ import styleSpec from '../style-spec/reference/latest';
 import {getGlobalWorkerPool as getWorkerPool} from '../util/worker_pool_factory';
 import deref from '../style-spec/deref';
 import emptyStyle from '../style-spec/empty';
-import diffStyles, {operations as diffOperations} from '../style-spec/diff';
 import {
     registerForPluginStateChange,
     evented as rtlTextPluginEvented,
@@ -177,7 +177,9 @@ const createConfigExpression = (option: OptionSpecification, value: unknown) => 
     return createExpression(value, propertySpec);
 };
 
-const supportedDiffOperations = pick(diffOperations, [
+// Operations the diff algorithm may emit that we handle incrementally without a full restyle.
+// Maintained as a plain Set of string constants — see src/style-spec/diff.ts.
+const supportedDiffOperations: ReadonlySet<string> = new Set([
     'addLayer',
     'removeLayer',
     'setLights',
@@ -207,7 +209,7 @@ const supportedDiffOperations = pick(diffOperations, [
     // 'setSprite',
 ]);
 
-const ignoredDiffOperations = pick(diffOperations, [
+const ignoredDiffOperations: ReadonlySet<string> = new Set([
     'setCenter',
     'setZoom',
     'setBearing',
@@ -645,6 +647,11 @@ class Style extends Evented<MapEvents> {
     _diffStyle(style: StyleSpecification | string, onStarted: (err: Error | null, isUpdateNeeded: boolean) => void, onFinished?: () => void) {
         this.globalId = this._getGlobalId(style);
 
+        // Fetch dev chunk, for string/URL path the fetch parallelises with the JSON request;
+        // for object path, validation will run synchronously and no-op for the first call
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        prepareDebug();
+
         const handleStyle = (json: StyleSpecification, callback: (err: Error | null, isUpdateNeeded: boolean) => void) => {
             try {
                 callback(null, this.setState(json, onFinished));
@@ -684,12 +691,18 @@ class Style extends Evented<MapEvents> {
         const validate = typeof options.validate === 'boolean' ?
             options.validate : !isMapboxURL(url);
 
+        // Preload the dev-chunk fetch with the style JSON
+        // correctness is enforced via await in `_load`
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        if (validate) prepareDebug();
+
         this.globalId = this._getGlobalId(url);
         url = this.map._requestManager.normalizeStyleURL(url, options.accessToken);
         this.resolvedImports.add(url);
 
         const cachedImport = this.importsCache.get(url);
-        if (cachedImport) return this._load(cachedImport, validate);
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        if (cachedImport) { this._load(cachedImport, validate); return; }
 
         const controller = new AbortController();
         this._request = {cancel: () => controller.abort()};
@@ -698,6 +711,7 @@ class Style extends Evented<MapEvents> {
             const {data: json} = await getJSON<StyleSpecification>(request, controller.signal);
             this._request = null;
             this.importsCache.set(url, json);
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
             this._load(json, validate);
         };
         load().catch((err: Error) => {
@@ -709,15 +723,23 @@ class Style extends Evented<MapEvents> {
     loadJSON(json: StyleSpecification, options: StyleSetterOptions = {}): void {
         this.fire(new Event('dataloading', {dataType: 'style'}));
 
+        const validate = options.validate !== false;
+        // Preload the dev-chunk fetch with the browser.frame()
+        // correctness is enforced via await in `_load`
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        if (validate) prepareDebug();
+
         this.globalId = this._getGlobalId(json);
         this._request = browser.frame(() => {
             this._request = null;
-            this._load(json, options.validate !== false);
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
+            this._load(json, validate);
         });
     }
 
     loadEmpty() {
         this.fire(new Event('dataloading', {dataType: 'style'}));
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this._load(empty, false);
     }
 
@@ -764,7 +786,12 @@ class Style extends Evented<MapEvents> {
                     // unnecessary animation frame delay when the data is already available.
                     style.fire(new Event('dataloading', {dataType: 'style'}));
                     style.globalId = style._getGlobalId(json);
-                    queueMicrotask(() => style._load(json, validate));
+                    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                    if (validate) prepareDebug();
+                    queueMicrotask(() => {
+                        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                        style._load(json, validate);
+                    });
                 } else {
                     style.loadJSON(json, {validate});
                 }
@@ -896,7 +923,7 @@ class Style extends Evented<MapEvents> {
         return this.isRootStyle() && (json.fragment || (!!json.schema && json.fragment !== false));
     }
 
-    _load(json: StyleSpecification, validate: boolean) {
+    async _load(json: StyleSpecification, validate: boolean) {
         // This style was loaded as a root style, but it is marked as a fragment and/or has a schema. We instead load
         // it as an import with the well-known ID "basemap" to make sure that we don't expose the internals.
         if (this._isInternalStyle(json)) {
@@ -907,14 +934,23 @@ class Style extends Evented<MapEvents> {
                 ...(json.zoom ? {zoom: json.zoom} : {}),
                 ...(json.light ? {light: json.light} : {})}) as StyleSpecification;
             this._importedAsBasemap = true;
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
             this._load(style, validate);
             return;
         }
 
         this.updateConfig(this._config, json.schema);
 
-        if (validate && emitValidationErrors(this, validateStyle(json))) {
-            return;
+        // In ESM builds, the dev chunk (validators) is dynamically imported.
+        // Await it before validating top-level style JSON so the call below
+        // is meaningful — `validateStyle` no-ops when `Debug` isn't loaded yet.
+        if (validate) {
+            await prepareDebug();
+            // Check the map wasn't removed while awaiting the dev chunk.
+            if (!this.dispatcher.actors.length) return;
+            if (emitValidationErrors(this, validateStyle(json))) {
+                return;
+            }
         }
 
         this._loaded = true;
@@ -926,7 +962,7 @@ class Style extends Evented<MapEvents> {
             this.addSource(id, json.sources[id], {validate: false, isInitialLoad: true});
         }
 
-        this.stylesheet = structuredClone(json);
+        this.stylesheet = clone(json);
 
         const proceedWithStyleLoad = () => {
             if (json.iconsets) {
@@ -2230,17 +2266,22 @@ class Style extends Evented<MapEvents> {
 
         if (emitValidationErrors(this, validateStyle(nextState))) return false;
 
-        nextState = structuredClone(nextState);
+        nextState = clone(nextState);
         nextState.layers = deref(nextState.layers);
 
-        const changes = diffStyles(this.serialize(), nextState)
-            .filter(op => !(op.command in ignoredDiffOperations));
+        // `DebugModule.diffStyles` should be preloaded by `_diffStyle` before this runs
+        // otherwise throw so `_diffStyle`'s try/catch falls back to full restyle
+        if (!DebugModule.diffStyles) {
+            throw new Error('Debug module not loaded; cannot diff style.');
+        }
+        const changes = DebugModule.diffStyles(this.serialize(), nextState)
+            .filter(op => !ignoredDiffOperations.has(op.command));
 
         if (changes.length === 0) {
             return false;
         }
 
-        const unimplementedOps = changes.filter(op => !(op.command in supportedDiffOperations));
+        const unimplementedOps = changes.filter(op => !supportedDiffOperations.has(op.command));
         if (unimplementedOps.length > 0) {
             throw new Error(`Unimplemented: ${unimplementedOps.map(op => op.command).join(', ')}.`);
         }
@@ -3011,7 +3052,7 @@ class Style extends Evented<MapEvents> {
         } else {
             if (typeof layerObject.source === 'object') {
                 this.addSource(id, layerObject.source);
-                layerObject = structuredClone(layerObject);
+                layerObject = clone(layerObject);
                 layerObject = (Object.assign(layerObject, {source: id}));
             }
 
@@ -3269,7 +3310,7 @@ class Style extends Evented<MapEvents> {
             return;
         }
 
-        layer.filter = structuredClone(filter);
+        layer.filter = clone(filter);
         if (dependencies) dependencies.invalidateFilter();
         this._updateLayer(layer);
     }
@@ -3282,7 +3323,7 @@ class Style extends Evented<MapEvents> {
     getFilter(layerId: string): FilterSpecification | null | undefined {
         const layer = this._checkLayer(layerId);
         if (!layer) return;
-        return structuredClone(layer.filter);
+        return clone(layer.filter);
     }
 
     setLayoutProperty<T extends keyof LayoutSpecification>(layerId: string, name: T, value: LayoutSpecification[T], options: StyleSetterOptions = {}) {
@@ -3419,7 +3460,10 @@ class Style extends Evented<MapEvents> {
             } else if ('layerId' in target.target) {
                 const {layerId} = target.target;
                 const layer = this.getLayer(layerId);
-                this.setFeatureState({id: target.id, source: layer.source, sourceLayer: layer.sourceLayer}, state);
+                if (!layer) return;
+                const fragment = this.getFragmentStyle(layer.scope);
+                if (!fragment) return;
+                fragment.setFeatureState({id: target.id, source: layer.source, sourceLayer: layer.sourceLayer}, state);
             }
 
             return;
@@ -3465,7 +3509,10 @@ class Style extends Evented<MapEvents> {
             } else if ('layerId' in target.target) {
                 const {layerId} = target.target;
                 const layer = this.getLayer(layerId);
-                this.removeFeatureState({id: target.id, source: layer.source, sourceLayer: layer.sourceLayer}, key);
+                if (!layer) return;
+                const fragment = this.getFragmentStyle(layer.scope);
+                if (!fragment) return;
+                fragment.removeFeatureState({id: target.id, source: layer.source, sourceLayer: layer.sourceLayer}, key);
             }
 
             return;
@@ -3519,7 +3566,10 @@ class Style extends Evented<MapEvents> {
             } else if ('layerId' in target.target) {
                 const {layerId} = target.target;
                 const layer = this.getLayer(layerId);
-                finalState = this.getFeatureState({id: target.id, source: layer.source, sourceLayer: layer.sourceLayer});
+                if (!layer) return;
+                const fragment = this.getFragmentStyle(layer.scope);
+                if (!fragment) return;
+                finalState = fragment.getFeatureState({id: target.id, source: layer.source, sourceLayer: layer.sourceLayer});
             }
 
             return finalState;
@@ -3542,6 +3592,28 @@ class Style extends Evented<MapEvents> {
 
         const sourceCaches = this.getOwnSourceCaches(sourceId);
         return sourceCaches[0].getFeatureState(sourceLayer, target.id);
+    }
+
+    resetFeatureStates(target: TargetDescriptor) {
+        this._checkLoaded();
+
+        if ('featuresetId' in target) {
+            const {featuresetId, importId} = target;
+            const fragment = this.getFragmentStyle(importId);
+            if (!fragment) return;
+            const layers = fragment.getFeaturesetLayers(featuresetId);
+            for (const {source, sourceLayer} of layers) {
+                fragment.removeFeatureState({source, sourceLayer});
+            }
+        } else {
+            const {layerId} = target;
+            const layer = this.getLayer(layerId);
+            if (!layer) {
+                this.fire(new ErrorEvent(new Error(`The layer '${layerId}' does not exist in the map's style and cannot be used to reset feature states.`)));
+                return;
+            }
+            this.removeFeatureState({source: layer.source, sourceLayer: layer.sourceLayer});
+        }
     }
 
     setTransition(transition?: TransitionSpecification | null): Style {
@@ -3991,10 +4063,6 @@ class Style extends Evented<MapEvents> {
     setTerrain(terrainOptions?: TerrainSpecification | TerrainSpecificationUpdate | null, drapeRenderMode: number = DrapeRenderMode.elevated) {
         this._checkLoaded();
 
-        // Terrain on/off must reparse HD road-markup tiles. setTerrain(null) on a draping
-        // projection re-adds draping terrain, so !!terrain stays true → no reparse (correct).
-        const hadTerrain = !!this.terrain;
-
         // Disabling
         if (!terrainOptions) {
             // This check prevents removing draping terrain not from #applyProjectionUpdate
@@ -4018,7 +4086,6 @@ class Style extends Evented<MapEvents> {
 
             this._force3DLayerUpdate();
             this._markersNeedUpdate = true;
-            if (HD.handleTerrainToggle) HD.handleTerrainToggle(this, hadTerrain);
             return;
         }
 
@@ -4033,7 +4100,7 @@ class Style extends Evented<MapEvents> {
             if ("source" in options && typeof options.source === 'object') {
                 const id = 'terrain-dem-src';
                 this.addSource(id, options.source);
-                options = structuredClone(options);
+                options = clone(options);
                 options = Object.assign(options, {source: id});
             }
 
@@ -4087,7 +4154,6 @@ class Style extends Evented<MapEvents> {
         this.mergeTerrain();
         this.updateDrapeFirstLayers();
         this._markersNeedUpdate = true;
-        if (HD.handleTerrainToggle) HD.handleTerrainToggle(this, hadTerrain);
     }
 
     _createFog(fogOptions: FogSpecification) {
@@ -4639,6 +4705,12 @@ class Style extends Evented<MapEvents> {
 
     addImport(importSpec: ImportSpecification, beforeId?: string | null): Promise<void> {
         this._checkLoaded();
+
+        const reservedImportIds = new Set(['__proto__', 'constructor', 'prototype']);
+        if (reservedImportIds.has(importSpec.id)) {
+            this.fire(new ErrorEvent(new Error(`Import id can't be "${importSpec.id}".`)));
+            return;
+        }
 
         const imports = this.stylesheet.imports = this.stylesheet.imports || [];
 

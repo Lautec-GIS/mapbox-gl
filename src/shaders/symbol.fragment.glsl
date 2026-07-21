@@ -1,5 +1,7 @@
 #include "_prelude_lighting.glsl"
 #include "_prelude_shadow.fragment.glsl"
+#include "_prelude_indicator_cutout.fragment.glsl"
+#include "_prelude_feature_cutout.fragment.glsl"
 
 #define SDF_PX 8.0
 #define SDF 1.0
@@ -169,7 +171,7 @@ void main() {
 #endif
 
 #ifdef FEATURE_CUTOUT
-    out_color = apply_feature_cutout(out_color, gl_FragCoord, cutout_factors.x);
+    out_color = apply_feature_cutout(out_color, gl_FragCoord, cutout_factors.x, 0.0);
 #endif
 
     glFragColor = out_color;

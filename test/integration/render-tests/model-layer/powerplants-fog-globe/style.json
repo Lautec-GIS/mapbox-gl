@@ -10,7 +10,12 @@
         ["setZoom", 4.01],
         ["wait"]
       ],
-      "allowed": 0.00107
+      "ignore-metrics": [
+        {"platform-tag-contains": "native", "reason": "Flaky, under development"}
+      ],
+      "image-threshold": [
+        {"platform-tag-contains": "", "threshold": 0.00107}
+      ]
     }
   },
   "models": {

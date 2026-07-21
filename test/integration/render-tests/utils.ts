@@ -5,6 +5,7 @@ import {mercatorZfromAltitude} from '../../../src/geo/mercator_coordinate.js';
 import {setupHTML} from '../../util/html_generator.js';
 import {applyOperations} from '../lib/operation-handlers.js';
 import {mapboxgl} from '../lib/mapboxgl.js';
+import {matchImageThresholdRule} from '../lib/utils.js';
 import {renderTestNow} from '../lib/constants.js';
 import {transformRequest} from '../lib/transform-request.js';
 
@@ -28,7 +29,6 @@ document.body.appendChild(fakeCanvasContainer);
 
 setupHTML();
 
-export const {canvas: expectedCanvas, ctx: expectedCtx} = createCanvas();
 export const {canvas: diffCanvas, ctx: diffCtx} = createCanvas();
 export const {canvas: actualCanvas, ctx: actualCtx} = createCanvas();
 
@@ -50,15 +50,24 @@ export function parseStyle(currentFixture) {
     return style;
 }
 
-export function parseOptions(currentFixture, style) {
+export function parseOptions(currentFixture, style, platformTag) {
+    const defaultImageThreshold = 0.00015;
+    const testMetadata = (style.metadata && style.metadata.test) || {};
+    const {match: matchedImageThreshold, validationError: imageThresholdError} = matchImageThresholdRule(testMetadata['image-threshold'], platformTag);
+    if (imageThresholdError) {
+        console.warn(`image-threshold validation error: ${imageThresholdError}`);
+    }
+
     const options = {
         width: 512,
         height: 512,
         pixelRatio: 1,
-        allowed: 0.00015,
+        imageThreshold: matchedImageThreshold ? matchedImageThreshold.value : defaultImageThreshold,
+        imageThresholdRule: matchedImageThreshold ? matchedImageThreshold.rule : undefined,
         'diff-calculation-threshold': 0.1285,
-        ...((style.metadata && style.metadata.test) || {})
+        ...testMetadata
     };
+    delete options['image-threshold']; // handled above; don't let it leak into the options object
 
     if (import.meta.env.VITE_SPRITE_FORMAT !== 'null' && !options.spriteFormat) {
         options.spriteFormat = import.meta.env.VITE_SPRITE_FORMAT;
@@ -107,33 +116,6 @@ async function setupLayout(options) {
         await drawImage(canvas, ctx, src, false);
         fakeCanvasContainer.appendChild(canvas);
     }
-}
-
-export async function getExpectedImages(currentTestName, currentFixture) {
-    // there may be multiple expected images, covering different platforms
-    const expectedPaths: string[] = [];
-    for (const prop in currentFixture) {
-        if (prop.indexOf('expected') > -1) {
-            const path = `/${currentTestName}/${prop}.png`
-                .split('/')
-                // regression tests with # in the name need to be sanitized
-                .map(p => encodeURIComponent(p))
-                .join('/');
-
-            expectedPaths.push(path);
-        }
-    }
-
-    // if we have multiple expected images, we'll compare against each one and pick the one with
-    // the least amount of difference; this is useful for covering features that render differently
-    // depending on platform, i.e. heatmaps use half-float textures for improved rendering where supported
-    const expectedImages = await Promise.all(expectedPaths.map((path) => drawImage(expectedCanvas, expectedCtx, path)));
-
-    if (import.meta.env.VITE_UPDATE === "false" && expectedImages.length === 0) {
-        throw new Error(`No expected*.png files found for "${currentTestName}"; did you mean to run tests with UPDATE=true?`);
-    }
-
-    return expectedImages;
 }
 
 export async function renderMap(style, options, currentTestName) {
@@ -268,33 +250,19 @@ export function getActualImageDataURL(actualImageData, map, {w, h}, options) {
     return map.getCanvas().toDataURL();
 }
 
-export function calculateDiff(actualImageData, expectedImages, {w, h}, threshold) {
-    // 2. draw expected.png into a canvas and extract ImageData
-    let minImageSrc;
-    let minDiffImage;
-    let expectedIndex = -1;
-    let minDiff = Infinity;
+export function calculateDiff(actualImageData, expectedImageData, {w, h}, threshold) {
+    // set up Uint8ClampedArray to write diff into
+    const diffImage = new Uint8ClampedArray(w * h * 4);
 
-    for (let i = 0; i < expectedImages.length; i++) {
-        // 3. set up Uint8ClampedArray to write diff into
-        const diffImage = new Uint8ClampedArray(w * h * 4);
+    // Use pixelmatch to compare actual and expected images and write diff
+    // all inputs must be Uint8Array or Uint8ClampedArray
+    const options = {
+        threshold,
+        checkerboard: false
+    };
+    const diff = pixelmatch(actualImageData, expectedImageData, diffImage, w, h, options) / (w * h);
 
-        // 4. Use pixelmatch to compare actual and expected images and write diff
-        // all inputs must be Uint8Array or Uint8ClampedArray
-        const options = {
-            threshold,
-            checkerboard: false
-        };
-        const currentDiff = pixelmatch(actualImageData, expectedImages[i].data, diffImage, w, h, options) / (w * h);
-        if (currentDiff < minDiff) {
-            minDiff = currentDiff;
-            minDiffImage = diffImage;
-            expectedIndex = i;
-            minImageSrc = expectedImages[i].src;
-        }
-    }
-
-    return {minDiff, minDiffImage, expectedIndex, minImageSrc};
+    return {diff, diffImage};
 }
 
 export async function getActualImage(style, options, currentTestName) {

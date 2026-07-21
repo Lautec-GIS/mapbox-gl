@@ -4,9 +4,17 @@
     "description": "Checks fill-extrusion-height-alignment works as expected",
     "test": {
       "height": 256,
-      "allowed": 0.001,
       "operations": [
         ["wait"]
+      ],
+      "skip-test": [
+        {"platform-tag-contains": "swiftshader", "reason": "Wrong clear color"}
+      ],
+      "ignore-metrics": [
+        {"platform-tag-contains": "native", "reason": "Under development"}
+      ],
+      "image-threshold": [
+        {"platform-tag-contains": "", "threshold": 0.001}
       ]
     }
   },

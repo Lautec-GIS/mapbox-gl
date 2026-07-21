@@ -4,7 +4,6 @@
     "test": {
       "height": 512,
       "width": 512,
-      "allowed": 0.00025,
       "operations": [
         ["wait"],
         ["addModel", "maple", "/models/maple.glb"],
@@ -35,6 +34,15 @@
               }
         }],
         ["wait"]
+      ],
+      "skip-test": [
+        {"platform-tag-contains": "native", "reason": "skip - timing out on missing files from cache"}
+      ],
+      "ignore-metrics": [
+        {"platform-tag-contains": "native", "reason": "Flaky, under development"}
+      ],
+      "image-threshold": [
+        {"platform-tag-contains": "", "threshold": 0.00025}
       ]
     }
   },

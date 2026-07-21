@@ -1,6 +1,7 @@
 #include "_prelude_fog.fragment.glsl"
 #include "_prelude_lighting.glsl"
 #include "_prelude_shadow.fragment.glsl"
+#include "_prelude_feature_cutout.fragment.glsl"
 
 uniform vec2 u_texsize;
 uniform sampler2D u_image;
@@ -22,6 +23,10 @@ uniform vec3 u_ground_shadow_factor;
 in highp vec4 v_pos_light_view_0;
 in highp vec4 v_pos_light_view_1;
 in highp float v_depth;
+#endif
+
+#ifdef ELEVATED_ROADS
+in highp float v_road_z_offset;
 #endif
 
 in highp vec2 v_pos;
@@ -59,8 +64,8 @@ void main() {
 #endif
 
 #ifdef FILL_PATTERN_TRANSITION
-    vec2 pattern_b_tl = pattern_b.xy;
-    vec2 pattern_b_br = pattern_b.zw;
+    vec2 pattern_b_tl = vec2(pattern_b.xy);
+    vec2 pattern_b_br = vec2(pattern_b.zw);
     highp vec2 pos_b = mix(pattern_b_tl / u_texsize, pattern_b_br / u_texsize, imagecoord);
     vec4 color_b = textureLodCustom(u_image, pos_b, lod_pos);
     out_color = out_color * (1.0 - u_pattern_transition) + color_b * u_pattern_transition;
@@ -81,7 +86,11 @@ void main() {
 #endif // LIGHTING_3D_MODE
 
 #ifdef FEATURE_CUTOUT
-    out_color = apply_feature_cutout(out_color, gl_FragCoord, cutout_factors.x);
+    float z = 0.0;
+#ifdef ELEVATED_ROADS
+    z = v_road_z_offset;
+#endif
+    out_color = apply_feature_cutout(out_color, gl_FragCoord, cutout_factors.x, z);
 #endif
 
 #ifdef FOG

@@ -161,7 +161,7 @@ export function sortImagesMap(
         if (a.variant.sx !== b.variant.sx) return a.variant.sx - b.variant.sx;
         if (a.variant.sy !== b.variant.sy) return a.variant.sy - b.variant.sy;
 
-        return 0;
+        return a.key.localeCompare(b.key);
     });
 
     const sorted = new Map<StringifiedImageVariant, StyleImage>();
@@ -192,7 +192,7 @@ export default class ImageAtlas {
     lut: LUT | null;
     contentDescriptor: AtlasContentDescriptor | null | undefined;
 
-    constructor(icons: StyleImageMap<StringifiedImageVariant>, patterns: StyleImageMap<StringifiedImageVariant>, lut: LUT | null, imageVersions?: ImageVersionsMap) {
+    constructor(icons: StyleImageMap<StringifiedImageVariant>, patterns: StyleImageMap<StringifiedImageVariant>, lut: LUT | null, imageVersions?: ImageVersionsMap, scope: string = '') {
         const iconPositions: ImagePositionMap = new Map();
         const patternPositions: ImagePositionMap = new Map();
         this.haveRenderCallbacks = [];
@@ -259,7 +259,7 @@ export default class ImageAtlas {
 
         // Create content descriptor if atlas caching is enabled
         if (enableAtlasCaching) {
-            this.contentDescriptor = new AtlasContentDescriptor(sortedIcons, sortedPatterns, imageVersions, lut, variantCache);
+            this.contentDescriptor = new AtlasContentDescriptor(sortedIcons, sortedPatterns, imageVersions, lut, scope, variantCache);
         }
     }
 

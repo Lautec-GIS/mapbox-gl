@@ -38,6 +38,7 @@ import webpSupported from '../util/webp_supported';
 import {PerformanceUtils, PerformanceMarkers} from '../util/performance';
 import {LivePerformanceMarkers, LivePerformanceUtils} from '../util/live_performance';
 import EasedVariable from '../util/eased_variable';
+import {prepareDebug} from '../../modules/debug';
 import {GLOBE_ZOOM_THRESHOLD_MAX} from '../geo/projection/globe_constants';
 import {setCacheLimits} from '../util/tile_request_cache';
 import {Debug} from '../util/debug';
@@ -54,8 +55,7 @@ import type SourceCache from '../source/source_cache';
 import type {MapEventType, MapEventOf} from './events';
 import type {PointLike} from '../types/point-like';
 import type {FeatureState} from '../style-spec/expression/index';
-import type {AJAXError} from '../util/ajax';
-import type {RequestTransformFunction} from '../util/mapbox';
+import type {AJAXError, RequestTransformFunction} from '../util/ajax';
 import type {LngLatLike, LngLatBoundsLike} from '../geo/lng_lat';
 import type {CustomLayerInterface} from '../style/style_layer/custom_style_layer';
 import type {StyleImageInterface, StyleImageMetadata} from '../style/style_image';
@@ -293,7 +293,6 @@ const defaultOptions = {
  * Then Mapbox GL JS initializes the map on the page and returns your `Map`
  * object.
  *
- * @extends Evented
  * @param {Object} options
  * @param {HTMLElement|string} options.container The HTML element in which Mapbox GL JS will render the map, or the element's string `id`. The specified element must have no children.
  * @param {number} [options.minZoom=0] The minimum zoom level of the map (0-24).
@@ -2467,6 +2466,12 @@ export class Map extends Camera {
             return false;
         }
 
+        // Disallow reserved prototype property names
+        if (id === '__proto__' || id === 'constructor' || id === 'prototype') {
+            this.fire(new ErrorEvent(new Error(`IDs can't be "${id}".`)));
+            return false;
+        }
+
         return true;
     }
 
@@ -3175,6 +3180,10 @@ export class Map extends Camera {
      * }, 'basemap');
      */
     addImport(importSpecification: ImportSpecification, beforeId?: string | null): this {
+        if (!this._isValidId(importSpecification.id)) {
+            return this;
+        }
+
         this.style.addImport(importSpecification, beforeId)
             // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             .catch((e) => this.fire(new ErrorEvent(new Error('Failed to add import', e))));
@@ -3616,8 +3625,7 @@ export class Map extends Camera {
      * Returns the imported style schema.
      *
      * @param {string} importId The name of the imported style (e.g. `basemap`).
-     * @returns {*} Returns the imported style schema.
-     * @private
+     * @returns {SchemaSpecification} Returns the imported style schema, if exists.
      *
      * @example
      * map.getSchema('basemap');
@@ -3632,7 +3640,6 @@ export class Map extends Camera {
      * @param {string} importId The name of the imported style (e.g. `basemap`).
      * @param {SchemaSpecification} schema The imported style schema.
      * @returns {Map} Returns itself to allow for method chaining.
-     * @private
      *
      * @example
      * map.setSchema('basemap', {lightPreset: {type: 'string', default: 'night', values: ['day', 'night']}});
@@ -4207,6 +4214,24 @@ export class Map extends Camera {
     }
 
     /**
+     * Resets all feature state within a featureset or a style layer, setting every feature back
+     * to its default (stateless) behavior. This is the bulk equivalent of calling
+     * {@link Map#removeFeatureState} with only a source selector.
+     *
+     * @param {TargetDescriptor} target The featureset or layer whose feature states should be reset.
+     * Pass `{featuresetId, importId?}` to target a named featureset (optionally inside a style
+     * import), or `{layerId}` to target a specific root-style layer.
+     * @returns {Map} The map object.
+     * @example
+     * // Reset all feature state on the 'poi' featureset inside the 'basemap' import
+     * map.resetFeatureStates({featuresetId: 'poi', importId: 'basemap'});
+     */
+    resetFeatureStates(target: TargetDescriptor): this {
+        this.style.resetFeatureStates(target);
+        return this._update();
+    }
+
+    /**
      * *This API is experimental and subject to change in future versions*.
      *
      * @experimental
@@ -4354,6 +4379,18 @@ export class Map extends Camera {
                 // to ensure that labels are placed according to the updated terrain.
                 if (elevationSource && event.sourceCacheId === elevationSource.id && this.style) {
                     this.style._setLabelPlacementStale();
+                }
+                // Force a full label re-placement when a fill-extrusion (building)
+                // tile loads.  Symbol z-offsets are computed from building heights
+                // during placement, so if a building tile arrives after the initial
+                // placement pass (a common race when the symbol source is GeoJSON
+                // but buildings come from a separate vector tile source) the
+                // collision boxes and elevated symbol positions will be wrong.
+                // Re-running placement after the building data arrives ensures
+                // symbols appear at the correct elevation.
+                if (this.style && event.sourceCacheId &&
+                        this.style._buildingIndex.hasLayerForSourceCache(event.sourceCacheId)) {
+                    this.style._requestFullLabelPlacement();
                 }
                 this.painter.setTileLoadedFlag(true);
             }
@@ -5103,6 +5140,8 @@ export class Map extends Camera {
     set showTileBoundaries(value: boolean) {
         if (this._showTileBoundaries === value) return;
         this._showTileBoundaries = value;
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        if (value) prepareDebug();
         this._update();
     }
 
@@ -5229,6 +5268,8 @@ export class Map extends Camera {
     set showPadding(value: boolean) {
         if (this._showPadding === value) return;
         this._showPadding = value;
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        if (value) prepareDebug();
         this._update();
     }
 
@@ -5247,6 +5288,8 @@ export class Map extends Camera {
     set showCollisionBoxes(value: boolean) {
         if (this._showCollisionBoxes === value) return;
         this._showCollisionBoxes = value;
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        if (value) prepareDebug();
         if (this.style && value) {
             // When we turn collision boxes on we have to generate them for existing tiles
             // When we turn them off, there's no cost to leaving existing boxes in place

@@ -25,6 +25,13 @@ import {OverscaledTileID} from '../../../src/source/tile_id';
 import {ImageId} from '../../../src/style-spec/expression/types/image_id';
 import {StubMap, newStubStyle} from './utils';
 import {makeFQID} from '../../../src/util/fqid';
+import {RGBAImage} from '../../../src/util/image';
+import {ImageVariant} from '../../../src/style-spec/expression/types/image_variant';
+import {AtlasContentDescriptor} from '../../../src/render/atlas_content_descriptor';
+import ImageAtlas from '../../../src/render/image_atlas';
+
+import type {StyleImageMap} from '../../../src/style/style_image';
+import type {StringifiedImageVariant} from '../../../src/style-spec/expression/types/image_variant';
 
 function createStyleJSON(properties) {
     return {"version": 8,
@@ -625,6 +632,23 @@ describe('Style#addSource', () => {
 
         await waitFor(style, "style.load");
         expect(() => style.addSource('source-id', source)).toThrowError(/type/i);
+    });
+
+    test.each(['toString', 'constructor', 'hasOwnProperty', 'valueOf', '__proto__'])('throw a clean error on unknown source type "%s"', async (type) => {
+        // "toString"/"constructor"/etc resolve through the prototype chain in the
+        // sourceTypes registry, and `builtIns` in Style#addSource
+        // only schema-validates a handful of known types, so anything else -
+        // including these prototype member names - reaches `new sourceTypes[type](...)`
+        // unchecked. That must not throw "sourceTypes.toString is not a constructor".
+        const style = new Style(new StubMap());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        style.loadJSON(createStyleJSON());
+        await waitFor(style, "style.load");
+
+        const source = createSource();
+        source.type = type;
+
+        expect(() => style.addSource('source-id', source)).toThrowError(/unknown source type/i);
     });
 
     test('fires "data" event', async () => {
@@ -3033,6 +3057,49 @@ test('Style#removeImage', async () => {
     );
 });
 
+test('Style#checkAtlasCache does not leak atlas content across style scopes', async () => {
+    const map = new StubMap();
+
+    const privateStyle = new Style(map, {scope: 'private'});
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    privateStyle.loadJSON(createStyleJSON());
+    await waitFor(privateStyle, 'style.load');
+
+    const publicStyle = new Style(map, {scope: 'public', imageManager: privateStyle.imageManager});
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    publicStyle.loadJSON(createStyleJSON());
+    await waitFor(publicStyle, 'style.load');
+
+    const imageId = ImageId.from('shared-icon');
+    const redPixels = new Uint8Array([255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255]);
+    const bluePixels = new Uint8Array([0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255]);
+
+    privateStyle.addImage(imageId, {data: new RGBAImage({width: 2, height: 2}, redPixels), pixelRatio: 1, version: 1, sdf: false, usvg: false});
+    publicStyle.addImage(imageId, {data: new RGBAImage({width: 2, height: 2}, bluePixels), pixelRatio: 1, version: 1, sdf: false, usvg: false});
+
+    const variantId = new ImageVariant('shared-icon').toString();
+    const privateIcons: StyleImageMap<StringifiedImageVariant> = new Map([[variantId, privateStyle.imageManager.getImage(imageId, 'private')]]);
+    const publicIcons: StyleImageMap<StringifiedImageVariant> = new Map([[variantId, publicStyle.imageManager.getImage(imageId, 'public')]]);
+    const noPatterns: StyleImageMap<StringifiedImageVariant> = new Map();
+
+    const privateVersions = privateStyle.imageManager.getImageVersions('private');
+    const publicVersions = publicStyle.imageManager.getImageVersions('public');
+
+    const privateDescriptor = new AtlasContentDescriptor(privateIcons, noPatterns, privateVersions, null, 'private');
+    const publicDescriptor = new AtlasContentDescriptor(publicIcons, noPatterns, publicVersions, null, 'public');
+
+    // The descriptor hash includes the scope, so the two unrelated per-scope
+    // images no longer collide despite having identical id/version/scale.
+    expect(privateDescriptor.hash).not.toEqual(publicDescriptor.hash);
+
+    // Simulate the private scope's tile being processed first, caching its atlas.
+    const privateAtlas = new ImageAtlas(privateIcons, noPatterns, null, privateVersions, 'private');
+    privateStyle.imageManager.imageAtlasCache.getOrCache(privateAtlas);
+
+    const result = await publicStyle.checkAtlasCache(undefined, {descriptor: publicDescriptor, scope: 'public'});
+    expect(result).toBeNull();
+});
+
 test('Style#_updateTilesForChangedImages', async () => {
     const style = new Style(new StubMap());
 
@@ -3412,6 +3479,8 @@ describe('Style HD coverage source-cache wiring', () => {
             paint: {'fill-color': 'red', 'fill-opacity': 0}
         });
         await waitFor(style, 'style.load');
+        // Wait for HD Module to be loaded
+        await vi.waitUntil(() => style._hdCoverage !== null, {timeout: 2000});
 
         expect(style._hdCoverage).not.toBeNull();
         // The dedicated cache key is `hd-road-coverage:<sourceId>`.
@@ -3439,6 +3508,8 @@ describe('Style HD coverage source-cache wiring', () => {
         await waitFor(style, 'style.load');
 
         const cacheKey = `hd-road-coverage:hd-roads`;
+        // Wait for HD module to be loaded
+        await vi.waitUntil(() => style._sourceCaches[cacheKey] !== undefined, {timeout: 2000});
         expect(style._sourceCaches[cacheKey]).toBeDefined();
         // Only one coverage cache total for this source.
         const coverageKeys = Object.keys(style._sourceCaches).filter(k => k.startsWith('hd-road-coverage:'));
