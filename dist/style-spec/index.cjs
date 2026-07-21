@@ -1690,8 +1690,7 @@
   		"supported-layer-types": [
   			"symbol"
   		],
-  		experimental: true,
-  		doc: "Conditional styling applied to symbol layer features based on dynamic conditions. If multiple conditions are true, only the first matching appearance will be applied. Only properties marked with 'Works with appearances' are supported."
+  		doc: "Conditional styling applied to symbol layer features based on dynamic conditions. If multiple conditions are true, only the first matching appearance will be applied. Only properties marked with 'Works with appearances' are supported. Known issue: at the moment having both `appearances` and `text-variable-anchor` in the same layer doesn't work correctly."
   	}
   };
   var appearance = {
@@ -3929,7 +3928,7 @@
   				]
   			}
   		],
-  		doc: "To increase the chance of placing high-priority labels on the map, you can provide an array of `text-anchor` locations: the renderer will attempt to place the label at each location, in order, before moving onto the next label. Use `text-justify: auto` to choose justification based on anchor position. To apply an offset, use the `text-radial-offset` or the two-dimensional `text-offset`.",
+  		doc: "To increase the chance of placing high-priority labels on the map, you can provide an array of `text-anchor` locations: the renderer will attempt to place the label at each location, in order, before moving onto the next label. Use `text-justify: auto` to choose justification based on anchor position. To apply an offset, use the `text-radial-offset` or the two-dimensional `text-offset`. Known issue: at the moment having both `appearances` and `text-variable-anchor` in the same layer doesn't work correctly.",
   		"sdk-support": {
   			"basic functionality": {
   				js: "0.54.0",
@@ -12660,7 +12659,7 @@
   class Scope {
     constructor(parent, bindings = []) {
       this.parent = parent;
-      this.bindings = {};
+      this.bindings = /* @__PURE__ */ Object.create(null);
       for (const [name, expression] of bindings) {
         this.bindings[name] = expression;
       }
@@ -15865,10 +15864,7 @@
   class ParsingContext {
     constructor(registry, path = [], expectedType, scope = new Scope(), errors = [], _scope, options, iconImageUseTheme) {
       this.registry = registry;
-      this._path = path;
-      this._parentCtx = null;
-      this._pathIndex = null;
-      this._pathKey = null;
+      this.path = path;
       this.scope = scope;
       this.errors = errors;
       this.expectedType = expectedType;
@@ -15876,27 +15872,13 @@
       this.options = options;
       this.iconImageUseTheme = iconImageUseTheme;
     }
-    get path() {
-      if (this._path === null) {
-        let base = this._parentCtx.path;
-        if (this._pathIndex !== null) base = base.concat(this._pathIndex);
-        if (this._pathKey !== null) base = base.concat(this._pathKey);
-        this._path = base;
-        this._parentCtx = null;
-      }
-      return this._path;
-    }
     get key() {
-      if (this._key === void 0) {
-        const path = this.path;
-        let key = "";
-        for (let i = 0; i < path.length; i++) {
-          const part = path[i];
-          key += typeof part === "string" ? `['${part}']` : `[${part}]`;
-        }
-        this._key = key;
+      let key = "";
+      for (let i = 0; i < this.path.length; i++) {
+        const part = this.path[i];
+        key += typeof part === "string" ? `['${part}']` : `[${part}]`;
       }
-      return this._key;
+      return key;
     }
     /**
      * @param expr the JSON expression to parse
@@ -15907,7 +15889,17 @@
      */
     parse(expr, index, expectedType, bindings, options = {}) {
       if (index || expectedType) {
-        return this.concat(index, null, expectedType, bindings)._parse(expr, options);
+        const prevExpectedType = this.expectedType;
+        const prevScope = this.scope;
+        if (bindings) this.scope = this.scope.concat(bindings);
+        this.expectedType = expectedType || null;
+        const pushed = typeof index === "number";
+        if (pushed) this.path.push(index);
+        const result = this._parse(expr, options);
+        if (pushed) this.path.pop();
+        this.expectedType = prevExpectedType;
+        this.scope = prevScope;
+        return result;
       }
       return this._parse(expr, options);
     }
@@ -15920,7 +15912,18 @@
      * @private
      */
     parseObjectValue(expr, index, key, expectedType, bindings, options = {}) {
-      return this.concat(index, key, expectedType, bindings)._parse(expr, options);
+      const prevExpectedType = this.expectedType;
+      const prevScope = this.scope;
+      if (bindings) this.scope = this.scope.concat(bindings);
+      this.expectedType = expectedType || null;
+      this.path.push(index);
+      this.path.push(key);
+      const result = this._parse(expr, options);
+      this.path.pop();
+      this.path.pop();
+      this.expectedType = prevExpectedType;
+      this.scope = prevScope;
+      return result;
     }
     _parse(expr, options) {
       if (expr === null || typeof expr === "string" || typeof expr === "boolean" || typeof expr === "number") {
@@ -15930,7 +15933,7 @@
         if (expr.length === 0) {
           return this.error(`Expected an array with at least one element. If you wanted a literal array, use ["literal", []].`);
         }
-        const Expr = typeof expr[0] === "string" ? this.registry[expr[0]] : void 0;
+        const Expr = typeof expr[0] === "string" && Object.hasOwn(this.registry, expr[0]) ? this.registry[expr[0]] : void 0;
         if (Expr) {
           let parsed = Expr.parse(expr, this);
           if (!parsed) return null;
@@ -15975,9 +15978,12 @@
      */
     concat(index, key, expectedType, bindings) {
       const scope = bindings ? this.scope.concat(bindings) : this.scope;
-      const child = new ParsingContext(
+      const path = this.path.slice();
+      if (typeof index === "number") path.push(index);
+      if (typeof key === "string") path.push(key);
+      return new ParsingContext(
         this.registry,
-        void 0,
+        path,
         expectedType || null,
         scope,
         this.errors,
@@ -15985,18 +15991,6 @@
         this.options,
         this.iconImageUseTheme
       );
-      if (typeof index === "number" || typeof key === "string") {
-        child._path = null;
-        child._parentCtx = this;
-        child._pathIndex = typeof index === "number" ? index : null;
-        child._pathKey = typeof key === "string" ? key : null;
-      } else {
-        child._path = this._path;
-        child._parentCtx = this._parentCtx;
-        child._pathIndex = this._pathIndex;
-        child._pathKey = this._pathKey;
-      }
-      return child;
     }
     /**
      * Returns a fresh context that shares the same path position as this one
@@ -16005,9 +15999,9 @@
      * @private
      */
     _forkForSignature() {
-      const child = new ParsingContext(
+      return new ParsingContext(
         this.registry,
-        void 0,
+        this.path.slice(),
         null,
         this.scope,
         [],
@@ -16015,11 +16009,6 @@
         this.options,
         this.iconImageUseTheme
       );
-      child._path = this._path;
-      child._parentCtx = this._parentCtx;
-      child._pathIndex = this._pathIndex;
-      child._pathKey = this._pathKey;
-      return child;
     }
     /**
      * Push a parsing (or type checking) error into the `this.errors`
@@ -16857,24 +16846,23 @@
         if (!Array.isArray(labels)) {
           labels = [labels];
         }
-        const labelContext = context.concat(i);
         if (labels.length === 0) {
-          return labelContext.error("Expected at least one branch label.");
+          return context.error("Expected at least one branch label.", i);
         }
         for (const label of labels) {
           if (typeof label !== "number" && typeof label !== "string") {
-            return labelContext.error(`Branch labels must be numbers or strings.`);
+            return context.error(`Branch labels must be numbers or strings.`, i);
           } else if (typeof label === "number" && Math.abs(label) > Number.MAX_SAFE_INTEGER) {
-            return labelContext.error(`Branch labels must be integers no larger than ${Number.MAX_SAFE_INTEGER}.`);
+            return context.error(`Branch labels must be integers no larger than ${Number.MAX_SAFE_INTEGER}.`, i);
           } else if (typeof label === "number" && Math.floor(label) !== label) {
-            return labelContext.error(`Numeric branch labels must be integer values.`);
+            return context.error(`Numeric branch labels must be integer values.`, i);
           } else if (!inputType) {
             inputType = typeOf(label);
-          } else if (labelContext.checkSubtype(inputType, typeOf(label))) {
+          } else if (context.checkSubtype(inputType, typeOf(label), i)) {
             return null;
           }
           if (typeof cases[String(label)] !== "undefined") {
-            return labelContext.error("Branch labels must be unique.");
+            return context.error("Branch labels must be unique.", i);
           }
           cases[String(label)] = outputs.length;
         }
@@ -16887,7 +16875,7 @@
       if (!input) return null;
       const otherwise = context.parse(args.at(-1), args.length - 1, outputType);
       if (!otherwise) return null;
-      if (input.type.kind !== "value" && context.concat(1).checkSubtype(inputType, input.type)) {
+      if (input.type.kind !== "value" && context.checkSubtype(inputType, input.type, 1)) {
         return null;
       }
       return new Match(inputType, outputType, input, cases, outputs, otherwise);
@@ -17145,12 +17133,12 @@
         let lhs = context.parse(args[1], 1, ValueType);
         if (!lhs) return null;
         if (!isComparableType(op2, lhs.type)) {
-          return context.concat(1).error(`"${op2}" comparisons are not supported for type '${toString$1(lhs.type)}'.`);
+          return context.error(`"${op2}" comparisons are not supported for type '${toString$1(lhs.type)}'.`, 1);
         }
         let rhs = context.parse(args[2], 2, ValueType);
         if (!rhs) return null;
         if (!isComparableType(op2, rhs.type)) {
-          return context.concat(2).error(`"${op2}" comparisons are not supported for type '${toString$1(rhs.type)}'.`);
+          return context.error(`"${op2}" comparisons are not supported for type '${toString$1(rhs.type)}'.`, 2);
         }
         if (lhs.type.kind !== rhs.type.kind && lhs.type.kind !== "value" && rhs.type.kind !== "value") {
           return context.error(`Cannot compare types '${toString$1(lhs.type)}' and '${toString$1(rhs.type)}'.`);
@@ -17252,12 +17240,12 @@
         if (!unit) return null;
       }
       let minFractionDigits = null;
-      if (options["min-fraction-digits"]) {
+      if (options["min-fraction-digits"] !== void 0) {
         minFractionDigits = context.parseObjectValue(options["min-fraction-digits"], 2, "min-fraction-digits", NumberType);
         if (!minFractionDigits) return null;
       }
       let maxFractionDigits = null;
-      if (options["max-fraction-digits"]) {
+      if (options["max-fraction-digits"] !== void 0) {
         maxFractionDigits = context.parseObjectValue(options["max-fraction-digits"], 2, "max-fraction-digits", NumberType);
         if (!maxFractionDigits) return null;
       }
@@ -18346,7 +18334,7 @@
     }
   }
   function isExpression(expression) {
-    return Array.isArray(expression) && expression.length > 0 && typeof expression[0] === "string" && expression[0] in expressions;
+    return Array.isArray(expression) && expression.length > 0 && typeof expression[0] === "string" && Object.hasOwn(expressions, expression[0]);
   }
   function createExpression(expression, propertySpec, scope, options, iconImageUseTheme) {
     const parser = new ParsingContext(expressions, [], propertySpec ? getExpectedType(propertySpec) : void 0, void 0, void 0, scope, options, iconImageUseTheme);
@@ -19774,9 +19762,10 @@ ${JSON.stringify(filterExp, null, 2)}
       const key2 = `${options.key}.id`;
       errors.push(new ValidationError(key2, importSpec, `import id can't be an empty string`));
     }
-    if (unbundle(importSpec.id) === "__proto__") {
+    const importId = unbundle(importSpec.id);
+    if (importId === "__proto__" || importId === "constructor" || importId === "prototype") {
       const key2 = `${options.key}.id`;
-      errors.push(new ValidationError(key2, importSpec, `import id can't be "__proto__"`));
+      errors.push(new ValidationError(key2, importSpec, `import id can't be "${String(importId)}"`));
     }
     if (data) {
       const key2 = `${options.key}.data`;
