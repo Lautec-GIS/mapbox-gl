@@ -1,0 +1,34 @@
+{
+  "name": "@lautec-gis/mapbox-gl",
+  "description": "A WebGL interactive maps library",
+  "version": "3.27.0-rc.1",
+  "main": "dist/mapbox-gl.js",
+  "style": "dist/mapbox-gl.css",
+  "types": "dist/mapbox-gl.d.ts",
+  "license": "SEE LICENSE IN LICENSE.txt",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LAUTEC-Systems/mapbox-gl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LAUTEC-Systems/mapbox-gl/issues"
+  },
+  "homepage": "https://github.com/LAUTEC-Systems/mapbox-gl#readme",
+  "exports": {
+    ".": {
+      "types": "./dist/mapbox-gl.d.ts",
+      "default": "./dist/mapbox-gl.js"
+    },
+    "./esm": {
+      "types": "./dist/esm/mapbox-gl.d.ts",
+      "default": "./dist/esm/mapbox-gl.js"
+    },
+    "./dist/*": "./dist/*",
+    "./mapbox-gl.css": "./dist/mapbox-gl.css",
+    "./package.json": "./package.json"
+  }
+}
