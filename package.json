@@ -167,7 +167,8 @@
     "publish-cdn": "./build/publish-cdn.ts",
     "publish-alpha": "./build/publish-alpha.ts",
     "bump-version": "./build/bump-version.ts",
-    "publish-package": "bash -c 'set -a && source .env && set +a && npm publish'"
+    "publish-package": "bash -c 'set -a && source .env && set +a && npm publish'",
+    "publish-dist": "bash build/publish-dist-branch.sh"
   },
   "files": [
     "dist/mapbox-gl*",
